@@ -86,6 +86,25 @@ public sealed class ConflictResolveTests : IClassFixture<ServerProcess>, IDispos
     }
 
     [Fact]
+    public async Task A_refused_resolve_says_why()
+    {
+        var deck = await Machine("deck", "deck-progress");
+        var pc = await Machine("pc", "pc-progress");
+        var (engine, _, conflict) = await ConflictOnThePc(deck, pc);
+        await using var _ = engine;
+        // The Deck moves Latest on past both sides (testenv, 2026-10-13): the server refuses with a plain-string body,
+        // which the agent UI used to show as "Server returned 400 Bad Request."
+        Text(P("deck", $"mc/Card.ps2/{Save}"), "deck-more-progress");
+        await using (var deckEngine = new SyncEngine(deck, ApiClient.For(deck)))
+            Assert.Equal(UploadStatus.Created, (await deckEngine.PushAsync(deck.Games.Single()))!.Status);
+
+        var (ok, message) = await engine.ResolveOwnConflictAsync(conflict, conflict.VersionBId, keepBoth: false);
+
+        Assert.False(ok);
+        Assert.StartsWith("Latest changed after this conflict opened", message);
+    }
+
+    [Fact]
     public async Task A_save_changed_after_the_conflict_is_not_replaced()
     {
         var deck = await Machine("deck", "deck-progress");

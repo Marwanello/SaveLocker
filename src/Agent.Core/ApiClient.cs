@@ -92,19 +92,26 @@ public sealed class ApiClient
         return (await resp.Content.ReadFromJsonAsync<MachineRegisterResponse>())!;
     }
 
-    /// <summary>Pull a human-readable message out of a failed response's { error } body.</summary>
+    /// <summary>Pull a human-readable message out of a failed response's body: { error }, or the bare JSON
+    /// string most server routes answer a refusal with (<c>Results.BadRequest("…")</c>).</summary>
     private static async Task<string> ReadErrorAsync(HttpResponseMessage resp)
     {
         try
         {
-            var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-            if (!string.IsNullOrWhiteSpace(body?.Error)) return body!.Error!;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var text = doc.RootElement.ValueKind switch
+            {
+                JsonValueKind.String => doc.RootElement.GetString(),
+                JsonValueKind.Object => doc.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String
+                    ? e.GetString() : null,
+                _ => null,
+            };
+            if (!string.IsNullOrWhiteSpace(text)) return text!;
         }
         catch { /* non-JSON or empty body — fall through to a generic message */ }
         return $"Server returned {(int)resp.StatusCode} {resp.ReasonPhrase}.";
     }
 
-    private sealed class ErrorBody { public string? Error { get; set; } }
 
     /// <summary>
     /// The one unauthenticated route. Used as a reachability probe — and, because it completes a
@@ -153,6 +160,60 @@ public sealed class ApiClient
         var resp = await _http.PutAsJsonAsync($"/api/agent/source/{gameId}", source);
         resp.EnsureSuccessStatusCode();
     }
+
+    /// <summary>What this machine has for a game; with <paramref name="versionId"/>, what the version it just uploaded
+    /// was made with (tasks/emulator-saves Phase 5c, the DLC check).</summary>
+    public async Task ReportContentAsync(Guid gameId, ContentPackageDto[] packages, Guid? versionId, CancellationToken ct = default)
+    {
+        var resp = await _http.PutAsJsonAsync($"/api/agent/games/{gameId}/content", new ReportContentRequest(packages, versionId), ct);
+        resp.EnsureSuccessStatusCode();
+    }
+
+    public async Task ReportLaunchProfileAsync(Guid gameId, LaunchProfileReport report, CancellationToken ct = default) =>
+        (await _http.PutAsJsonAsync($"/api/agent/games/{gameId}/launch-profile", report, ct)).EnsureSuccessStatusCode();
+
+    // ----- The DLC hand-over (tasks/emulator-saves Phase 5c, step 11) -----
+
+    private static async Task<T> Read<T>(HttpResponseMessage resp, CancellationToken ct)
+    {
+        if (!resp.IsSuccessStatusCode)
+            throw new HttpRequestException($"{(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync(ct)}", null, resp.StatusCode);
+        return (await resp.Content.ReadFromJsonAsync<T>(cancellationToken: ct))!;
+    }
+
+    public async Task<ContentTransferDto> CreateTransferAsync(CreateTransferRequest req, CancellationToken ct = default) =>
+        await Read<ContentTransferDto>(await _http.PostAsJsonAsync("/api/agent/transfers", req, ct), ct);
+
+    public async Task<ContentTransferDto[]> ListTransfersAsync(CancellationToken ct = default) =>
+        await Read<ContentTransferDto[]>(await _http.GetAsync("/api/agent/transfers", ct), ct);
+
+    public async Task<ContentTransferDto> AnswerTransferAsync(Guid id, bool approve, CancellationToken ct = default) =>
+        await Read<ContentTransferDto>(await _http.PostAsJsonAsync($"/api/agent/transfers/{id}/answer", new TransferAnswerRequest(approve), ct), ct);
+
+    public async Task<ContentTransferDto> UploadTransferPartAsync(Guid id, string packageId, long offset, long total, Stream chunk, CancellationToken ct = default)
+    {
+        using var content = new StreamContent(chunk);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        return await Read<ContentTransferDto>(await _http.PutAsync(
+            $"/api/agent/transfers/{id}/parts/{Uri.EscapeDataString(packageId)}?offset={offset}&total={total}", content, ct), ct);
+    }
+
+    /// <summary>Downloads a finished pack's zip, resuming after <paramref name="from"/> bytes already in <paramref name="target"/>.</summary>
+    public async Task DownloadTransferPartAsync(Guid id, string packageId, Stream target, long from, CancellationToken ct = default)
+    {
+        using var msg = new HttpRequestMessage(HttpMethod.Get, $"/api/agent/transfers/{id}/parts/{Uri.EscapeDataString(packageId)}");
+        if (from > 0) msg.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(from, null);
+        using var resp = await _http.SendAsync(msg, HttpCompletionOption.ResponseHeadersRead, ct);
+        resp.EnsureSuccessStatusCode();
+        await using var body = await resp.Content.ReadAsStreamAsync(ct);
+        await body.CopyToAsync(target, ct);
+    }
+
+    public async Task<ContentTransferDto> TransferDeliveredAsync(Guid id, CancellationToken ct = default) =>
+        await Read<ContentTransferDto>(await _http.PostAsync($"/api/agent/transfers/{id}/delivered", null, ct), ct);
+
+    public async Task CancelTransferAsync(Guid id, CancellationToken ct = default) =>
+        (await _http.PostAsync($"/api/agent/transfers/{id}/cancel", null, ct)).EnsureSuccessStatusCode();
 
     /// <summary>The primary folder is the absent key, which is what an older server understands.</summary>
     private static string PathQuery(string key) =>

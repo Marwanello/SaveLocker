@@ -29,13 +29,15 @@ interface Props {
   onRefresh: () => void;
   /** How each machine found the game, under the facts line. */
   source?: ReactNode;
+  /** More buttons beside Push and Pull (Emulator settings, for a game run by an emulator that has some). */
+  extra?: ReactNode;
 }
 
 const STATE_TONE = { ok: 'ok', warn: 'warn', crit: 'crit', idle: 'default' } as const;
 
 /** plan.md Phase 10.3: the cover (its pen opens the art picker), the name, the facts line, the state /
  *  policy / keep chips, Push and Pull for one machine, and Refresh art. */
-export function GameHead({ summary, standing, versionCount, machines, allMachines, health, artOpen, onToggleArt, penRef, onRefresh, source }: Props) {
+export function GameHead({ summary, standing, versionCount, machines, allMachines, health, artOpen, onToggleArt, penRef, onRefresh, source, extra }: Props) {
   const { game, head, totalStorageBytes } = summary;
   // Null until someone picks. The default is the first machine of the list as it is NOW: pinning one at
   // mount pinned a machine from the whole fleet, before this game's versions and folders had loaded and
@@ -139,6 +141,8 @@ export function GameHead({ summary, standing, versionCount, machines, allMachine
                 </Button>
               </span>
             )}
+
+            {extra}
 
             <InlineConfirm
               label="Refresh art"

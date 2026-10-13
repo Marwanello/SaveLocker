@@ -25,6 +25,12 @@ public class Game
     public string Region { get; set; } = "";
     /// <summary>The whole release (<see cref="GameReleaseDto"/>: console, game IDs, languages) as JSON, or null.</summary>
     public string? ReleaseJson { get; set; }
+    /// <summary>
+    /// The emulator profile the game's saves are under, <c>xenia:&lt;XUID&gt;</c> (tasks/emulator-saves Phase 5c), or null.
+    /// Set by the first machine that says, so another machine that finds the game under a different profile of its own
+    /// (Xenia makes every new profile's XUID at random) can put it under this one instead.
+    /// </summary>
+    public string? EmulatorProfile { get; set; }
     /// <summary>Key into the Ludusavi manifest, if matched.</summary>
     public string? ManifestKey { get; set; }
     /// <summary>JSON array of user-provided override paths.</summary>
@@ -113,6 +119,11 @@ public class SaveVersion
 
     /// <summary>Relative path of the stored archive within the archive store.</summary>
     public string ArchivePath { get; set; } = "";
+
+    /// <summary>The DLC and title updates the uploading machine had for the game when it made this version
+    /// (<see cref="ContentPackageDto"/>[] as JSON), or null when it did not say — tasks/emulator-saves Phase 5c, the DLC
+    /// check. Names, IDs and sizes only; never package data.</summary>
+    public string? ContentJson { get; set; }
 }
 
 /// <summary>
@@ -234,6 +245,40 @@ public class AgentCommand
 
     /// <summary>Human-readable outcome the agent reports (e.g. "pushed 1 game").</summary>
     public string? Result { get; set; }
+}
+
+/// <summary>
+/// The DLC and title updates one machine has for one game (tasks/emulator-saves Phase 5c, the DLC check), as it last
+/// reported them: what lets the console show which machine can pull the latest save safely before anyone tries.
+/// </summary>
+public class MachineGameContent
+{
+    public Guid MachineId { get; set; }
+    public Guid GameId { get; set; }
+    /// <summary><see cref="ContentPackageDto"/>[] as JSON.</summary>
+    public string ContentJson { get; set; } = "[]";
+    public DateTime UpdatedAt { get; set; }
+    /// <summary>The last launch's Xenia profile check, <see cref="LaunchProfileReport"/> as JSON; null until one ran.</summary>
+    public string? LaunchJson { get; set; }
+    public DateTime? LaunchAt { get; set; }
+}
+
+/// <summary>
+/// A DLC hand-over between two machines (tasks/emulator-saves Phase 5c, step 11): packs pass through the server from the
+/// machine that has them to the one that asked, and are deleted on delivery or expiry. <see cref="PartsJson"/> holds each
+/// pack's progress; the files live under the archive root's <c>_handover</c> folder.
+/// </summary>
+public class ContentTransfer
+{
+    public Guid Id { get; set; }
+    public Guid GameId { get; set; }
+    public Guid FromMachineId { get; set; }
+    public Guid ToMachineId { get; set; }
+    public TransferStatus Status { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public string PartsJson { get; set; } = "[]";
 }
 
 /// <summary>

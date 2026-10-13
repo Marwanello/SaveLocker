@@ -8,6 +8,7 @@ import { machineOs, osLine } from '../machineOs';
 import { toast, toastError } from '../toast';
 import { AgentUpdatesCard } from './AgentUpdatesCard';
 import { AppearanceCard } from './AppearanceCard';
+import { HandoverCard } from './HandoverCard';
 import { Page } from './ui/Page';
 import { PageHead } from './ui/PageHead';
 import { Card } from './ui/Card';
@@ -569,6 +570,8 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           </div>
         </Card>
       </div>
+
+      <HandoverCard />
 
       <Card title="Machines" headerRight={<span className="text-[11.5px] text-dim">agent health, versions and keys</span>} flush>
         <DataTable caption="Registered machines" columns={machineColumns} rows={machines} rowKey={m => m.id}

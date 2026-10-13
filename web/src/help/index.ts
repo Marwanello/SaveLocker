@@ -7,6 +7,7 @@ import saveInUseSafety from './save-in-use-safety.md?raw';
 import globPatterns from './glob-patterns.md?raw';
 import addingGames from './adding-games.md?raw';
 import emulatorBackups from './emulator-backups.md?raw';
+import xbox360 from './xbox-360-profile-and-dlc.md?raw';
 import saveRetention from './save-retention.md?raw';
 import agentUpdate from './agent-update.md?raw';
 import cliReference from './cli-reference.md?raw';
@@ -32,6 +33,7 @@ export const articles: Article[] = [
   { slug: 'deck-supported-games', title: 'What syncs on Steam Deck (and what doesn\'t)', category: 'Syncing', content: deckSupportedGames },
   { slug: 'save-in-use-safety', title: 'Save-in-use safety (the settle gate)', category: 'Syncing',      content: saveInUseSafety },
   { slug: 'emulator-backups', title: 'Emulator backup best practices',       category: 'Syncing',        content: emulatorBackups },
+  { slug: 'xbox-360-profile-and-dlc', title: 'Xbox 360 (Xenia): profiles and DLC', category: 'Syncing', content: xbox360 },
   { slug: 'glob-patterns',   title: 'Exclude patterns (glob filters)',         category: 'Configuration',  content: globPatterns },
   { slug: 'adding-games',    title: 'Adding games & mapping save folders',     category: 'Configuration',  content: addingGames },
   { slug: 'steam-library-artwork', title: 'Steam Library artwork (Steam Deck)', category: 'Configuration', content: steamLibraryArtwork },

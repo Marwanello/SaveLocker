@@ -60,6 +60,7 @@ builder.Services.AddSingleton<ArchiveStore>();
 builder.Services.AddSingleton<AgentInstallerService>();
 builder.Services.AddSingleton<ConflictEscalationPolicy>();
 builder.Services.AddScoped<SyncService>();
+builder.Services.AddScoped<ContentTransferService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<ArtService>();
 builder.Services.AddMemoryCache();   // ArtService: the picker's SteamGridDB listings
@@ -568,6 +569,70 @@ agent.MapPut("/agent/source/{gameId:guid}", async (Guid gameId, GameSourceDto so
 }).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
   .Produces(StatusCodes.Status404NotFound);
 
+// The DLC check (tasks/emulator-saves Phase 5c): what this machine has for a game, and — with a version it just
+// uploaded — what that save was made with. Names, IDs and sizes only.
+agent.MapPut("/agent/games/{id:guid}/content", async (Guid id, HttpContext http, ReportContentRequest req, SyncService sync) =>
+{
+    if (req.Packages is null) return Results.BadRequest("packages is required");
+    if (ContentPackageDto.Validate(req.Packages) is { } why) return Results.BadRequest(why);
+    return await sync.ReportContentAsync(http.CurrentMachine().Id, id, req) ? Results.NoContent() : Results.NotFound();
+}).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
+  .Produces(StatusCodes.Status404NotFound);
+
+agent.MapPut("/agent/games/{id:guid}/launch-profile", async (Guid id, HttpContext http, LaunchProfileReport req, SyncService sync) =>
+{
+    if (!LaunchProfileReport.Actions.Contains(req.Action) || req.GameXuid is not { Length: > 0 and <= 32 }
+        || req.ConfiguredXuid?.Length > 32 || req.GameTag?.Length > 64 || req.ConfiguredTag?.Length > 64)
+        return Results.BadRequest("invalid report");
+    return await sync.ReportLaunchProfileAsync(http.CurrentMachine().Id, id, req) ? Results.NoContent() : Results.NotFound();
+}).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
+  .Produces(StatusCodes.Status404NotFound);
+
+// The DLC hand-over (tasks/emulator-saves Phase 5c, step 11). The asking machine creates a request; the machine named
+// approves and uploads each pack's zip in pieces; only the asking machine downloads; delivery deletes the files.
+agent.MapPost("/agent/transfers", async (HttpContext http, CreateTransferRequest req, ContentTransferService transfers) =>
+{
+    try { return Results.Ok(await transfers.CreateAsync(http.CurrentMachine().Id, req)); }
+    catch (TransferRefusedException ex) { return Results.BadRequest(ex.Message); }
+}).Produces<ContentTransferDto>().Produces<string>(StatusCodes.Status400BadRequest);
+
+agent.MapGet("/agent/transfers", async (HttpContext http, ContentTransferService transfers) =>
+    Results.Ok(await transfers.ForMachineAsync(http.CurrentMachine().Id))).Produces<ContentTransferDto[]>();
+
+agent.MapPost("/agent/transfers/{id:guid}/answer", async (Guid id, HttpContext http, TransferAnswerRequest req, ContentTransferService transfers) =>
+{
+    try { return Results.Ok(await transfers.AnswerAsync(http.CurrentMachine().Id, id, req.Approve)); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (TransferRefusedException ex) { return Results.Conflict(ex.Message); }
+}).Produces<ContentTransferDto>().Produces<string>(StatusCodes.Status409Conflict);
+
+agent.MapPut("/agent/transfers/{id:guid}/parts/{packageId}", async (
+    Guid id, string packageId, long offset, long total, HttpContext http, ContentTransferService transfers, CancellationToken ct) =>
+{
+    var sizeCap = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
+    if (sizeCap is { IsReadOnly: false }) sizeCap.MaxRequestBodySize = ContentTransferService.MaxChunkBytes;
+    try { return Results.Ok(await transfers.AppendAsync(http.CurrentMachine().Id, id, packageId, offset, total, http.Request.Body, ct)); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (TransferRefusedException ex) { return Results.Conflict(ex.Message); }
+}).Produces<ContentTransferDto>().Produces<string>(StatusCodes.Status409Conflict);
+
+agent.MapGet("/agent/transfers/{id:guid}/parts/{packageId}", async (Guid id, string packageId, HttpContext http, ContentTransferService transfers) =>
+{
+    try { return Results.File(await transfers.PartPathAsync(http.CurrentMachine().Id, id, packageId), "application/zip", enableRangeProcessing: true); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+});
+
+agent.MapPost("/agent/transfers/{id:guid}/delivered", async (Guid id, HttpContext http, ContentTransferService transfers) =>
+{
+    try { return Results.Ok(await transfers.DeliveredAsync(http.CurrentMachine().Id, id)); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (TransferRefusedException ex) { return Results.Conflict(ex.Message); }
+}).Produces<ContentTransferDto>().Produces<string>(StatusCodes.Status409Conflict);
+
+agent.MapPost("/agent/transfers/{id:guid}/cancel", async (Guid id, HttpContext http, ContentTransferService transfers) =>
+    await transfers.CancelAsync(http.CurrentMachine().Id, id) ? Results.NoContent() : Results.NotFound())
+    .Produces(StatusCodes.Status204NoContent);
+
 // The same game state the console reads, but reachable with a MACHINE key.
 //
 // `savelocker status` used to call the admin-filtered /games/{id}/state with only X-Api-Key, so it
@@ -787,6 +852,27 @@ admin.MapGet("/games/{id:guid}/paths", async (Guid id, SyncService sync) =>
 admin.MapGet("/games/{id:guid}/sources", async (Guid id, SyncService sync) =>
     Results.Ok(await sync.GetGameSourcesAsync(id)))
     .Produces<List<MachineGameSourceDto>>();
+
+admin.MapGet("/games/{id:guid}/transfers", async (Guid id, ContentTransferService transfers) =>
+    Results.Ok(await transfers.ForGameAsync(id))).Produces<ContentTransferDto[]>();
+
+// Asked from the console's Emulator settings: hand a machine the packs it lacks for the latest save.
+admin.MapPost("/games/{id:guid}/transfers", async (Guid id, ConsoleTransferRequest req, ContentTransferService transfers) =>
+{
+    try { return Results.Ok(await transfers.CreateForMachineAsync(id, req.ToMachineId)); }
+    catch (TransferRefusedException ex) { return Results.BadRequest(ex.Message); }
+}).Produces<ContentTransferDto>().Produces<string>(StatusCodes.Status400BadRequest);
+
+admin.MapGet("/transfers", async (ContentTransferService transfers) =>
+    Results.Ok(await transfers.OverviewAsync())).Produces<HandoverOverviewDto>();
+
+admin.MapPost("/transfers/{id:guid}/cancel", async (Guid id, ContentTransferService transfers) =>
+    await transfers.CancelAsync(null, id) ? Results.NoContent() : Results.NotFound())
+    .Produces(StatusCodes.Status204NoContent);
+
+admin.MapGet("/games/{id:guid}/content", async (Guid id, SyncService sync) =>
+    await sync.GetGameContentAsync(id) is { } content ? Results.Ok(content) : Results.NotFound())
+    .Produces<GameContentDto>();
 
 admin.MapPost("/games/{id:guid}/paths/{machineId:guid}", async (Guid id, Guid machineId, string? value, string? path, SyncService sync) =>
 {

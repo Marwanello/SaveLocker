@@ -27,7 +27,8 @@ public static class Mapping
             g.RetainVersions, GlobConfig.Parse(g.ExcludeGlobs), g.ConflictPolicy, g.PreferredMachineId,
             NullIfEmpty(GlobConfig.Parse(g.IncludeGlobs)),
             ToDtos(extraPaths, machinePaths),
-            Release: ReadRelease(g));
+            Release: ReadRelease(g),
+            EmulatorProfile: g.EmulatorProfile);
 
     /// <summary>The game's release, or null for none — or for JSON this build cannot read.</summary>
     public static GameReleaseDto? ReadRelease(Game g)
@@ -53,13 +54,21 @@ public static class Mapping
 
     public static SaveVersionDto ToDto(this SaveVersion v) =>
         new(v.Id, v.GameId, v.MachineId, UploaderName(v), v.CreatedAt,
-            v.ContentHash, v.Size, v.ParentVersionId, v.Protected);
+            v.ContentHash, v.Size, v.ParentVersionId, v.Protected, ReadContent(v.ContentJson));
+
+    /// <summary>A stored package list, or null for none — or for JSON this build cannot read.</summary>
+    public static ContentPackageDto[]? ReadContent(string? json)
+    {
+        if (json is null) return null;
+        try { return JsonSerializer.Deserialize<ContentPackageDto[]>(json, JsonSerializerOptions.Web); }
+        catch (JsonException) { return null; }
+    }
 
     /// <summary>
     /// Names the uploader honestly. A version whose machine has been deleted keeps its snapshotted
     /// name and says so, rather than rendering as an empty string.
     /// </summary>
-    private static string UploaderName(SaveVersion v)
+    internal static string UploaderName(SaveVersion v)
     {
         if (v.MachineId is not null) return v.Machine?.Name ?? v.MachineName;
         return string.IsNullOrWhiteSpace(v.MachineName)

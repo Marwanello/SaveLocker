@@ -3912,6 +3912,8 @@ passed on every rerun.
   `session_summary.md` (this session's kept). Unit **427**, all passing (run from a scratch worktree because the
   testenv agent was locking `src/Agent/bin`).
 
+---
+
 ## 2026-10-11 — Appearance follow-up (b): "N machines following"
 
 **PR:** [#67 on `Marwanello/SaveLocker`](https://github.com/Marwanello/SaveLocker/pull/67), *Appearance: "N machines following" on the console (last Group 5 follow-up)*. Head branch `appearance-follow-ups`, base `main`. Commits `6959a72` (code), `f5edb6e` and the closing docs commit.
@@ -3957,3 +3959,56 @@ A machine on an older agent can't report this, so it's in neither list. The prot
 ### Files
 
 `src/Shared/Contracts.cs`, `src/Server/Data/Entities.cs`, `src/Server/Services/HealthService.cs`, `src/Server/Migrations/*AddAgentFollowsConsoleAppearance*`, `src/Server/openapi.json`, `src/Agent.Core/HealthReporter.cs`, `web/src/components/{AppearanceCard,ConfigView}.tsx`, `web/src/api-types.ts`, `tests/run-health-tests.ps1`, `docs/{Backlog,CONTEXT,API Reference,Build and Run}.md`, `docs/logs/shipped-2026-10.md`, `docs/tasks/_done/appearance-follow-ups/` (moved from `docs/tasks/`), `docs/tasks/checkpoint-ui/{plan,implementation,implementation-grouping}.md` (links), this entry, `session_summary.md`.
+
+---
+
+## 2026-10-12 — Emulator saves Group E: Cemu, Azahar, Xenia; Xenia device saves; Xenia profile + DLC designed (PR #68)
+
+**Branch:** `emulator-saves-group-e`. PR: https://github.com/Marwanello/SaveLocker/pull/68.
+
+### Request sequence
+
+1. "Start implementing emulator saves group d" — Group D had already merged (#65), so Group E was confirmed with the
+   maintainer. Calls taken: captures from the Deck (read-only SSH) and the PC plus the research; Citra's folders are Azahar's
+   (one game); a bundled title table where licensed.
+2. Asked whether any emulator ties a save to a user, researched thoroughly in each emulator's source.
+3. Asked what the title IDs shown as names (`3DS 00054000`, `Wii U 10145D00`, `3DS 0016E300`) are.
+4. Asked to build the three Xenia fixes on the PR, but for the profile one to plan first: copy the **whole profile** (no other
+   saves) so saves work on another machine, plus an **option to sync DLC**.
+
+### What shipped (PR #68)
+
+- **Phase 14, Cemu:** `usr/save/00050000/<low>`, scope `<low>/**`; named by Cemu's title cache, `meta.xml`, else `Wii U <ID>`.
+- **Phase 15, Azahar:** `title/00040000/<low>/data`, scope `<low>/data/**` (never the installed `content/`), states
+  `<program ID>.*`; new `Ncch` reads a ROM's program ID and product code; Citra folders as rows.
+- **Phase 5b, Xenia:** saved games and their headers in `content/<XUID>/<TID>` or `content/<TID>`; never DLC or updates.
+- **Title table:** Xbox 360 by title ID (a Redump serial spells it: `MS-2505` → `4D5309C9`, Forza Horizon; No-Intro Arcade
+  titles) and 3DS by product code (No-Intro), same pinned commit, old rows unchanged. No Wii U table exists; 3dsdb has no licence.
+- **Xenia follow-ups:** device saves (`content/0000000000000000`, key `device`, xenia-canary#743) as every game's second
+  folder; Canary's 2023 named-profile layout (`content/User/<TID>`).
+- Chips, help, testenv fixtures, vault docs. Unit **474**; both main scopes mutation-checked in two-machine tests.
+
+### Findings
+
+- **No emulator checks a save's owner.** Cemu, RPCS3, shadPS4, Vita3K and Xenia bind by folder only; RPCS3 and shadPS4 write
+  `ACCOUNT_ID` as zeros; Azahar's SD IDs are all zeros and its saves unencrypted (Checkpoint dumps load in Citra).
+- **Xenia XUIDs are random per profile** (`GenerateXuid`); the Deck and PC share `E030000033894516` only because it was copied.
+  Some Xbox 360 games may keep the XUID inside the save, so one profile on every machine is the safe setup.
+- The IDs asked about: `00054000` Super Mario 3D Land (the Deck's ROM header), `10145D00` Mario Kart 8 (fixture),
+  `0016E300` an unidentified Deck save with no ROM.
+- **Profile on disk:** `content/<XUID>/FFFE07D1/00010000/<XUID>/` (`Account` is encrypted, per-game `.gpd`) + its header,
+  ~210 KB. **DLC** always under XUID 0; Forza Horizon's is **1.0 GB**, over the 500 MB upload cap.
+
+### Phase 5c — designed, not built
+
+Step 1, the profile as its own Add games entry scoped to its XUID, pullable onto a machine that lacks it; step 2, DLC per game
+as its own entry, opt-in, which needs a larger server cap. Four open questions in `tasks/emulator-saves/plan.md` → *Phase 5c*.
+
+### Not verified
+
+The testenv pass of Group E, and the real-game checks (Group H: Cemu, Azahar, Xenia).
+
+**Phase 5c, maintainer's calls (same day):** the profile and DLC as folders of each game, a separate 2 GB cap for DLC, the
+gamertag decrypted. Two consequences recorded in the plan and raised before building: one game's pull restores the profile as
+that game last pushed it (other games' newer achievements/settings lost on that machine, and `SaveFolderClaims` needs an
+exception); DLC in every version makes Forza Horizon ~1 GB per version (~7 GB kept, 1 GB per pull).

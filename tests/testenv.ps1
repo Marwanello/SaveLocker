@@ -101,7 +101,7 @@
 #                                 write a fake EmuDeck "Emulation" folder (three RetroArch saves, two ROMs'
 #                                 save states, one ROM; melonDS, Model 2, ScummVM; PCSX2 folder + file cards,
 #                                 DuckStation per-game + shared cards, Dolphin GameCube + Wii; PPSSPP, RPCS3,
-#                                 Vita3K, shadPS4 with PARAM.SFO files) for the
+#                                 Vita3K, shadPS4 with PARAM.SFO files; Cemu, Azahar with ROM headers, Xenia) for the
 #                                 emulator-saves feature, plus a second one at
 #                                 "<StateRoot>\Emulation-wsl" that the WSL test agent scans (an old Chrono save,
 #                                 no Chrono states). Default location is "<StateRoot>\Emulation",
@@ -109,6 +109,9 @@
 #                                 install (restart it with `up -Only windows`); `clean` deletes it with the rest
 #                                 of the state. -EmuDeckPath (or $env:SAVELOCKER_EMUDECK_PATH) points the agent
 #                                 at any other folder, a copy of a real one included.
+#   .\tests\testenv.ps1 help [command]
+#                                 print this list of commands (or one command's entry) and the
+#                                 options and variables that steer them; touches nothing
 #   .\tests\testenv.ps1 deck-config -DeckHost deck@<ip> [-DeckServerUrl http://<lan-ip>:5080]
 #                                 write/update tests/testenv.local.ps1 (below) instead of hand-
 #                                 editing it; no args just prints what's currently saved
@@ -160,8 +163,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'art', 'clean', 'deck-config', 'playnite-import', 'emu-fixture')]
+    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'art', 'clean', 'deck-config', 'playnite-import', 'emu-fixture', 'help')]
     [string]$Command = 'status',
+
+    # `help <command>`: show only that command's entry.
+    [Parameter(Position = 1)]
+    [string]$Topic,
 
     # Never a released version number. A test build stamped with one compares equal to the real
     # release forever, so the update channel can never move it (Gotchas.md). Auto-derived from the
@@ -275,6 +282,54 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
+# `help` reads this file's own header, so the commands it lists are the ones documented above and
+# cannot drift from them. Handled before anything else: it must not load testenv.local.ps1, touch WSL
+# or SSH to the Deck.
+if ($Command -eq 'help') {
+    $header = @()
+    foreach ($line in Get-Content -LiteralPath $PSCommandPath -Encoding utf8) {
+        if ($line -notmatch '^#') { break }
+        $header += ($line -replace '^# ?', '')
+    }
+    $entryStart = '^  \.\\tests\\testenv\.ps1 (\S+)'
+    $start = 0; while ($header[$start] -notmatch $entryStart) { $start++ }
+    $end = $start; while ($header[$end] -notmatch '^Separation rests on') { $end++ }
+    $commands = $header[$start..($end - 2)]
+    if ($Topic) {
+        $entry = @(); $inside = $false
+        foreach ($l in $commands) {
+            if ($l -match $entryStart) { $inside = $Matches[1] -eq $Topic }
+            if ($inside) { $entry += $l }
+        }
+        if ($entry.Count -eq 0) { Write-Host "No command '$Topic'. Run: .\tests\testenv.ps1 help"; exit 1 }
+        $entry | ForEach-Object { Write-Host $_ }
+        exit 0
+    }
+    Write-Host 'testenv - a throwaway SaveLocker fleet (Windows agent, WSL agent, console, optional Deck and Playnite),'
+    Write-Host 'run beside, never instead of, the installed agent and real saves.'
+    Write-Host ''
+    Write-Host 'Commands (default: status). Each with its first line; help <command> shows the whole entry:'
+    $first = $false
+    foreach ($l in $commands) {
+        if ($l -match $entryStart) { Write-Host $l; $first = $l -notmatch '^  \.\\tests\\testenv\.ps1 \S+ {2,}\S'; continue }
+        if ($first) { Write-Host $l; $first = $false }
+    }
+    Write-Host ''
+    Write-Host 'Common options:'
+    Write-Host '  -Only all|windows|linux|deck|console|playnite   scope build/up to one target'
+    Write-Host '  -DeckHost deck@<ip>  -DeckServerUrl http://<lan-ip>:5080   (or tests\testenv.local.ps1, see deck-config)'
+    Write-Host '  -PlaynitePath <dir>  -EmuDeckPath <dir>'
+    Write-Host ''
+    Write-Host 'Variables read (set in this shell or in tests\testenv.local.ps1):'
+    Write-Host '  SAVELOCKER_DECK_HOST, SAVELOCKER_DECK_SERVER_URL               the Deck target'
+    Write-Host '  SAVELOCKER_PLAYNITE_PATH                                       the Playnite install the plugin goes into'
+    Write-Host '  SAVELOCKER_DECKY_PLUGIN_REPO, SAVELOCKER_PLAYNITE_PLUGIN_REPO   plugin checkouts (default: the sibling folders)'
+    Write-Host '  SAVELOCKER_EMUDECK_PATH                                        the Emulation folder the Windows agent scans'
+    Write-Host ''
+    Write-Host 'More: docs\Build and Run.md -> "Throwaway test rig (testenv)". One command: .\tests\testenv.ps1 help <command>'
+    exit 0
+}
+
 # Machine-specific settings live here, not just in $env: vars set for one shell — a home LAN's DHCP
 # lease can move the Deck's IP at any time, and a Playnite checkout's path doesn't belong in a shell
 # profile either, so this needs to be a place you go edit ONE line and have every future session pick
@@ -300,6 +355,13 @@ if (Test-Path $localConfig) {
     }
     if (-not $PSBoundParameters.ContainsKey('PlaynitePluginRepo') -and $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO) {
         $PlaynitePluginRepo = $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO
+    }
+    # Same for the state root. Worth setting here when the rig is driven from a packaged (MSIX) app, such as
+    # the Claude desktop app's terminal: Windows silently redirects such a process's writes under
+    # %LOCALAPPDATA% into the package's own folder, so the default root exists for it alone - WSL's agent
+    # never sees the fixture, and a plain terminal sees another, empty rig.
+    if (-not $PSBoundParameters.ContainsKey('StateRoot') -and $env:SAVELOCKER_TEST_ROOT) {
+        $StateRoot = $env:SAVELOCKER_TEST_ROOT
     }
 }
 
@@ -462,12 +524,76 @@ function New-ParamSfo {
     $b.AddRange($index); $b.AddRange($keys); $b.AddRange($data)
     return ,$b.ToArray()
 }
+# A 3DS cartridge image's headers only (NCSD, first partition at 0x4000, its NCCH): what Ncch.cs reads, laid out like the
+# Deck's ROMs. The program ID is little-endian at NCCH 0x118, the product code at 0x150.
+function New-Ncsd {
+    param([UInt64]$ProgramId, [string]$ProductCode)
+    $b = New-Object byte[] (0x4000 + 0x200)
+    [Text.Encoding]::ASCII.GetBytes('NCSD').CopyTo($b, 0x100)
+    [BitConverter]::GetBytes([uint32](0x4000 / 0x200)).CopyTo($b, 0x120)
+    (New-Ncch $ProgramId $ProductCode).CopyTo($b, 0x4000)
+    return ,$b
+}
+# A 3DS game's installed NCCH (content/00000000.app): the same header from byte 0.
+function New-Ncch {
+    param([UInt64]$ProgramId, [string]$ProductCode)
+    $b = New-Object byte[] 0x200
+    [Text.Encoding]::ASCII.GetBytes('NCCH').CopyTo($b, 0x100)
+    [BitConverter]::GetBytes($ProgramId).CopyTo($b, 0x118)
+    [Text.Encoding]::ASCII.GetBytes($ProductCode).CopyTo($b, 0x150)
+    return ,$b
+}
 function Get-EmuDeckPath {
     if ($EmuDeckPath) { return $EmuDeckPath }
     $fixture = Get-EmuDeckFixturePath
     if (Test-Path (Join-Path $fixture '.savelocker-emu-fixture')) { return $fixture }
     return $null
 }
+# A Xenia profile's encrypted Account, as Xenia writes it (tasks/emulator-saves Phase 5c): the gamertag at +16 of the data,
+# HMAC-SHA1 with the retail XEKEY 0x19 as the hash, RC4 keyed by the hash. The launch check reads the gamertag from it.
+function New-XeniaAccount([string]$Gamertag) {
+    $key = [byte[]](0xE1,0xBC,0x15,0x9C,0x73,0xB1,0xEA,0xE9,0xAB,0x31,0x70,0xF3,0xAD,0x47,0xEB,0xF3)
+    $data = New-Object byte[] 388
+    $tag = [Text.Encoding]::BigEndianUnicode.GetBytes($Gamertag)
+    [Array]::Copy($tag, 0, $data, 16, $tag.Length)
+    $hmac = [Security.Cryptography.HMACSHA1]::new($key)
+    $hash = [byte[]]($hmac.ComputeHash($data)[0..15])
+    $rc4Key = [byte[]]($hmac.ComputeHash($hash)[0..15])
+    $s = [byte[]](0..255); $j = 0
+    for ($i = 0; $i -lt 256; $i++) { $j = ($j + $s[$i] + $rc4Key[$i % 16]) -band 255; $t = $s[$i]; $s[$i] = $s[$j]; $s[$j] = $t }
+    $out = New-Object byte[] $data.Length; $i = 0; $j = 0
+    for ($n = 0; $n -lt $data.Length; $n++) {
+        $i = ($i + 1) -band 255; $j = ($j + $s[$i]) -band 255; $t = $s[$i]; $s[$i] = $s[$j]; $s[$j] = $t
+        $out[$n] = $data[$n] -bxor $s[($s[$i] + $s[$j]) -band 255]
+    }
+    return [byte[]]($hash + $out)
+}
+
+# A DLC or title-update package header as Xenia writes it (Headers/<type>/<id>.header, 332 bytes): device, content type,
+# display name UTF-16BE at 8, file name at 0x108, title ID at 0x140. The DLC check names packages from it.
+function New-XeniaContentHeader([uint32]$ContentType, [string]$Name, [string]$FileName, [uint32]$TitleId) {
+    $b = New-Object byte[] 332
+    foreach ($field in @(@(1, 0), @($ContentType, 4), @($TitleId, 0x140))) {
+        $v = [uint32]$field[0]; $at = $field[1]
+        $b[$at] = ($v -shr 24) -band 255; $b[$at + 1] = ($v -shr 16) -band 255; $b[$at + 2] = ($v -shr 8) -band 255; $b[$at + 3] = $v -band 255
+    }
+    $n = [Text.Encoding]::BigEndianUnicode.GetBytes($Name); [Array]::Copy($n, 0, $b, 8, [Math]::Min($n.Length, 0xFE))
+    $f = [Text.Encoding]::ASCII.GetBytes($FileName); [Array]::Copy($f, 0, $b, 0x108, [Math]::Min($f.Length, 0x37))
+    return $b
+}
+
+# One installed package for Forza Horizon (4D5309C9): its folder, with a data file of the given size, and its header.
+function Write-XeniaPackage([string]$TitleHome, [string]$Type, [string]$Id, [string]$Name, [int]$Bytes) {
+    Write-FixtureBytes (Join-Path $TitleHome "$Type\$Id\Content\data.bin") (New-Object byte[] $Bytes)
+    $ct = if ($Type -eq '00000002') { 2 } else { 0xB0000 }
+    Write-FixtureBytes (Join-Path $TitleHome "Headers\$Type\$Id.header") (New-XeniaContentHeader $ct $Name $Id 0x4D5309C9)
+}
+
+function New-XeniaConfig([string]$Xuid) {
+    return "[Profiles]`nlogged_profile_slot_0_xuid = `"$Xuid`"   `t# XUID of the profile to load on boot in slot 0`n" +
+        "logged_profile_slot_1_xuid = `"`"                   `t# XUID of the profile to load on boot in slot 1`n`n[Storage]`ncontent_root = `"`"`n"
+}
+
 function New-EmuDeckFixture {
     $target = if ($EmuDeckPath) { $EmuDeckPath } else { Get-EmuDeckFixturePath }
     $marker = Join-Path $target '.savelocker-emu-fixture'
@@ -563,6 +689,45 @@ function New-EmuDeckFixture {
     $ps4 = Join-Path $target 'saves\shadps4\saves\1'
     Write-FixtureBytes (Join-Path $ps4 'CUSA00900\SPRJ0005\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ MAINTITLE = 'Bloodborne'; SUBTITLE = 'Hunter' }))
     Write-FixtureFile (Join-Path $ps4 'CUSA00900\SPRJ0005\userdata0000') "bloodborne save $(Get-Date -Format o)"
+    # Group E (title-ID folders). Cemu: Mario Kart 8 (named by the fixture home's title cache below) and Breath of the
+    # Wild (in no cache: "Wii U 101C9500"), and a system app's save that is no game.
+    $wiiu = Join-Path $target 'saves\Cemu\saves\00050000'
+    Write-FixtureFile (Join-Path $wiiu '10145d00\user\80000001\save.dat') "mario kart 8 save $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $wiiu '10145d00\user\common\db.dat') 'mario kart 8 common'
+    Write-FixtureFile (Join-Path $wiiu '101c9500\user\80000001\game_data.sav') 'breath of the wild - must survive every Mario Kart pull'
+    Write-FixtureFile (Join-Path $target 'saves\Cemu\saves\00050010\1004a100\user\common\db\data') 'a system app - never a game'
+    # Azahar: Super Mario 3D Land with a state and its ROM; Samus Returns installed from a CIA (named from its content).
+    $n3ds = Join-Path $target 'saves\azahar\saves\Nintendo 3DS\00000000000000000000000000000000\00000000000000000000000000000000\title\00040000'
+    Write-FixtureFile (Join-Path $n3ds '00054000\data\00000001\GameData.bin') "super mario 3d land save $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $n3ds '00054000\data\00000001.metadata') 'metadata'
+    Write-FixtureFile (Join-Path $target 'saves\azahar\states\0004000000054000.01.cst') "super mario 3d land slot 1 $(Get-Date -Format o)"
+    Write-FixtureBytes (Join-Path $target 'roms\n3ds\Super Mario 3D Land (CTR-P-AREE) (U).cci') (New-Ncsd 0x0004000000054000 'CTR-P-AREE')
+    Write-FixtureFile (Join-Path $n3ds '001bb200\data\00000001\profile0\samus.bmssv') 'samus returns - must survive every Mario pull'
+    Write-FixtureBytes (Join-Path $n3ds '001bb200\content\00000000.app') (New-Ncch 0x00040000001BB200 'CTR-P-A9AE')
+    # Xenia: the PC's real profile layout - Forza Horizon with a DLC beside it, Forza Horizon 2 next door.
+    $x360 = Join-Path $target 'saves\xenia\saves\E030000033894516'
+    Write-FixtureFile (Join-Path $x360 '4D5309C9\00000001\ForzaProfile\ForzaProfile') "forza horizon profile $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $x360 '4D5309C9\Headers\00000001\ForzaProfile.header') 'header'
+    Write-FixtureFile (Join-Path $x360 '4D5309C9\00000002\13E2064584A4BA7759BA105051C2199ABC5FA5554D\Media\dlc.bin') 'forza dlc - never synced'
+    Write-FixtureFile (Join-Path $x360 '4D530AA4\00000001\ForzaProfile\PlayerDatabase') 'forza horizon 2 - must survive every Forza Horizon pull'
+    # A device save no profile owns (Rock Band 3's calibration, xenia-canary#743), and its DLC that never syncs.
+    # The profile checked at launch (Phase 5c): Forza Horizon's saves are under E030000033894516 ("Driver"), but Xenia is
+    # set to sign in as another profile ("Player1") - in the install's config and in Xenia Manager's own for the game.
+    # Here the install is saves\xenia, the parent of the content folder, as on a portable install.
+    $x360Root = Join-Path $target 'saves\xenia'
+    Write-FixtureBytes (Join-Path $x360 'FFFE07D1\00010000\E030000033894516\Account') (New-XeniaAccount 'Driver')
+    Write-FixtureBytes (Join-Path $x360Root 'saves\E03000004A1C77B2\FFFE07D1\00010000\E03000004A1C77B2\Account') (New-XeniaAccount 'Player1')
+    Write-FixtureFile (Join-Path $x360Root 'xenia-canary.config.toml') (New-XeniaConfig 'E03000004A1C77B2')
+    Write-FixtureFile (Join-Path $x360Root 'config\Forza Horizon.config.toml') (New-XeniaConfig 'E03000004A1C77B2')
+    Write-FixtureFile (Join-Path $x360Root 'xenia_canary.exe') 'not a real xenia'
+    $x360Device = Join-Path $target 'saves\xenia\saves\0000000000000000'
+    Write-FixtureFile (Join-Path $x360Device '45410914\00000001\globaloptions\options') "rock band 3 calibration $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $x360Device '45410914\00000002\SONGPACK\song.bin') 'rock band dlc - never synced'
+    # The DLC check and hand-over (Phase 5c): Forza Horizon's two packs and a title update where Xenia installs them
+    # (content/0000000000000000/<title ID>). The WSL machine has only the first pack, so its pull of a Windows save is held.
+    Write-XeniaPackage (Join-Path $x360Device '4D5309C9') '00000002' 'AAAA0000000000000000000000000000000000000A' 'Pre-Order Car Pack' 300000
+    Write-XeniaPackage (Join-Path $x360Device '4D5309C9') '00000002' 'BBBB0000000000000000000000000000000000000B' 'Rally Expansion Pack' 6000000
+    Write-XeniaPackage (Join-Path $x360Device '4D5309C9') '000B0000' 'tu00000002_00000000' 'Title Update 2' 150000
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
@@ -581,6 +746,9 @@ function New-EmuDeckFixture {
             "[monkey]`ngameid=monkey`nengineid=scumm`ndescription=The Secret of Monkey Island (CD/DOS/English)`n")
         Write-FixtureFile (Join-Path $svmSaves 'monkey2.s01') "monkey2 slot 1 $(Get-Date -Format o)"
         Write-FixtureFile (Join-Path $svmSaves 'monkey.s00') 'monkey 1 - must survive every Monkey Island 2 pull'
+        # Cemu's title cache (EmuDeck for Windows' portable copy keeps it beside the exe): names Mario Kart 8 only.
+        Write-FixtureFile (Join-Path $emuHome 'AppData\Roaming\EmuDeck\Emulators\cemu\title_list_cache.xml') ('<?xml version="1.0" encoding="UTF-8"?>' +
+            "`n<title_list>`n <title titleId=`"0005000010145d00`" version=`"64`"><region>2</region><name>Mario Kart 8</name></title>`n</title_list>`n")
         Say "emulator home fixture at $emuHome"
     }
     Write-Host "  saves:  $saves"
@@ -655,6 +823,21 @@ function New-EmuDeckFixture {
         $wPs4 = Join-Path $wHome '.local\share\shadPS4\home\1000\savedata'
         Write-FixtureBytes (Join-Path $wPs4 'CUSA00900\SPRJ0005\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ MAINTITLE = 'Bloodborne' }))
         Write-FixtureFile (Join-Path $wPs4 'CUSA00900\SPRJ0005\userdata0000') 'old bloodborne save on the WSL machine'
+        # Group E on SteamOS: older saves, no title cache or ROM (so other names - they join Windows' games by folder), and
+        # Xenia on the old layout (content/<title ID>), which joins Windows' profile-layout game.
+        $wWiiu = Join-Path $wsl 'saves\Cemu\saves\00050000'
+        Write-FixtureFile (Join-Path $wWiiu '10145d00\user\80000001\save.dat') 'old mario kart 8 save on the WSL machine'
+        $wN3ds = Join-Path $wsl 'saves\azahar\saves\Nintendo 3DS\00000000000000000000000000000000\00000000000000000000000000000000\title\00040000'
+        Write-FixtureFile (Join-Path $wN3ds '00054000\data\00000001\GameData.bin') 'old super mario 3d land save on the WSL machine'
+        Write-FixtureFile (Join-Path $wN3ds '0016e300\data\00000001\profile1.sav') 'wsl 3ds game with no rom - must survive every Mario pull'
+        New-Item -ItemType Directory -Force (Join-Path $wsl 'saves\azahar\states') | Out-Null
+        $wX360 = Join-Path $wsl 'saves\xenia\saves'
+        Write-FixtureFile (Join-Path $wX360 '4D5309C9\00000001\ForzaProfile\ForzaProfile') 'old forza horizon profile on the WSL machine'
+        Write-FixtureFile (Join-Path $wX360 '584109FF\00000001\save.dat') 'wsl plants vs. zombies - must survive every Forza pull'
+        # The DLC check: the old layout keeps packages in content/<title ID>; only the first of Windows' two packs is here.
+        Write-XeniaPackage (Join-Path $wX360 '4D5309C9') '00000002' 'AAAA0000000000000000000000000000000000000A' 'Pre-Order Car Pack' 300000
+        # Canary's 2023 named-profile layout (content/User/<title ID>): Halo 3, found and listed like any other.
+        Write-FixtureFile (Join-Path $wX360 'User\4D5307E6\00000001\Halo3Save\save') 'halo 3 save in the named-profile layout'
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }

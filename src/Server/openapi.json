@@ -851,6 +851,365 @@
         }
       }
     },
+    "/api/agent/games/{id}/content": {
+      "put": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportContentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/agent/games/{id}/launch-profile": {
+      "put": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchProfileReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/agent/transfers": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentTransferDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContentTransferDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/transfers/{id}/answer": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentTransferDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/transfers/{id}/parts/{packageId}": {
+      "put": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "packageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "total",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentTransferDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "packageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/agent/transfers/{id}/delivered": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentTransferDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/transfers/{id}/cancel": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/api/agent/games/{id}/state": {
       "get": {
         "tags": [
@@ -1719,6 +2078,159 @@
                   "items": {
                     "$ref": "#/components/schemas/MachineGameSourceDto"
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/games/{id}/transfers": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContentTransferDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsoleTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentTransferDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transfers": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoverOverviewDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transfers/{id}/cancel": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/api/games/{id}/content": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameContentDto"
                 }
               }
             }
@@ -4688,6 +5200,102 @@
           "Resolved"
         ]
       },
+      "ConsoleTransferRequest": {
+        "required": [
+          "toMachineId"
+        ],
+        "type": "object",
+        "properties": {
+          "toMachineId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ContentPackageDto": {
+        "required": [
+          "kind",
+          "id",
+          "name",
+          "size"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ContentTransferDto": {
+        "required": [
+          "id",
+          "gameId",
+          "gameName",
+          "fromMachineId",
+          "fromMachineName",
+          "toMachineId",
+          "toMachineName",
+          "status",
+          "createdAt",
+          "expiresAt",
+          "parts"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "gameId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "gameName": {
+            "type": "string"
+          },
+          "fromMachineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fromMachineName": {
+            "type": "string"
+          },
+          "toMachineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toMachineName": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TransferStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransferPartDto"
+            }
+          }
+        }
+      },
       "CreateEnrollmentRequest": {
         "type": "object",
         "properties": {
@@ -4808,6 +5416,12 @@
                 "$ref": "#/components/schemas/GameReleaseDto"
               }
             ]
+          },
+          "emulatorProfile": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -4822,6 +5436,30 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "CreateTransferRequest": {
+        "required": [
+          "gameId",
+          "fromMachineId",
+          "packages"
+        ],
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fromMachineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentPackageDto"
+            }
           }
         }
       },
@@ -5046,6 +5684,45 @@
           }
         }
       },
+      "GameContentDto": {
+        "required": [
+          "headVersionId",
+          "headMachineName",
+          "headContent",
+          "machines"
+        ],
+        "type": "object",
+        "properties": {
+          "headVersionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "headMachineName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "headContent": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ContentPackageDto"
+            }
+          },
+          "machines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineContentDto"
+            }
+          }
+        }
+      },
       "GameDto": {
         "required": [
           "id",
@@ -5186,6 +5863,12 @@
                 "$ref": "#/components/schemas/GameReleaseDto"
               }
             ]
+          },
+          "emulatorProfile": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -5315,6 +5998,35 @@
           }
         }
       },
+      "HandoverOverviewDto": {
+        "required": [
+          "maxBytes",
+          "expiryDays",
+          "bytesInTransit",
+          "open"
+        ],
+        "type": "object",
+        "properties": {
+          "maxBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiryDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bytesInTransit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "open": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentTransferDto"
+            }
+          }
+        }
+      },
       "HeadFileDto": {
         "required": [
           "path",
@@ -5414,6 +6126,83 @@
           }
         }
       },
+      "LaunchProfileDto": {
+        "required": [
+          "gameXuid",
+          "gameTag",
+          "configuredXuid",
+          "configuredTag",
+          "action",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "gameXuid": {
+            "type": "string"
+          },
+          "gameTag": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "configuredXuid": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "configuredTag": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "action": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LaunchProfileReport": {
+        "required": [
+          "gameXuid",
+          "gameTag",
+          "configuredXuid",
+          "configuredTag",
+          "action"
+        ],
+        "type": "object",
+        "properties": {
+          "gameXuid": {
+            "type": "string"
+          },
+          "gameTag": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "configuredXuid": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "configuredTag": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "action": {
+            "type": "string"
+          }
+        }
+      },
       "LeaseAcquireResponse": {
         "required": [
           "granted",
@@ -5485,6 +6274,44 @@
           "retryAfterSeconds": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "MachineContentDto": {
+        "required": [
+          "machineId",
+          "machineName",
+          "packages",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "machineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "machineName": {
+            "type": "string"
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentPackageDto"
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "launch": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LaunchProfileDto"
+              }
+            ]
           }
         }
       },
@@ -5652,6 +6479,27 @@
           }
         }
       },
+      "ReportContentRequest": {
+        "required": [
+          "packages"
+        ],
+        "type": "object",
+        "properties": {
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentPackageDto"
+            }
+          },
+          "versionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "SavePathDto": {
         "required": [
           "key",
@@ -5770,6 +6618,15 @@
           "protected": {
             "type": "boolean",
             "default": false
+          },
+          "content": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ContentPackageDto"
+            }
           }
         }
       },
@@ -6139,6 +6996,69 @@
             "type": "string"
           }
         }
+      },
+      "TransferAnswerRequest": {
+        "required": [
+          "approve"
+        ],
+        "type": "object",
+        "properties": {
+          "approve": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TransferPartDto": {
+        "required": [
+          "kind",
+          "packageId",
+          "name",
+          "size",
+          "zipSize",
+          "received",
+          "complete"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "packageId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "zipSize": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "received": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "complete": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TransferStatus": {
+        "enum": [
+          "Requested",
+          "Approved",
+          "Ready",
+          "Delivered",
+          "Declined",
+          "Cancelled",
+          "Expired"
+        ]
       },
       "UploadResult": {
         "required": [

@@ -183,6 +183,9 @@ public sealed class EnrollDeclaredFoldersTests : IClassFixture<ServerProcess>, I
 
         Assert.Equal((0, 1), result);
         Assert.DoesNotContain(await ApiClient.For(a).ListGamesAsync(), g => g.Name == game);
+        // The reason reaches the person: Add games showed "skipped, already tracked" for a refusal like this.
+        Assert.Null(Enroller.DeclaredFolders(a, candidate, saves, out var why));
+        Assert.Contains("nested", why);
     }
 
     /// <summary>A manifest-shaped candidate: one save folder, two more locations "Also found".</summary>

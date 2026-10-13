@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, errorText } from '../../api';
 import type {
-  AgentHealth, Command, Conflict, GameIntent, GameSummary, Machine, MachineGameSource, MachineSavePath, MachineScanCandidate, Version,
+  AgentHealth, Command, Conflict, GameContent, GameIntent, GameSummary, Machine, MachineGameSource, MachineSavePath, MachineScanCandidate, Version,
 } from '../../types';
 import { toast, toastError } from '../../toast';
+import { missingPacks } from '../../dlc';
 import { problemGameIds, standing } from './gameState';
 import { ArtPicker } from '../ArtPicker';
 import { GameHead } from './GameHead';
@@ -13,6 +14,9 @@ import { ConflictPanel } from './ConflictPanel';
 import { GameStats } from './GameStats';
 import { VersionsCard } from './VersionsCard';
 import { SaveFoldersCard } from './SaveFoldersCard';
+import { EmulatorSettings, type EmulatorTab } from './EmulatorSettings';
+import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
 import { RulesCard } from './RulesCard';
 import { ExcludePatternsCard } from './ExcludePatternsCard';
 import { RemoteCommandsCard } from './RemoteCommandsCard';
@@ -43,6 +47,9 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   const [pathsLoaded, setPathsLoaded] = useState(false);
   const [artOpen, setArtOpen] = useState(false);
   const penRef = useRef<HTMLButtonElement>(null);
+  // Emulator settings, open on one of its sections; null is the game's own page.
+  const [emuTab, setEmuTab] = useState<EmulatorTab | null>(null);
+  const [content, setContent] = useState<GameContent | null>(null);
 
   useEffect(() => {
     setLoadingVersions(true);
@@ -52,7 +59,23 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
     api.getGamePathCandidates(game.id).then(setCandidates).catch(() => {});
     setSources([]);
     api.getGameSources(game.id).then(setSources).catch(() => {});
+    setEmuTab(null);
   }, [game.id]);
+
+  // Only Xenia has emulator settings so far. A game that runs in it either has its profile recorded or a machine found it
+  // through Xenia.
+  const xenia = !!game.emulatorProfile?.startsWith('xenia:')
+    || sources.some(s => s.source.kind === 'emulator' && /xenia/i.test(s.source.detail));
+
+  // For the count on the Emulator settings button: machines missing some of the packs the latest save needs.
+  useEffect(() => {
+    if (!xenia) { setContent(null); return; }
+    let live = true;
+    api.getGameContent(game.id).then(c => { if (live) setContent(c); }).catch(() => { if (live) setContent(null); });
+    return () => { live = false; };
+  }, [game.id, xenia, versions.length]);
+  const headContent = content?.headContent ?? [];
+  const short = (content?.machines ?? []).filter(m => missingPacks(headContent, m.packages).length > 0).length;
 
   async function reloadVersions() { setVersions(await api.versions(game.id)); }
 
@@ -107,6 +130,10 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
     setResolveTarget({ seq: intent.seq, conflictId: intent.value.conflictId ?? gameConflicts[0]?.id ?? null });
   }
 
+  if (xenia && emuTab) {
+    return <EmulatorSettings game={game} tab={emuTab} onTab={setEmuTab} onBack={() => setEmuTab(null)} refreshKey={versions.length} />;
+  }
+
   return (
     <>
       <GameHead
@@ -114,14 +141,31 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
         standing={standing(summary, problemGameIds(health))}
         versionCount={versions.length}
         machines={withGame.length > 0 ? withGame : machines}
-        source={sources.length > 0 || game.release
+        source={sources.length > 0 || game.release || game.emulatorProfile
           ? <span className="flex flex-wrap items-center gap-1.5">
               {sources.length > 0 && <SourceChip sources={sources} machines={withGame} paths={paths} />}
               <ReleaseChip game={game} sources={sources} />
+              {game.emulatorProfile?.startsWith('xenia:') && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-line bg-raise px-2 py-0.5 text-[11px] text-dim"
+                  title="The Xbox 360 profile this game's saves are under. Every machine syncs it there, and Xenia is set to this profile when the game starts."
+                >
+                  Xbox 360 profile <span className="font-mono">{game.emulatorProfile.slice(6)}</span>
+                </span>
+              )}
             </span>
           : undefined}
         allMachines={machines}
         health={health}
+        extra={xenia && (
+          <Button onClick={() => setEmuTab(short > 0 ? 'dlc' : 'profile')} title="Xbox 360 profile at launch, DLC and hand-overs">
+            <Icon name="sliders-horizontal" size={13} />Emulator settings
+            {short > 0 && (
+              <span className="min-w-[17px] h-[17px] px-1 rounded-full grid place-items-center text-[10px] font-bold tabular-nums bg-watch text-on-accent"
+                aria-label={`${short} machine${short === 1 ? '' : 's'} missing DLC`}>{short}</span>
+            )}
+          </Button>
+        )}
         artOpen={artOpen}
         onToggleArt={() => setArtOpen(o => !o)}
         penRef={penRef}

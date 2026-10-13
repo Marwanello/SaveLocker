@@ -442,6 +442,79 @@ public sealed class SyncService
     private static GameSourceDto ToDto(MachineGameSource s) =>
         new(s.Kind, s.Detail, s.Tags is null ? null : s.Tags.Split('\n'));
 
+    // ----- The DLC check (tasks/emulator-saves Phase 5c) -----
+
+    /// <summary>
+    /// Stores what a machine has for a game. With <see cref="ReportContentRequest.VersionId"/>, the list is also what that
+    /// version was made with — only for a version this machine uploaded, and only the first time, so a later report can
+    /// never rewrite what a save needed.
+    /// </summary>
+    public async Task<bool> ReportContentAsync(Guid machineId, Guid gameId, ReportContentRequest req)
+    {
+        if (!await _db.Games.AnyAsync(g => g.Id == gameId)) return false;
+        var json = JsonSerializer.Serialize(req.Packages, JsonSerializerOptions.Web);
+        var row = await _db.MachineGameContents.FindAsync(machineId, gameId);
+        if (row is null)
+        {
+            row = new MachineGameContent { MachineId = machineId, GameId = gameId };
+            _db.MachineGameContents.Add(row);
+        }
+        row.ContentJson = json;
+        row.UpdatedAt = DateTime.UtcNow;
+        if (req.VersionId is { } versionId &&
+            await _db.SaveVersions.FirstOrDefaultAsync(v => v.Id == versionId && v.GameId == gameId) is { } version &&
+            version.MachineId == machineId && version.ContentJson is null)
+            version.ContentJson = json;
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
+    /// <summary>The console's DLC check for a game: the head's list and every machine's.</summary>
+    public async Task<GameContentDto?> GetGameContentAsync(Guid gameId)
+    {
+        var game = await _db.Games.FindAsync(gameId);
+        if (game is null) return null;
+        var head = await _db.SaveVersions.Include(v => v.Machine).Where(v => v.Id == game.HeadVersionId).FirstOrDefaultAsync();
+        // Only machines that still keep the game: a row outlives a machine that stopped tracking it, and the console must
+        // not count that machine as missing packs.
+        var rows = await _db.MachineGameContents
+            .Where(c => c.GameId == gameId && _db.MachineSavePaths.Any(p => p.GameId == gameId && p.MachineId == c.MachineId))
+            .ToListAsync();
+        var names = await _db.Machines.Where(m => rows.Select(r => r.MachineId).Contains(m.Id))
+            .ToDictionaryAsync(m => m.Id, m => m.Name);
+        return new GameContentDto(head?.Id, head is null ? null : Mapping.UploaderName(head), Mapping.ReadContent(head?.ContentJson),
+            rows.Select(r => new MachineContentDto(r.MachineId, names.GetValueOrDefault(r.MachineId, ""),
+                Mapping.ReadContent(r.ContentJson) ?? [], r.UpdatedAt, ReadLaunch(r))).OrderBy(m => m.MachineName).ToArray());
+    }
+
+    private static LaunchProfileDto? ReadLaunch(MachineGameContent row)
+    {
+        if (row.LaunchJson is null || row.LaunchAt is not { } at) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<LaunchProfileReport>(row.LaunchJson, JsonSerializerOptions.Web) is { } r
+                ? new LaunchProfileDto(r.GameXuid, r.GameTag, r.ConfiguredXuid, r.ConfiguredTag, r.Action, at)
+                : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    /// <summary>A machine's last launch of a Xenia game: which profile Xenia was set to and what the check did.</summary>
+    public async Task<bool> ReportLaunchProfileAsync(Guid machineId, Guid gameId, LaunchProfileReport report)
+    {
+        if (!await _db.Games.AnyAsync(g => g.Id == gameId)) return false;
+        var row = await _db.MachineGameContents.FindAsync(machineId, gameId);
+        if (row is null)
+        {
+            row = new MachineGameContent { MachineId = machineId, GameId = gameId, UpdatedAt = DateTime.UtcNow };
+            _db.MachineGameContents.Add(row);
+        }
+        row.LaunchJson = JsonSerializer.Serialize(report, JsonSerializerOptions.Web);
+        row.LaunchAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
     // ----- Games -----
 
     public async Task<List<Game>> ListGamesAsync() =>
@@ -530,14 +603,24 @@ public sealed class SyncService
             ? named.OrderBy(g => g.Region.Length == 0 ? 0 : 1).FirstOrDefault()
             : named.FirstOrDefault(g => string.Equals(g.Region, region, StringComparison.OrdinalIgnoreCase)) ??
               named.FirstOrDefault(g => g.Region.Length == 0);
+        var profile = EmulatorProfiles.Clean(req.EmulatorProfile);
         if (existing is not null)
         {
+            var changed = false;
             if (release is not null && existing.ReleaseJson is null)
             {
                 existing.Region = region;
                 existing.ReleaseJson = JsonSerializer.Serialize(release, JsonSerializerOptions.Web);
-                await _db.SaveChangesAsync();
+                changed = true;
             }
+            // The first machine to say decides the game's profile; a later one joining under another is the agent's to
+            // align (tasks/emulator-saves Phase 5c), never a reason to change it.
+            if (profile is not null && existing.EmulatorProfile is null)
+            {
+                existing.EmulatorProfile = profile;
+                changed = true;
+            }
+            if (changed) await _db.SaveChangesAsync();
             return existing;
         }
 
@@ -547,6 +630,7 @@ public sealed class SyncService
             Name = name,
             Region = region,
             ReleaseJson = release is null ? null : JsonSerializer.Serialize(release, JsonSerializerOptions.Web),
+            EmulatorProfile = profile,
             ManifestKey = req.ManifestKey,
             CustomPathsJson = req.CustomPathsJson,
             SuggestedSaveDir = string.IsNullOrWhiteSpace(req.SuggestedSaveDir) ? null : req.SuggestedSaveDir.Trim(),

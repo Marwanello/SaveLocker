@@ -143,7 +143,9 @@ internal sealed class TrayContext : ApplicationContext
             // for a caller that fires BEFORE the process starts (Playnite's OnGameStarting, once that
             // plugin exists), which is exactly the certainty PrepareLaunchAsync's own doc comment
             // requires. Mirrors Daemon.cs:171's existing Linux wiring.
-            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct),
+            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct, canAsk: true),
+            answerLaunch: (game, answer) => _engine.AnswerLaunchQuestion(game, answer),
+            pullAnyway: async (game, ct) => SyncEngine.DescribePull(game, await _engine.PullAsync(game, ct: ct, skipDlcCheck: true)),
             // POST /api/games/{id}/post-exit-sync (tasks/playnite-plugin/plan.md, Phase 5) — the
             // Playnite plugin's OnGameStopped equivalent to this route's own OnGameStarting caller.
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),

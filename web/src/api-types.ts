@@ -1037,6 +1037,384 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/games/{id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReportContentRequest"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/games/{id}/launch-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LaunchProfileReport"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateTransferRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/transfers/{id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TransferAnswerRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/transfers/{id}/parts/{packageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    packageId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query: {
+                    offset: number;
+                    total: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                    packageId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/transfers/{id}/delivered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/transfers/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/games/{id}/state": {
         parameters: {
             query?: never;
@@ -1999,6 +2377,184 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["MachineGameSourceDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ConsoleTransferRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HandoverOverviewDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/transfers/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GameContentDto"];
                     };
                 };
             };
@@ -4391,6 +4947,36 @@ export interface components {
         };
         /** @enum {unknown} */
         ConflictStatus: "Open" | "Resolved";
+        ConsoleTransferRequest: {
+            /** Format: uuid */
+            toMachineId: string;
+        };
+        ContentPackageDto: {
+            kind: string;
+            id: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+        };
+        ContentTransferDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            gameId: string;
+            gameName: string;
+            /** Format: uuid */
+            fromMachineId: string;
+            fromMachineName: string;
+            /** Format: uuid */
+            toMachineId: string;
+            toMachineName: string;
+            status: components["schemas"]["TransferStatus"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            parts: components["schemas"]["TransferPartDto"][];
+        };
         CreateEnrollmentRequest: {
             machineName?: null | string;
             /** Format: int32 */
@@ -4415,9 +5001,17 @@ export interface components {
             includeGlobs?: null | string[];
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             release?: null | components["schemas"]["GameReleaseDto"];
+            emulatorProfile?: null | string;
         };
         CreateSessionRequest: {
             password: null | string;
+        };
+        CreateTransferRequest: {
+            /** Format: uuid */
+            gameId: string;
+            /** Format: uuid */
+            fromMachineId: string;
+            packages: components["schemas"]["ContentPackageDto"][];
         };
         EffectiveServerUrl: {
             url: string;
@@ -4478,6 +5072,13 @@ export interface components {
             /** Format: int64 */
             size: number;
         };
+        GameContentDto: {
+            /** Format: uuid */
+            headVersionId: null | string;
+            headMachineName: null | string;
+            headContent: null | components["schemas"]["ContentPackageDto"][];
+            machines: components["schemas"]["MachineContentDto"][];
+        };
         GameDto: {
             /** Format: uuid */
             id: string;
@@ -4502,6 +5103,7 @@ export interface components {
             machineSource?: null | components["schemas"]["GameSourceDto"];
             emulators?: null | string[];
             release?: null | components["schemas"]["GameReleaseDto"];
+            emulatorProfile?: null | string;
         };
         GameReleaseDto: {
             console: string;
@@ -4528,6 +5130,15 @@ export interface components {
             machineIds?: null | string[];
             sources?: null | components["schemas"]["GameSourceDto"][];
         };
+        HandoverOverviewDto: {
+            /** Format: int64 */
+            maxBytes: number;
+            /** Format: int32 */
+            expiryDays: number;
+            /** Format: int64 */
+            bytesInTransit: number;
+            open: components["schemas"]["ContentTransferDto"][];
+        };
         HeadFileDto: {
             path: string;
             /** Format: int64 */
@@ -4549,6 +5160,22 @@ export interface components {
             checksumAsset: null | string;
             note: null | string;
         };
+        LaunchProfileDto: {
+            gameXuid: string;
+            gameTag: null | string;
+            configuredXuid: null | string;
+            configuredTag: null | string;
+            action: string;
+            /** Format: date-time */
+            at: string;
+        };
+        LaunchProfileReport: {
+            gameXuid: string;
+            gameTag: null | string;
+            configuredXuid: null | string;
+            configuredTag: null | string;
+            action: string;
+        };
         LeaseAcquireResponse: {
             granted: boolean;
             lease: components["schemas"]["LeaseDto"];
@@ -4568,6 +5195,15 @@ export interface components {
             client: string;
             /** Format: int32 */
             retryAfterSeconds: number;
+        };
+        MachineContentDto: {
+            /** Format: uuid */
+            machineId: string;
+            machineName: string;
+            packages: components["schemas"]["ContentPackageDto"][];
+            /** Format: date-time */
+            updatedAt: string;
+            launch?: null | components["schemas"]["LaunchProfileDto"];
         };
         MachineDto: {
             /** Format: uuid */
@@ -4620,6 +5256,11 @@ export interface components {
             apiKey: string;
             machineName: string;
         };
+        ReportContentRequest: {
+            packages: components["schemas"]["ContentPackageDto"][];
+            /** Format: uuid */
+            versionId?: null | string;
+        };
         SavePathDto: {
             key: string;
             label: null | string;
@@ -4649,6 +5290,7 @@ export interface components {
             parentVersionId: null | string;
             /** @default false */
             protected: boolean;
+            content?: null | components["schemas"]["ContentPackageDto"][];
         };
         ScanPathCandidate: {
             /** Format: uuid */
@@ -4753,6 +5395,23 @@ export interface components {
             machineName: string;
             reason: string;
         };
+        TransferAnswerRequest: {
+            approve: boolean;
+        };
+        TransferPartDto: {
+            kind: string;
+            packageId: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: int64 */
+            zipSize: null | number;
+            /** Format: int64 */
+            received: number;
+            complete: boolean;
+        };
+        /** @enum {unknown} */
+        TransferStatus: "Requested" | "Approved" | "Ready" | "Delivered" | "Declined" | "Cancelled" | "Expired";
         UploadResult: {
             status: components["schemas"]["UploadStatus"];
             version: null | components["schemas"]["SaveVersionDto"];

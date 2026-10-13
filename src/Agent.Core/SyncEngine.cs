@@ -15,7 +15,11 @@ public enum LaunchDecision
     ProceedSyncPaused,
     /// <summary>A genuinely confirmed, open conflict exists for this game. The caller must not start
     /// the child process — <see cref="ConflictId"/> is what a resolve UI needs to act on it.</summary>
-    Blocked
+    Blocked,
+    /// <summary>Launching is fine, and the default answer to <see cref="LaunchGateResult.Question"/> is already applied; a
+    /// client that can show the question offers the other choices (tasks/emulator-saves Phase 5c). A client that does not
+    /// know this value launches as for <see cref="Proceed"/>, which is still right. Appended last so stored values keep.</summary>
+    Ask
 }
 
 /// <summary>Which direction(s) a manual, per-game sync runs — see <see cref="SyncEngine.SyncGameAsync"/>.</summary>
@@ -46,7 +50,10 @@ public enum PullOutcome
     /// <summary>Another SaveLocker process is syncing this game; nothing was read or written.</summary>
     Busy,
     /// <summary>The server did not answer (or a gateway answered in its place); nothing was pulled.</summary>
-    Unreachable
+    Unreachable,
+    /// <summary>The latest save was made with DLC or a title update this machine lacks; nothing was pulled, and the
+    /// hold is recorded (tasks/emulator-saves Phase 5c, the DLC check). Appended last so stored values keep.</summary>
+    HeldForDlc
 }
 
 /// <summary>Which copy wins when a save folder is mapped onto a folder that already holds different
@@ -69,7 +76,8 @@ public record LaunchGateResult(
     LaunchDecision Decision,
     string? Reason = null,
     Guid? ConflictId = null,
-    string? HolderMachineName = null);
+    string? HolderMachineName = null,
+    LaunchQuestion? Question = null);
 
 /// <summary>
 /// Coordinates a tracked game's saves with the server: archive + hash + upload
@@ -260,7 +268,11 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             // started; the launch wrapper may have pushed since, and presenting the boot-time parent
             // is what makes the server record a conflict on a single-machine fleet.
             _config.RefreshGameSyncState(game);
-            return await PushCoreAsync(game, force, settle, ct);
+            var result = await PushCoreAsync(game, force, settle, ct);
+            // The version just made takes this machine's DLC list as what it was made with; the server ignores it for
+            // a version this machine did not upload, or one that already has a list.
+            if (result?.Version is { } version) await ReportContentAsync(game, version.Id);
+            return result;
         }
         catch (AgentStateLockException ex)
         {
@@ -270,6 +282,30 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             return null;
         }
         finally { gate.Release(); _activity?.End(); }
+    }
+
+    // The last package list each game reported, so a pull that changed nothing sends nothing.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, string> _reportedContent = new();
+
+    /// <summary>
+    /// Tells the server what DLC and title updates this machine has for the game (tasks/emulator-saves Phase 5c, the DLC
+    /// check), and with <paramref name="versionId"/> what that version was made with. Best effort: the check only warns,
+    /// so a report that fails must never fail the sync around it.
+    /// </summary>
+    private async Task ReportContentAsync(TrackedGame game, Guid? versionId)
+    {
+        try
+        {
+            if (ContentInventory.For(game) is not { } packages) return;
+            var key = System.Text.Json.JsonSerializer.Serialize(packages);
+            if (versionId is null && _reportedContent.TryGetValue(game.GameId, out var last) && last == key) return;
+            await _api.ReportContentAsync(game.GameId, packages, versionId);
+            _reportedContent[game.GameId] = key;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or TaskCanceledException)
+        {
+            _log($"[{game.Name}] could not tell the server which DLC is here: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -325,6 +361,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // Whether or not settle ran, everything from here on is the "Pushing" phase — settle only
         // ever set Settling in the first place when it was going to run at all.
         _activity?.SetPhase(SyncPhase.Pushing);
+
+        // A Xenia game's row of its profile is copied out of the shared dashboard first, so the push carries it.
+        XeniaProfileSlice.Export(game, _log, stateDir: _config.StateDir);
 
         // One pass over the save folder answers both questions a push asks of it: the aggregate
         // content hash (has anything changed at all?) and the per-file manifest a delta negotiates
@@ -651,7 +690,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     }
 
     /// <summary>Download the server head and restore it locally if it differs.</summary>
-    public async Task<PullOutcome> PullAsync(TrackedGame game, bool force = false, CancellationToken ct = default)
+    /// <param name="skipDlcCheck">“Pull anyway” from the DLC check: restore even though the latest save was made with
+    /// DLC this machine lacks. A forced pull skips the check too.</param>
+    public async Task<PullOutcome> PullAsync(TrackedGame game, bool force = false, CancellationToken ct = default, bool skipDlcCheck = false)
     {
         if (RefuseIfRetired(game, "pull")) return PullOutcome.Refused;
         using var linked = LinkRetirement(ct);
@@ -696,6 +737,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         _config.RefreshGameSyncState(game);
         try
         {
+            if (!force && !skipDlcCheck && await HoldForDlcAsync(game, ct)) return PullOutcome.HeldForDlc;
+
             var head = await _api.DownloadHeadAsync(game.GameId, archive, ct);
             if (head is null)
             {
@@ -715,6 +758,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 _config.SaveGameSyncState(game);
                 _log($"[{game.Name}] already up to date.");
                 MarkSynced(game.GameId);
+                await ReportContentAsync(game, null);
                 return PullOutcome.UpToDate;
             }
 
@@ -757,6 +801,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 if (restored.SkippedKeys.Count > 0)
                     _log($"[{game.Name}] the server's save holds folder(s) this game no longer has " +
                          $"({string.Join(", ", restored.SkippedKeys)}); left out.");
+                XeniaProfileSlice.AfterPull(game, _log, stateDir: _config.StateDir);
             }
             catch (SaveArchive.UnsafeArchiveException ex)
             {
@@ -774,6 +819,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             _config.SaveGameSyncState(game, touchSyncTime: true);
             _log($"[{game.Name}] restored latest save from server.");
             MarkSynced(game.GameId);
+            DlcHoldStore.For(_config).Clear(game.GameId);
+            await ReportContentAsync(game, null);
             if (missingBefore.Any(Directory.Exists)) _onFoldersChanged?.Invoke();
             return PullOutcome.Restored;
         }
@@ -820,7 +867,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // only raise a "save directory missing" warning and inflate the "N of M" count.
         var games = allGames.Where(g => g.IsEnrolledHere).ToList();
         var skipped = new List<string>();
-        int done = 0, uploaded = 0, pulled = 0, current = 0, conflicts = 0, queued = 0, unreachable = 0, failed = 0;
+        int done = 0, uploaded = 0, pulled = 0, current = 0, conflicts = 0, queued = 0, unreachable = 0, failed = 0, held = 0;
         long bytes = 0;
         var cancelled = false;
 
@@ -844,6 +891,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     case UploadStatus.Created: uploaded++; bytes += g.LastPushBytes ?? 0; break;
                     case UploadStatus.NoChange when pull is PullOutcome.Restored: pulled++; break;
                     case UploadStatus.NoChange when pull is PullOutcome.Unreachable: unreachable++; break;
+                    case UploadStatus.NoChange when pull is PullOutcome.HeldForDlc: held++; break;
                     case UploadStatus.NoChange: current++; break;
                     case UploadStatus.Conflict: conflicts++; break;
                     case null when _offlineQueue?.Contains(g.GameId) == true: queued++; break;
@@ -855,7 +903,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         {
             _activity?.EndRun(new SyncRunSummary(
                 DateTime.UtcNow, done, uploaded, current, conflicts, failed, bytes, cancelled,
-                pulled, queued, unreachable));
+                pulled, queued, unreachable, held));
         }
 
         if (cancelled)
@@ -957,9 +1005,41 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         };
     }
 
+    /// <summary>
+    /// The DLC check before a pull (tasks/emulator-saves Phase 5c, step 9): true, with the hold recorded and reported, when
+    /// the latest save was made with packages this machine lacks. Only for a game whose emulator lists its DLC, and only
+    /// when the latest save said what it was made with; a check that cannot run never holds a pull. Never for a save this
+    /// machine made or already has: there is nothing to restore, and packs removed here since must not hold its own save.
+    /// </summary>
+    private async Task<bool> HoldForDlcAsync(TrackedGame game, CancellationToken ct)
+    {
+        var holds = DlcHoldStore.For(_config);
+        if (ContentInventory.For(game) is not { } here) return false;
+        SaveVersionDto? head;
+        try { head = (await _api.GetStateAsync(game.GameId, ct))?.Head; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return false; }
+        if (head?.Content is not { } content) return false;
+        var missing = head.MachineId == _config.MachineId || head.Id == game.LastKnownVersionId
+            ? []
+            : DlcCheck.Missing(content, here);
+        if (missing.Count == 0)
+        {
+            holds.Clear(game.GameId);
+            return false;
+        }
+        var known = holds.For(game.GameId)?.VersionId == head.Id;
+        holds.Hold(game.GameId, head.Id, missing);
+        if (!known)
+            Alert($"[{game.Name}] held the pull: {head.MachineName}'s save was made with {DlcCheck.Summary(missing)} " +
+                  "this machine doesn't have. Open the game in SaveLocker to pull anyway, or install them and it goes ahead.",
+                AgentEventCodes.PullHeldForDlc, AgentEventSeverity.Warning, game.GameId);
+        return true;
+    }
+
     /// <summary>What a pull did, as one sentence — shared by every surface that answers a person.</summary>
     public static string DescribePull(TrackedGame game, PullOutcome outcome) => outcome switch
     {
+        PullOutcome.HeldForDlc => $"Not pulled: the latest save of {game.Name} was made with DLC this machine doesn't have. Open the game to choose.",
         PullOutcome.Restored => $"Pulled the latest save of {game.Name}.",
         PullOutcome.UpToDate => $"{game.Name} is already up to date.",
         PullOutcome.NothingOnServer => $"The server has no save of {game.Name} yet.",
@@ -1288,7 +1368,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// Phase 1) rather than the reactive <see cref="OnGameLaunchAsync"/> its own doc comment warns
     /// against trusting for this.
     /// </summary>
-    public async Task<LaunchGateResult> PrepareLaunchAsync(TrackedGame game, CancellationToken ct = default)
+    /// <param name="canAsk">True for a caller that can show <see cref="LaunchGateResult.Question"/> (Decky and Playnite,
+    /// through the local API); the Linux wrapper cannot, and gets the default applied without a question.</param>
+    public async Task<LaunchGateResult> PrepareLaunchAsync(TrackedGame game, CancellationToken ct = default, bool canAsk = false)
     {
         if (RefuseIfRetired(game, "launch handling"))
             return new LaunchGateResult(LaunchDecision.Proceed);
@@ -1308,6 +1390,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             Alert($"[{game.Name}] WARNING: saves are checked out by '{holder}'. " +
                  "Launched without pulling — a conflict may occur on exit.",
                 AgentEventCodes.LeaseHeldElsewhere, AgentEventSeverity.Warning, game.GameId);
+            CheckXeniaProfile(game, canAsk: false);
             return new LaunchGateResult(LaunchDecision.ProceedSyncPaused,
                 $"saves are checked out by '{holder}' — launching without pulling.",
                 HolderMachineName: holder);
@@ -1340,9 +1423,54 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // decide whether to trigger its own separate pull). The open-conflict check above and the
         // commit-before-choose push above THAT stay unconditional — disabling the pull only skips
         // fetching newer data, it must never also skip the safety check for a genuinely diverged save.
-        if (EffectivePullBeforeLaunch(game))
-            await PullAsync(game, force: false, ct);
-        return new LaunchGateResult(LaunchDecision.Proceed);
+        // A pull held for missing DLC leaves this machine's older save in place, so the player is told the launch did not
+        // take the newer one (clients show the reason, as for a lease held elsewhere), and the profile check switches
+        // without asking: one question at a time.
+        if (EffectivePullBeforeLaunch(game) && await PullAsync(game, force: false, ct) == PullOutcome.HeldForDlc)
+        {
+            CheckXeniaProfile(game, canAsk: false);
+            return new LaunchGateResult(LaunchDecision.ProceedSyncPaused,
+                "the newer save needs DLC this device doesn't have, so it was not pulled — launching with this device's save. " +
+                "Open the game in SaveLocker to get the DLC or pull anyway.");
+        }
+        return CheckXeniaProfile(game, canAsk) ?? new LaunchGateResult(LaunchDecision.Proceed);
+    }
+
+    /// <summary>The profile checked at launch (tasks/emulator-saves Phase 5c) — after the pull, so the save it signs in to
+    /// is the newest. Fails open like every other pre-launch check: a config it cannot read or write never stops a launch.</summary>
+    private LaunchGateResult? CheckXeniaProfile(TrackedGame game, bool canAsk)
+    {
+        try { return XeniaLaunchProfile.Check(_config, game, LaunchQuestionStore.For(_config), canAsk, _log, report: r => ReportLaunch(game, r)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException)
+        {
+            _log($"[{game.Name}] could not check Xenia's profile before launch: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>The console's “profile at launch” table. Sent in the background: a launch never waits on the server.</summary>
+    private void ReportLaunch(TrackedGame game, LaunchProfileReport report) => _ = Task.Run(async () =>
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await _api.ReportLaunchProfileAsync(game.GameId, report, cts.Token);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            _log($"[{game.Name}] could not report the profile at launch: {ex.Message}");
+        }
+    });
+
+    /// <summary>A client's answer to a launch question; false when it does not match an open question of this game.</summary>
+    public bool AnswerLaunchQuestion(TrackedGame game, LaunchAnswerRequest answer)
+    {
+        try { return XeniaLaunchProfile.Answer(_config, game, LaunchQuestionStore.For(_config), answer, _log, r => ReportLaunch(game, r)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _log($"[{game.Name}] could not apply the launch answer: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>

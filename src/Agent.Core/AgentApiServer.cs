@@ -57,6 +57,10 @@ public sealed class AgentApiServer : IDisposable
     // The Decky/Playnite launch gate (Phase 11) — SyncEngine.PrepareLaunchAsync, resolved against
     // whichever engine is current at the moment it's called, same reasoning as _syncAll above.
     private readonly Func<TrackedGame, CancellationToken, Task<LaunchGateResult>> _prepareLaunch;
+    // POST /api/games/{id}/launch-answer (tasks/emulator-saves Phase 5c) — SyncEngine.AnswerLaunchQuestion.
+    private readonly Func<TrackedGame, LaunchAnswerRequest, bool> _answerLaunch;
+    // POST /api/games/{id}/dlc/pull-anyway (tasks/emulator-saves Phase 5c) — SyncEngine.PullAsync past the DLC check.
+    private readonly Func<TrackedGame, CancellationToken, Task<string>> _pullAnyway;
     // POST /api/games/{id}/post-exit-sync (tasks/playnite-plugin/plan.md, Phase 5) — SyncEngine
     // .OnGameExitAsync, resolved the same way _prepareLaunch is: against whichever engine a settings
     // change may have rebuilt since the host wired this up.
@@ -132,6 +136,8 @@ public sealed class AgentApiServer : IDisposable
         SyncActivityTracker? activity = null,
         Func<Task<string>>? syncAll = null,
         Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null,
+        Func<TrackedGame, LaunchAnswerRequest, bool>? answerLaunch = null,
+        Func<TrackedGame, CancellationToken, Task<string>>? pullAnyway = null,
         Func<TrackedGame, CancellationToken, Task>? postExitSync = null,
         Func<TrackedGame, CancellationToken, Task>? releaseLease = null,
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginStatus = null,
@@ -176,6 +182,8 @@ public sealed class AgentApiServer : IDisposable
         _activity = activity ?? new SyncActivityTracker();
         _syncAll = syncAll ?? (() => Task.FromResult("Not available."));
         _prepareLaunch = prepareLaunch ?? ((_, _) => Task.FromResult(new LaunchGateResult(LaunchDecision.Proceed)));
+        _answerLaunch = answerLaunch ?? ((_, _) => false);
+        _pullAnyway = pullAnyway ?? ((g, _) => Task.FromResult($"Nothing was pulled for {g.Name}."));
         _postExitSync = postExitSync ?? ((_, _) => Task.CompletedTask);
         _releaseLease = releaseLease ?? ((_, _) => Task.CompletedTask);
         _syncGame = syncGame ?? ((_, _, _) => Task.FromResult("Not available."));
@@ -395,7 +403,8 @@ public sealed class AgentApiServer : IDisposable
                 .ToDictionary(g => g.Key, g => new LinkChoice(g.Last().Choice, g.Last().GameId));
             var (enrolled, skipped) = await _enroll(candidates, body.Ids, alsoSync, links);
             return TypedResults.Ok(new EnrollResponse(enrolled, skipped,
-                Enroller.Progress.Notes is { Count: > 0 } notes ? notes.ToArray() : null));
+                Enroller.Progress.Notes is { Count: > 0 } notes ? notes.ToArray() : null,
+                Enroller.Progress.Info is { Count: > 0 } info ? info.ToArray() : null));
         });
 
         // Which server game each emulator save on Add games would join, and what else it could (EnrollLinks).
@@ -1010,7 +1019,7 @@ public sealed class AgentApiServer : IDisposable
                 recent,
                 run is null ? null : new SyncRunDto(
                     run.FinishedAtUtc, run.Games, run.Uploaded, run.AlreadyCurrent, run.Conflicts,
-                    run.Failed, run.BytesSent, run.Cancelled, run.Pulled, run.Queued, run.Unreachable));
+                    run.Failed, run.BytesSent, run.Cancelled, run.Pulled, run.Queued, run.Unreachable, run.HeldForDlc));
         }).Produces<ActivityDto>();
 
         // Stops a running Sync all after the game it is on. Cooperative on purpose — see
@@ -1122,6 +1131,146 @@ public sealed class AgentApiServer : IDisposable
             }
             finally { gate.Release(); }
         }).Produces<SyncNowResponse>().Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
+        // The DLC check (tasks/emulator-saves Phase 5c): what the latest save was made with against what is installed
+        // here, and whether a pull of it is on hold. One small request; reading the installed packages lists folders
+        // and their sizes, never package data.
+        app.MapGet("/api/games/{id:guid}/dlc",
+            async Task<Results<Ok<DlcCheckDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+            try
+            {
+                var api = ApiClient.For(_config);
+                var head = (await api.GetStateAsync(id))?.Head;
+                var check = DlcCheck.Describe(head, ContentInventory.For(game), DlcHoldStore.For(_config).For(id) is not null);
+                ContentTransferDto[] transfers = [];
+                try { transfers = [.. (await api.ListTransfersAsync()).Where(t => t.GameId == id)]; }
+                catch (HttpRequestException) { } // an older server without hand-overs
+                return TypedResults.Ok(check with
+                {
+                    HeadMachineId = head?.MachineId,
+                    Handover = transfers.LastOrDefault(t => t.ToMachineId == _config.MachineId),
+                    Asked = [.. transfers.Where(t => t.FromMachineId == _config.MachineId)],
+                });
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        }).Produces<DlcCheckDto>();
+
+        // "Pull anyway": the person chose to restore the latest save without the DLC it was made with. Gated with the
+        // game page's own sync, so it never races a Pull latest of the same game.
+        app.MapPost("/api/games/{id:guid}/dlc/pull-anyway",
+            async Task<Results<Ok<SyncNowResponse>, Conflict<ErrorResponse>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || !game.IsEnrolledHere) return TypedResults.NotFound();
+            var gate = _gameSyncGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+            if (!await gate.WaitAsync(0))
+                return TypedResults.Conflict(new ErrorResponse("A sync of this game is already running. Watch the activity feed."));
+            try { return TypedResults.Ok(new SyncNowResponse(await _pullAnyway(game, CancellationToken.None))); }
+            catch (Exception ex)
+            {
+                AgentLogger.LogException("AgentApiServer.dlc-pull-anyway", ex);
+                return TypedResults.InternalServerError(new ErrorResponse(ex.Message));
+            }
+            finally { gate.Release(); }
+        }).Produces<SyncNowResponse>().Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
+        // Ask the machine the latest save came from to hand over the packs missing here (tasks/emulator-saves Phase 5c,
+        // step 12). The poller fetches and installs them once they are ready, and the held pull then goes ahead.
+        app.MapPost("/api/games/{id:guid}/dlc/handover",
+            async Task<Results<Ok<ContentTransferDto>, BadRequest<ErrorResponse>, NotFound>> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || !game.IsEnrolledHere) return TypedResults.NotFound();
+            try
+            {
+                var api = ApiClient.For(_config);
+                var head = (await api.GetStateAsync(id))?.Head;
+                var missing = DlcCheck.Missing(head?.Content, ContentInventory.For(game));
+                if (head?.MachineId is not { } from || missing.Count == 0)
+                    return TypedResults.BadRequest(new ErrorResponse("Nothing to ask for: this machine has every pack the latest save needs."));
+                if (from == _config.MachineId)
+                    return TypedResults.BadRequest(new ErrorResponse("The latest save was made on this machine."));
+                return TypedResults.Ok(await api.CreateTransferAsync(new CreateTransferRequest(id, from, [.. missing])));
+            }
+            catch (HttpRequestException ex) { return TypedResults.BadRequest(new ErrorResponse(ServerErrors.Of(ex))); }
+        }).Produces<ContentTransferDto>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
+        // This machine's answer to another's request, and cancelling a request either side made.
+        app.MapPost("/api/dlc/handovers/{id:guid}/answer",
+            async Task<Results<Ok<ContentTransferDto>, BadRequest<ErrorResponse>>> (Guid id, TransferAnswerRequest body) =>
+        {
+            try { return TypedResults.Ok(await ApiClient.For(_config).AnswerTransferAsync(id, body.Approve)); }
+            catch (HttpRequestException ex) { return TypedResults.BadRequest(new ErrorResponse(ServerErrors.Of(ex))); }
+        }).Produces<ContentTransferDto>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
+        app.MapPost("/api/dlc/handovers/{id:guid}/cancel",
+            async Task<Results<Ok<SyncNowResponse>, BadRequest<ErrorResponse>>> (Guid id) =>
+        {
+            try { await ApiClient.For(_config).CancelTransferAsync(id); return TypedResults.Ok(new SyncNowResponse("Hand-over cancelled.")); }
+            catch (HttpRequestException ex) { return TypedResults.BadRequest(new ErrorResponse(ServerErrors.Of(ex))); }
+        }).Produces<SyncNowResponse>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
+        // Requests from other machines waiting on this one's answer, for the Overview banner.
+        app.MapGet("/api/dlc/handovers", async () =>
+        {
+            try
+            {
+                return TypedResults.Ok((await ApiClient.For(_config).ListTransfersAsync())
+                    .Where(t => t.FromMachineId == _config.MachineId && t.Status == TransferStatus.Requested).ToArray());
+            }
+            catch (HttpRequestException) { return TypedResults.Ok(Array.Empty<ContentTransferDto>()); }
+        }).Produces<ContentTransferDto[]>();
+
+        // Xbox 360 settings of this machine: the profile at launch, and what to do when another machine asks for DLC.
+        app.MapGet("/api/settings/xbox360", () => TypedResults.Ok(
+            new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Auto)))
+            .Produces<Xbox360SettingsDto>();
+
+        // A Xenia game's profile on this machine (tasks/emulator-saves Phase 5c): the profile its saves are under, the one
+        // Xenia is set to start as right now (read from its config files), and what the launch check does. Reads two small
+        // files; nothing is changed.
+        app.MapGet("/api/games/{id:guid}/xenia-profile", Results<Ok<XeniaProfileDto>, NotFound> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || ContentInventory.Home(game) is not { } home) return TypedResults.NotFound();
+            if (XeniaLaunchProfile.GameProfile(game) is not { } profile)
+                return TypedResults.Ok(new XeniaProfileDto(null, null, null, null, [], XeniaLaunchProfile.PolicyFor(_config, game),
+                    game.XeniaProfileAtLaunch, Legacy: true));
+            var configs = XeniaConfig.For(profile.Content, game.Name);
+            var configured = configs.Select(XeniaConfig.Read).FirstOrDefault(v => !string.IsNullOrEmpty(v));
+            return TypedResults.Ok(new XeniaProfileDto(profile.Xuid, XeniaProfile.Gamertag(profile.Content, profile.Xuid),
+                configured, configured is null ? null : XeniaProfile.Gamertag(profile.Content, configured), [.. configs],
+                XeniaLaunchProfile.PolicyFor(_config, game), game.XeniaProfileAtLaunch, Legacy: false));
+        }).Produces<XeniaProfileDto>();
+
+        // This game's own answer to the profile-at-launch setting; null goes back to the machine's.
+        app.MapPost("/api/games/{id:guid}/xenia-profile", Results<Ok, NotFound> (Guid id, GameProfileAtLaunchRequest body) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || ContentInventory.Home(game) is null) return TypedResults.NotFound();
+            _config.SaveGameProfileAtLaunch(id, body.ProfileAtLaunch);
+            game.XeniaProfileAtLaunch = body.ProfileAtLaunch;
+            return TypedResults.Ok();
+        });
+
+        app.MapPost("/api/settings/xbox360", (Xbox360SettingsDto body) =>
+        {
+            _config.UpdateSettings(c =>
+            {
+                c.XeniaProfileAtLaunch = body.ProfileAtLaunch;
+                c.DlcSend = body.DlcSend;
+            });
+            return TypedResults.Ok(new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Auto));
+        }).Produces<Xbox360SettingsDto>();
+
+        // Every pull the DLC check holds on this machine, for the Overview banner.
+        app.MapGet("/api/dlc/holds", () => TypedResults.Ok(DlcHoldStore.For(_config).Read()
+            .Select(h => new DlcHoldDto(h.GameId, _config.Games.FirstOrDefault(g => g.GameId == h.GameId)?.Name ?? "",
+                h.Missing.Count, h.Missing.Sum(p => p.Size), DlcCheck.Summary(h.Missing), h.HeldAt))
+            .Where(h => h.GameName.Length > 0).ToArray())).Produces<DlcHoldDto[]>();
 
         // What the server holds for one game: head version (machine, time, size), open conflict, lease.
         // One small request and no disk work, so the game page can load it on open — unlike
@@ -1428,6 +1577,17 @@ public sealed class AgentApiServer : IDisposable
             }
             finally { _syncGate.Release(); }
         }).Produces<LaunchGateResult>().Produces<LaunchGateResult>(StatusCodes.Status409Conflict);
+
+        // The other half of a LaunchDecision.Ask (tasks/emulator-saves Phase 5c): the gate already applied the default, so
+        // a client posts here only to choose something else, then launches. 404 when the question is unknown, expired,
+        // already answered or another game's — the client launches anyway, on the default already in place.
+        app.MapPost("/api/games/{id:guid}/launch-answer",
+            Results<Ok<LaunchGateResult>, NotFound> (Guid id, LaunchAnswerRequest answer) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || !_answerLaunch(game, answer)) return TypedResults.NotFound();
+            return TypedResults.Ok(new LaunchGateResult(LaunchDecision.Proceed));
+        }).Produces<LaunchGateResult>();
 
         // Mirrors pre-launch-sync above almost exactly (tasks/playnite-plugin/plan.md, Phase 5) —
         // same single-flight gate, same "game removed mid-flight" re-check, same fail-open-on-
@@ -2172,9 +2332,32 @@ public sealed record ErrorResponse(string Error, bool NeedsConfirm = false, bool
     /// predate <see cref="NeedsConfirm"/>; newer ones drop it and ask the question in their own words.</summary>
     public const string ConfirmHint = " Re-send with confirm to use it anyway.";
 }
+internal static class ServerErrors
+{
+    /// <summary>The server's own sentence from an <see cref="ApiClient"/> error (“409: "The request is declined."”).</summary>
+    public static string Of(HttpRequestException ex)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(ex.Message, @"^\d{3}: (.*)$", System.Text.RegularExpressions.RegexOptions.Singleline);
+        return m.Success ? m.Groups[1].Value.Trim().Trim('"') : ex.Message;
+    }
+}
+
+/// <summary>A Xenia game's profile here. <see cref="Legacy"/>: the layout from before profiles, where no profile is involved.</summary>
+public sealed record XeniaProfileDto(
+    string? GameXuid, string? GameTag, string? ConfiguredXuid, string? ConfiguredTag, string[] Configs,
+    ProfileAtLaunch Policy, ProfileAtLaunch? GamePolicy, bool Legacy);
+
+public sealed record GameProfileAtLaunchRequest(ProfileAtLaunch? ProfileAtLaunch);
+
+public sealed record Xbox360SettingsDto(ProfileAtLaunch ProfileAtLaunch, DlcSendPolicy DlcSend);
+
+/// <summary>A pull the DLC check holds (tasks/emulator-saves Phase 5c).</summary>
+public sealed record DlcHoldDto(Guid GameId, string GameName, int MissingCount, long MissingSize, string Summary, DateTimeOffset HeldAt);
+
 /// <param name="Notes">Why each refused game was not added ("Chrono Trigger: the server's …"), one line each;
 /// null when every skip was a game already set up here.</param>
-public sealed record EnrollResponse(int Enrolled, int Skipped, string[]? Notes = null);
+/// <param name="Info">What was added differently from how it was found ("Forza Horizon: added under …"), one line each.</param>
+public sealed record EnrollResponse(int Enrolled, int Skipped, string[]? Notes = null, string[]? Info = null);
 public sealed record EnrollProgressDto(bool Active, int Index, int Total, string? Game, string Step, int Enrolled, int Skipped);
 public sealed record RegisterResponse(string MachineName);
 public sealed record FolderResponse(string? Path);
@@ -2199,9 +2382,10 @@ public sealed record ActivityDto(
     ActivitySnapshotDto Current, ActivityLogEntryDto[] Recent, SyncRunDto? LastRun = null);
 /// <param name="Failed">Pushes that were refused or could not run. A save waiting in the offline queue
 /// is <paramref name="Queued"/>, and a game the server could not be asked about is <paramref name="Unreachable"/>.</param>
+/// <param name="HeldForDlc">Games whose newer save was not pulled because it needs DLC this machine lacks.</param>
 public sealed record SyncRunDto(
     DateTime FinishedAtUtc, int Games, int Uploaded, int AlreadyCurrent, int Conflicts, int Failed,
-    long BytesSent, bool Cancelled, int Pulled = 0, int Queued = 0, int Unreachable = 0);
+    long BytesSent, bool Cancelled, int Pulled = 0, int Queued = 0, int Unreachable = 0, int HeldForDlc = 0);
 public sealed record SyncNowResponse(string Message);
 /// <param name="Requested">False when no Sync all was running, so there was nothing to cancel.</param>
 public sealed record CancelSyncResponse(bool Requested);

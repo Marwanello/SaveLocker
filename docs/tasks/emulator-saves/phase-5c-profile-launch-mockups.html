@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 5c · Profile checked at launch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0f0f10;--panel:#141416;--raise:#191a1c;--tile:#1b1c1f;--hover:#202124;--fg:#f0eee9;--dim:#a09d97;--faint:#817e78;--line:#242427;--safe:#7fa96a;--watch:#d9a63f;--info:#7b9fd0;--accent:#e0533c;--on-accent:#160f0e;
+--accent-soft:color-mix(in oklab,var(--accent) 14%,var(--panel));--accent-line:color-mix(in oklab,var(--accent) 42%,var(--panel));--accent-ink:color-mix(in oklab,var(--accent) 80%,var(--fg));
+--safe-soft:color-mix(in oklab,var(--safe) 14%,var(--panel));--safe-line:color-mix(in oklab,var(--safe) 40%,var(--panel));--safe-ink:color-mix(in oklab,var(--safe) 82%,var(--fg));
+--watch-soft:color-mix(in oklab,var(--watch) 14%,var(--panel));--watch-line:color-mix(in oklab,var(--watch) 40%,var(--panel));--watch-ink:color-mix(in oklab,var(--watch) 82%,var(--fg));
+--info-soft:color-mix(in oklab,var(--info) 16%,var(--panel));--info-line:color-mix(in oklab,var(--info) 40%,var(--panel));--info-ink:color-mix(in oklab,var(--info) 82%,var(--fg));color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--ink);color:var(--fg);font-family:'Archivo',system-ui,sans-serif;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+h1,h2,h3,p,dl,dd,ul{margin:0}
+button{font-family:inherit}
+a{color:#e8735f}
+.mono{font-family:'JetBrains Mono',monospace;font-size:11px}
+.eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+
+/* page chrome */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in oklab,var(--ink) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top-in{max-width:1320px;margin:0 auto;padding:14px 16px;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+.top h1{font-size:16px;font-weight:700;letter-spacing:-.02em}
+.top h1 span{color:var(--dim);font-weight:500}
+.picker{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.group{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.group>span{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-right:4px}
+.opt-tab{border:1px solid var(--line);background:var(--panel);color:var(--dim);padding:6px 11px;border-radius:99px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
+.opt-tab:hover{color:var(--fg)}
+.opt-tab[aria-selected=true]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.opt-tab .rec{color:var(--safe-ink);margin-left:4px}
+.gt{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:12px;color:var(--dim)}
+.gt input{background:var(--raise);border:1px solid var(--line);border-radius:9px;color:var(--fg);padding:6px 10px;font:500 12.5px 'Archivo',sans-serif;width:150px}
+.wrap{max-width:1320px;margin:0 auto;padding:16px 16px 40px;display:flex;flex-direction:column;gap:14px}
+.brief{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:900px){.brief{grid-template-columns:1fr}}
+.brief>div{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.brief h2{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-top:4px}
+.brief p{font-size:12.5px;color:var(--dim);line-height:1.55;margin-top:6px}
+.brief ul{padding-left:16px;font-size:12.5px;line-height:1.55;color:var(--dim);margin-top:6px}
+.brief li b{color:var(--fg);font-weight:600}
+.frame{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--ink);box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.framebar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:9px 14px;background:var(--raise);border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:6px}.lights i{width:10px;height:10px;border-radius:50%;background:var(--tile);border:1px solid var(--line)}
+.framebar .where{font-size:12px;color:var(--dim)}
+.framebar .seg{margin-left:auto}
+
+/* SaveLocker primitives */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--raise);color:var(--fg);font:500 12.5px 'Archivo',sans-serif;cursor:pointer;white-space:nowrap;transition:background-color .15s}
+.btn:hover{background:var(--hover)}
+.btn-p{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn-p:hover{background:color-mix(in oklab,var(--accent) 86%,white)}
+.btn-q{background:transparent;border-color:transparent;color:var(--dim)}
+.btn-sm{padding:5px 11px;font-size:12px}
+.btn:disabled{opacity:.55;cursor:default}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);background:var(--raise);font-size:11px;color:var(--dim);white-space:nowrap;font-family:'Archivo',sans-serif}
+button.chip{cursor:pointer}
+button.chip:hover{border-color:var(--info-line);color:var(--info-ink)}
+.chip-ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.chip-warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.chip-crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.chip-info{color:var(--info-ink);border-color:var(--info-line);background:var(--info-soft)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.card-h h3{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+.card-h small{font-size:11px;color:var(--dim)}
+.card-b{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:12px;row-gap:2px;align-items:center;width:100%;text-align:left;padding:9px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-family:'Archivo',sans-serif;transition:background-color .15s,transform .15s}
+button.row{cursor:pointer}
+button.row:hover{background:var(--raise);transform:translateX(2px)}
+.row.on{background:var(--accent-soft);border-color:var(--accent-line)}
+.row.flat{border-color:transparent;background:transparent}
+button.row.flat:hover{background:var(--raise)}
+.cov{grid-row:span 2;width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12.5px;background:var(--tile);color:var(--dim)}
+.cov.s{width:34px;height:34px}
+.cov-p{background:var(--info-soft);color:var(--info-ink);border:1px solid var(--info-line);border-radius:50%}
+.rt{grid-column:2;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:end}
+.rs{grid-column:2;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:start}
+.re{grid-column:3;grid-row:1/span 2;display:flex;gap:8px;align-items:center}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none;background:var(--faint)}
+.dot-ok{background:var(--safe)}.dot-warn{background:var(--watch)}.dot-info{background:var(--info)}.dot-crit{background:var(--accent)}.dot-none{background:transparent;border:1.5px solid var(--faint)}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px 16px;font-size:12.5px}
+.kv dt{color:var(--dim)}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg-b{border:0;background:transparent;color:var(--dim);padding:5px 12px;border-radius:99px;font:500 12px 'Archivo',sans-serif;cursor:pointer}
+.seg-b:hover{color:var(--fg)}
+.seg-b.on{background:var(--tile);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-width:0}
+.stat b{display:block;font-size:20px;font-weight:700;letter-spacing:-.03em;margin-top:6px}
+.stat span{display:block;font-size:11px;color:var(--dim);margin-top:3px}
+.grid-s{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;align-items:start}
+.banner{display:flex;gap:14px;align-items:center;padding:13px 16px;border-radius:12px;border:1px solid;flex-wrap:wrap}
+.banner>div{flex:1 1 300px;min-width:0}
+.banner-warn{background:var(--watch-soft);border-color:var(--watch-line)}
+.banner-ok{background:var(--safe-soft);border-color:var(--safe-line)}
+.banner-info{background:var(--info-soft);border-color:var(--info-line)}
+.banner b{display:block;font-size:13px;font-weight:600}
+.banner span.d{display:block;font-size:12px;color:var(--dim);margin-top:2px;line-height:1.45}
+.back{border:0;background:transparent;color:var(--dim);font:500 12px 'Archivo',sans-serif;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:5px}
+.back:hover{color:var(--fg)}
+.crumbs{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.meter{height:6px;border-radius:99px;background:var(--tile);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--info);transition:width .3s}
+.gh{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.gh-cover{width:64px;aspect-ratio:2/3;border-radius:10px;background:var(--tile);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dim);flex:none}
+.gh-avatar{width:72px;height:72px;border-radius:50%;background:var(--info-soft);border:1px solid var(--info-line);color:var(--info-ink);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;flex:none}
+.gh h2{font-size:22px;font-weight:700;letter-spacing:-.03em}
+.chips{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.ghead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ghead h3{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+.ghead span{font-size:11.5px;color:var(--dim)}
+.list{display:flex;flex-direction:column;gap:6px}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:500;text-align:left;padding:8px 18px;border-bottom:1px solid var(--line)}
+.tbl td{padding:9px 18px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.scroll{overflow-x:auto}
+.ok{color:var(--safe-ink);font-size:12px}
+.no{color:var(--watch-ink);font-size:12px;font-weight:600}
+.lost{color:var(--accent-ink);font-weight:600}
+input[type=checkbox]{accent-color:#e0533c;width:14px;height:14px;cursor:pointer;flex:none}
+.file{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;padding:4px 0}
+.fold{border-top:1px solid var(--line);padding:12px 18px;display:flex;flex-direction:column;gap:6px}
+.fold:first-of-type{border-top:0}
+.fold-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px}
+.fold-h b{font-weight:600}
+.f{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;padding:3px 0 3px 22px}
+.f small{font-size:11px;color:var(--dim)}
+
+/* agent + console chrome */
+.app{min-height:720px;display:flex;flex-direction:column;position:relative}
+.bar{display:flex;align-items:center;gap:11px;padding:11px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.mark{width:28px;height:28px;border-radius:8px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:none}
+.brand b{display:block;font-size:15px;letter-spacing:-.03em}
+.brand span{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.body{flex:1;display:flex;flex-wrap:wrap}
+.aside{flex:1 1 180px;max-width:220px;padding:14px 10px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:3px}
+.nav{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 11px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--dim);font:500 13px 'Archivo',sans-serif;cursor:pointer;text-align:left;width:100%}
+.nav:hover{background:var(--raise);color:var(--fg)}
+.nav.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.nav .new{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--info-ink);border:1px solid var(--info-line);border-radius:99px;padding:1px 6px}
+.aside-foot{margin-top:auto;padding:12px 11px 0;font-size:11px;color:var(--dim);line-height:1.6}
+.aside-foot b{color:var(--fg);display:block}
+.main{flex:999 1 560px;min-width:0;padding:22px 24px 28px;display:flex;flex-direction:column;gap:14px}
+.tabs{display:flex;gap:2px;flex-wrap:wrap}
+.tab{border:0;background:transparent;color:var(--dim);padding:6px 11px;border-radius:9px;font:500 13px 'Archivo',sans-serif;cursor:pointer}
+.tab.on{background:var(--raise);color:var(--fg)}
+.side{flex:1 1 250px;max-width:290px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+.side-h{padding:12px 14px;border-bottom:1px solid var(--line)}
+.side-l{padding:6px;display:flex;flex-direction:column;gap:2px}
+
+/* option-specific */
+.mx td .cell{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.mx td .cell small{font-size:11px;color:var(--dim)}
+.overlay{position:absolute;inset:0;background:rgba(8,8,9,.72);display:flex;align-items:flex-start;justify-content:center;padding:70px 16px 16px;z-index:5}
+.dialog{width:100%;max-width:580px;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.dialog-h{padding:16px 20px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.dialog-h h3{font-size:16px;font-weight:700;margin-top:3px;line-height:1.3}
+.dialog-h p{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.5}
+.step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px;padding:14px 20px;border-bottom:1px solid var(--line)}
+.step:last-child{border-bottom:0}
+.step b{font-size:13px}
+.step .d{font-size:12px;color:var(--dim);line-height:1.45}
+.num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:1px solid var(--line);background:var(--raise);color:var(--dim)}
+.num.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.num.done{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.check{display:flex;align-items:center;gap:10px;font-size:12.5px;padding:5px 0;cursor:pointer}
+.choice{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--raise);text-align:left;color:var(--fg);cursor:pointer;width:100%}
+.choice:hover{border-color:var(--faint)}
+.choice b{font-size:13px;font-weight:600;display:block}
+.choice span.d{font-size:12px;color:var(--dim);display:block;margin-top:3px;line-height:1.45}
+.ico{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--tile);color:var(--dim)}
+.ico.info{background:var(--info-soft);color:var(--info-ink)}
+.addrow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.sub{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--dim);margin-top:6px}
+.kid{display:grid;grid-template-columns:22px auto minmax(0,1fr) auto;column-gap:10px;align-items:center;width:calc(100% - 26px);margin-left:26px;text-align:left;padding:7px 12px 7px 4px;border-radius:10px;border:1px dashed var(--line);background:transparent;color:var(--fg);cursor:pointer}
+.kid:hover{background:var(--raise)}
+.kid.on{background:var(--accent-soft);border-color:var(--accent-line);border-style:solid}
+.kid.quiet{color:var(--dim)}
+.elbow{width:14px;height:16px;border-left:1.5px solid var(--line);border-bottom:1.5px solid var(--line);border-bottom-left-radius:6px;margin:-12px 0 0 6px}
+.pkg{width:26px;height:26px;border-radius:7px;background:var(--info-soft);border:1px solid var(--info-line);color:var(--info-ink);display:flex;align-items:center;justify-content:center;flex:none}
+.pkg.off{background:var(--tile);border-color:var(--line);color:var(--faint)}
+.kid-t{display:flex;flex-direction:column;min-width:0}
+.kid-t b{font-size:12.5px;font-weight:600}
+.kid-t span{font-size:11px;color:var(--dim)}
+.pl{display:grid;grid-template-columns:auto minmax(0,1fr) 70px 54px 54px;gap:12px;align-items:center;padding:8px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.pl.head{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);border-top:0}
+label.pl{cursor:pointer}label.pl:hover{background:var(--raise)}
+.pr{display:grid;grid-template-columns:minmax(0,1fr) 64px 110px auto;gap:12px;align-items:center;padding:8px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.pr.head{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);border-top:0}
+.mini{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px}
+.mini button{border:0;background:transparent;color:var(--dim);padding:3px 9px;border-radius:6px;font:500 11px 'Archivo',sans-serif;cursor:pointer}
+.mini button.on{background:var(--tile);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:12.5px}
+.sw:first-child{border-top:0}
+.sw small{display:block;font-size:11.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.tog{width:34px;height:20px;border-radius:99px;border:1px solid var(--line);background:var(--tile);position:relative;cursor:pointer;flex:none;padding:0}
+.tog i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dim);transition:left .2s}
+.tog.on{background:var(--accent);border-color:var(--accent)}
+.tog.on i{left:16px;background:var(--on-accent)}
+.stack{display:flex;height:10px;border-radius:99px;overflow:hidden;background:var(--tile)}
+.key{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim)}
+.key i{width:9px;height:9px;border-radius:3px;display:inline-block}
+.search{flex:0 1 300px;background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--fg);font:12.5px 'Archivo',sans-serif}
+
+/* ---- added for the second round: profile D/E/F and the DLC check journey ---- */
+.brief.two{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+@media (max-width:900px){.brief.two{grid-template-columns:1fr}}
+.how{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.how div{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;font-size:12px;line-height:1.5}
+.how dt,.how b.k{color:var(--faint);font-weight:500;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;padding-top:2px}
+.how span{color:var(--dim)}
+.select{background:var(--raise);border:1px solid var(--line);border-radius:9px;color:var(--fg);padding:6px 10px;font:500 12.5px 'Archivo',sans-serif}
+.progress-list{display:flex;flex-direction:column;gap:6px;font-size:12.5px}
+.progress-list div{display:flex;gap:9px;align-items:center}
+.card-gamer{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:18px;border-radius:16px;border:1px solid var(--info-line);background:linear-gradient(135deg,var(--info-soft),var(--panel) 70%)}
+.gs{font-size:28px;font-weight:700;letter-spacing:-.03em}
+.gs small{font-size:13px;color:var(--dim);font-weight:500;margin-left:4px}
+.ach{display:grid;grid-template-columns:30px minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:9px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.ach .medal{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--tile);color:var(--faint);font-size:11px;font-weight:700}
+.ach.got .medal{background:var(--safe-soft);color:var(--safe-ink);border:1px solid var(--safe-line)}
+.ach.new{background:color-mix(in oklab,var(--info) 7%,var(--panel))}
+.ach small{display:block;font-size:11px;color:var(--dim)}
+.tv{background:#000;min-height:720px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.tv-bg{position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,#2a3346,#0b0d12 70%)}
+.tv-top{position:relative;display:flex;justify-content:space-between;padding:14px 22px;font-size:13px;color:#cfd6e4}
+.tv-hero{position:relative;padding:40px 48px 0;display:flex;gap:26px;align-items:flex-end;flex-wrap:wrap}
+.tv-cover{width:150px;aspect-ratio:2/3;border-radius:10px;background:#1c2230;border:1px solid #2c3446;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;color:#8a96ad}
+.tv-hero h2{font-size:30px;color:#fff;letter-spacing:-.02em}
+.tv-play{margin-top:14px;display:inline-flex;align-items:center;gap:10px;background:#1a9fff;color:#fff;border:0;border-radius:6px;padding:12px 30px;font:700 15px 'Archivo',sans-serif;cursor:pointer}
+.sheet{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,calc(100% - 32px));background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 30px 80px rgba(0,0,0,.6);overflow:hidden;z-index:3}
+.sheet-h{padding:18px 22px 12px}
+.sheet-h h3{font-size:18px;font-weight:700;margin-top:4px;line-height:1.3}
+.sheet-h p{font-size:13px;color:var(--dim);margin-top:6px;line-height:1.5}
+.sheet-b{padding:4px 22px 20px;display:flex;flex-direction:column;gap:8px}
+.big{padding:14px 16px;font-size:14px;justify-content:flex-start}
+.toast{position:absolute;right:16px;bottom:16px;width:min(360px,calc(100% - 32px));background:#202226;border:1px solid #33353a;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.5);padding:12px 14px;z-index:6;display:flex;flex-direction:column;gap:6px}
+.toast-h{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim)}
+.toast b{font-size:13px}
+.toast p{font-size:12px;color:var(--dim);line-height:1.45}
+.toast .actions{margin-top:4px}
+/* journey */
+.journey{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:1000px){.journey{grid-template-columns:1fr}}
+.steps{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:2px;position:sticky;top:76px;max-height:calc(100vh - 92px);overflow-y:auto}
+.stage{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:10px 8px 4px}
+.stp{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;text-align:left;border:1px solid transparent;background:transparent;color:var(--dim);padding:7px 8px;border-radius:10px;cursor:pointer;font:500 12.5px 'Archivo',sans-serif;width:100%}
+.stp:hover{background:var(--raise);color:var(--fg)}
+.stp[aria-current=step]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.stp .n{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--faint)}
+.stp.seen .n{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.stp[aria-current=step] .n{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.stp small{display:block;font-size:10.5px;color:var(--faint);margin-top:1px}
+.stp.branch{padding-left:20px}
+.narr{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 18px;align-items:start}
+.narr h2{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-top:3px}
+.narr p{font-size:12.5px;color:var(--dim);line-height:1.55;margin-top:6px;max-width:760px}
+.narr .built{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:9px}
+.nav-btns{display:flex;gap:6px}
+.timeline{display:flex;flex-direction:column;gap:0;padding:6px 18px 12px}
+.tl{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:start;padding:7px 0;font-size:12.5px;position:relative}
+.tl::before{content:'';position:absolute;left:8px;top:22px;bottom:-8px;width:1.5px;background:var(--line)}
+.tl:last-child::before{display:none}
+.tl i{width:12px;height:12px;border-radius:50%;margin:2px 0 0 2px;background:var(--tile);border:1.5px solid var(--faint);position:relative;z-index:1}
+.tl.done i{background:var(--safe);border-color:var(--safe)}
+.tl.now i{background:var(--info);border-color:var(--info);box-shadow:0 0 0 4px var(--info-soft)}
+.tl small{display:block;font-size:11px;color:var(--dim)}
+.tl em{font-style:normal;font-size:11px;color:var(--dim)}
+.plan{display:flex;flex-direction:column;gap:0}
+.plan-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;padding:12px 18px;border-top:1px solid var(--line)}
+.plan-row:first-child{border-top:0}
+.plan-row .n{width:28px;height:28px;border-radius:8px;background:var(--tile);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--dim)}
+.plan-row b{font-size:13px}
+.plan-row p{font-size:12px;color:var(--dim);line-height:1.5;margin-top:4px}
+.plan-row ul{margin:6px 0 0;padding-left:16px;font-size:12px;color:var(--dim);line-height:1.55}
+.plan-row code,.narr code{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <h1>Profile checked at launch <span>· option F with the profile split by game</span></h1>
+    <div class="picker" role="tablist" aria-label="View">
+      <div class="group">
+        <button type="button" class="opt-tab" role="tab" data-view="journey">Journey</button>
+        <button type="button" class="opt-tab" role="tab" data-view="plan">Build plan</button>
+      </div>
+    </div>
+    <a href="phase-5c-dlc-check-mockups.html" style="font-size:12px;margin-left:auto">DLC check journey →</a>
+    <label class="gt" style="margin-left:0">Gamertag <input id="gamertag" value="[Gamertag]" autocomplete="off"></label>
+  </div>
+</header>
+<div class="wrap" id="root"></div>
+
+<script>
+'use strict';
+const XUID = 'E030000033894516', P1 = 'E03000004A1C77B2';
+const DECK = '/run/media/mmcblk0p1/Emulation/saves/xenia';
+const S = { view: 'journey', step: 'pcAdd', seen: new Set(['pcAdd']), gamertag: '[Gamertag]', ready: 0 };
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const gt = () => esc(S.gamertag || '[Gamertag]');
+const initial = () => esc(((S.gamertag || '').replace(/[^A-Za-z0-9]/g, '')[0] || 'G').toUpperCase());
+const svg = (d, size = 13, sw = 2.2) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const IC = {
+  user: s => svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>', s || 11),
+  back: () => svg('<path d="M15 18l-6-6 6-6"/>'),
+  next: () => svg('<path d="M9 6l6 6-6 6"/>'),
+  play: () => svg('<path d="M7 4l13 8-13 8z"/>', 14, 2.4),
+  folder: () => svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', 14, 2)
+};
+const go = id => `data-go="${id}"`;
+
+function agentShell(machine, navCur, body, overlay = '') {
+  const nav = ['Overview', 'Games', 'Add Games', 'Conflicts', 'Activity', 'Settings'].map(l => `<button type="button" class="nav${l === navCur ? ' on' : ''}"><span>${l}</span></button>`).join('');
+  return `<div class="app"><div class="bar"><span class="mark">S</span><div class="brand"><b>SaveLocker</b><span>Agent · ${machine}</span></div></div>
+  <div class="body"><nav class="aside" aria-label="Sections">${nav}<div class="aside-foot"><b>${machine}</b>agent v0.9.0</div></nav><main class="main">${body}</main></div>${overlay}</div>`;
+}
+function webShell(cur, body) {
+  return `<div class="app"><div class="bar"><span class="mark" style="width:26px;height:26px;font-size:12px">S</span><b style="font-size:15px;letter-spacing:-.03em">SaveLocker</b>
+  <nav class="tabs" aria-label="Console">${['Games', 'Backups', 'Audit', 'Config', 'Help'].map(t => `<button type="button" class="tab${t === cur ? ' on' : ''}">${t}</button>`).join('')}</nav></div><div class="body">${body}</div></div>`;
+}
+const toast = (title, text, actions = '', from = 'SaveLocker') => `<div class="toast" role="status"><div class="toast-h"><span class="mark" style="width:16px;height:16px;font-size:9px;border-radius:4px">S</span>${from}</div><b>${title}</b><p>${text}</p>${actions ? `<div class="actions">${actions}</div>` : ''}</div>`;
+const fhHead = chips => `<div class="gh"><div class="gh-cover">FH</div><div style="flex:1;min-width:0"><h2>Forza Horizon</h2><div class="chips"><span class="chip">Xenia</span><span class="chip">Xbox 360</span>${chips}</div></div></div>`;
+const profileChip = () => `<span class="chip chip-info">${IC.user()}Saves under ${gt()}</span>`;
+const tv = (inner, sub, playing, extra = '') => `<div class="tv"><div class="tv-bg"></div><div class="tv-top"><span>Steam Deck · Game Mode</span><span>9:41</span></div>
+  <div class="tv-hero"><div class="tv-cover">FH</div><div><span style="font-size:12px;color:#8a96ad;letter-spacing:.12em;text-transform:uppercase">Non-Steam · Xenia · launched through SaveLocker</span><h2>Forza Horizon</h2>
+  <button type="button" class="tv-play" ${playing ? 'disabled' : go('tvModal')}>${IC.play()}${playing ? 'Playing' : 'Play'}</button>
+  <p style="color:#8a96ad;font-size:12.5px;margin-top:10px;max-width:460px">${sub}</p></div></div>${inner}${extra}</div>`;
+function launchCard(policy = 'ask', via = 'deck') {
+  const how = via === 'deck' ? 'Steam launch command · prompts through the Decky plugin' : via === 'playnite' ? 'Playnite · prompts in a Playnite dialog' : 'Started outside SaveLocker · set ahead of time, told after';
+  return `<div class="card"><div class="card-h"><h3>Launch</h3><small>${how}</small></div><div class="card-b"><dl class="kv">
+    <dt>Signs in as</dt><dd>${gt()} <span class="mono" style="color:var(--dim)">${XUID}</span></dd>
+    <dt>If Xenia is set to another</dt><dd><div class="seg" role="group"><button type="button" class="seg-b${policy === 'ask' ? ' on' : ''}">Ask</button><button type="button" class="seg-b${policy === 'switch' ? ' on' : ''}">Switch silently</button><button type="button" class="seg-b${policy === 'leave' ? ' on' : ''}">Leave it</button></div></dd>
+    <dt>How</dt><dd style="color:var(--dim)">Sets <span class="mono">logged_profile_slot_0_xuid</span> in Xenia’s config before Xenia starts</dd></dl></div></div>`;
+}
+function foldersCard(here, state = 'ok') {
+  const d = state === 'ok' ? 'dot-ok' : 'dot-info';
+  return `<div class="card"><div class="card-h"><h3>Save files on this machine</h3><small>three folders, one game, nothing shared with other games</small></div>
+    <div class="fold"><div class="fold-h"><span class="dot ${d}"></span><b>Save</b><span class="mono" style="color:var(--dim)">${here}/content/${XUID}/4D5309C9</span></div></div>
+    <div class="fold"><div class="fold-h"><span class="dot dot-ok"></span><b>device</b><span class="mono" style="color:var(--dim)">${here}/content/0000000000000000/4D5309C9</span></div></div>
+    <div class="fold"><div class="fold-h"><span class="dot ${d}"></span><b>profile</b><span style="font-size:12px;color:var(--dim)">only Forza Horizon's part of ${gt()}</span></div>
+      <div class="f"><span class="dot ${d}"></span><span><span class="mono">4D5309C9.gpd</span> <span style="color:var(--dim)">· its achievements and in-game settings</span></span><small>41 KB</small></div>
+      <div class="f"><span class="dot ${d}"></span><span><span class="mono">FFFE07D1.gpd</span> <span style="color:var(--dim)">· only its row: unlocked, gamerscore, last played</span></span><small>merged, other rows kept</small></div></div>
+    <div class="fold" style="background:var(--raise)"><div class="fold-h"><span style="color:var(--info)">${IC.user(13)}</span><b>${gt()}'s core</b><span style="font-size:12px;color:var(--dim)">account, header, profile settings · copied only when this machine lacks the profile</span><span class="chip chip-ok" style="margin-left:auto">On this machine</span></div></div></div>`;
+}
+const decky = (title, text, buttons) => `<div class="sheet" role="dialog" aria-modal="true" aria-label="${title}" style="background:#23262e;border-color:#3a3f4b">
+  <div class="sheet-h"><span class="eyebrow" style="color:#8a96ad">SaveLocker · Decky · before Forza Horizon starts</span><h3 style="color:#fff">${title}</h3><p style="color:#b7c0d0">${text}</p></div>
+  <div class="sheet-b">${buttons}</div></div>`;
+
+const SCREENS = {
+  pcAdd: () => agentShell('PC', 'Add Games', `<h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Add games</h2>
+    <div class="addrow"><input type="checkbox" checked aria-label="Add Forza Horizon"><div style="min-width:0">
+      <div class="chips" style="margin-top:0"><b style="font-size:13.5px">Forza Horizon</b><span class="chip">Emulator</span><span class="chip">Xenia</span><span class="chip mono">4D5309C9</span>${profileChip()}</div>
+      <div class="mono" style="color:var(--dim);margin-top:5px">D:\\Emulation\\saves\\xenia\\content\\${XUID}\\4D5309C9</div>
+      <label class="sub"><input type="checkbox" checked><span>Also sync its achievements <span style="color:var(--faint)">· its file and its row of ${gt()}’s profile, 41 KB</span></span></label>
+      <label class="sub"><input type="checkbox" checked><span>Start Xenia as ${gt()} when this game launches</span></label>
+    </div></div>
+    <div class="banner banner-info"><div><b>${gt()} becomes this game’s profile</b><span class="d">Every machine that adds Forza Horizon is asked to use it, so its saves land in the same place everywhere.</span></div></div>
+    <div class="actions"><button type="button" class="btn btn-p" ${go('pcGame')}>Add 1 game</button></div>`),
+
+  pcGame: () => agentShell('PC', 'Games', `${fhHead(profileChip() + '<span class="chip chip-ok">Matches the cloud</span>')}
+    ${foldersCard('D:/Emulation/saves/xenia')}${launchCard('ask', 'playnite')}`),
+
+  consoleGame: () => webShell('Games', `<aside class="side" aria-label="Games"><div class="side-h eyebrow">Games · 3</div><div class="side-l">
+      <div class="row on"><span class="cov s">FH</span><span class="rt">Forza Horizon</span><span class="rs">2 h ago · 21 MB</span><span class="re"><span class="dot dot-ok"></span></span></div>
+      <div class="row flat"><span class="cov s">F2</span><span class="rt">Forza Horizon 2</span><span class="rs">yesterday · 14 MB</span><span class="re"><span class="dot dot-ok"></span></span></div>
+      <div class="row flat"><span class="cov s">H3</span><span class="rt">Halo 3</span><span class="rs">3 days ago · 1.1 MB</span><span class="re"><span class="dot dot-ok"></span></span></div></div></aside>
+    <main class="main"><div class="gh"><div class="gh-cover">FH</div><div style="flex:1"><h2>Forza Horizon</h2><div class="chips"><span class="chip">Xenia · Xbox 360</span><span class="chip chip-info">${IC.user()}Profile: ${gt()}</span><span class="chip mono">${XUID}</span><button type="button" class="chip">Change…</button></div></div></div>
+      <div class="card"><div class="card-h"><h3>Profile at launch</h3><small>each machine signs in as the game’s profile</small></div>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Machine</th><th>Save folder under</th><th>Last launch</th><th></th></tr></thead><tbody>
+          <tr><td><b>PC</b></td><td>${gt()}</td><td style="color:var(--dim)">2 h ago · through Playnite</td><td><span class="chip chip-ok">Right profile</span></td></tr>
+          <tr><td><b>Steam Deck</b></td><td style="color:var(--dim)">Not set up</td><td style="color:var(--dim)">—</td><td><span class="chip chip-warn">Has Player1 instead</span></td></tr>
+        </tbody></table></div></div>
+      <div class="card"><div class="card-h"><h3>Default when Xenia is set to another profile</h3><small>a machine or a game can override it</small></div><div class="card-b"><div class="seg" role="group"><button type="button" class="seg-b on">Ask, where a prompt can show</button><button type="button" class="seg-b">Switch silently</button><button type="button" class="seg-b">Leave it</button></div>
+        <p style="font-size:12px;color:var(--dim)">Where nothing can ask (Game Mode without Decky, Xenia started directly) “Ask” switches and says so afterwards.</p></div></div></main>`),
+
+  deckAdd: () => agentShell('Steam Deck', 'Add Games', `<h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Add games</h2>
+    <div class="addrow"><input type="checkbox" checked aria-label="Add Forza Horizon"><div style="min-width:0">
+      <div class="chips" style="margin-top:0"><b style="font-size:13.5px">Forza Horizon</b><span class="chip">Emulator</span><span class="chip">Xenia</span><span class="chip mono">4D5309C9</span><span class="chip">On the server</span></div>
+      <p style="font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.5">Found here under <b style="color:var(--fg)">Player1</b>, this Deck’s own profile. On PC its saves are under <b style="color:var(--fg)">${gt()}</b>.</p>
+      <label class="check" style="margin-top:6px"><input type="radio" name="p" checked><span><b>Use ${gt()} here</b> <span style="color:var(--dim)">· recommended: copies the profile (about 100 KB) and syncs into <span class="mono">content/${XUID}/4D5309C9</span>. Player1 and its save stay as they are.</span></span></label>
+      <label class="check"><input type="radio" name="p"><span><b>Keep Player1’s save</b> <span style="color:var(--dim)">· added as a separate game, “Forza Horizon (Player1)”; it never mixes with ${gt()}’s.</span></span></label>
+    </div></div>
+    <div class="actions"><button type="button" class="btn btn-p" ${go('deckSetup')}>Add 1 game</button></div>`),
+
+  deckSetup: () => {
+    const r = S.ready, steps = [['Copied ' + gt() + '’s core: account, header, profile settings', '~100 KB'], ['Added Forza Horizon’s row to the profile', '1 row'], ['Pulled the save and its achievements', '4.1 MB + 41 KB'], ['Xenia is set at launch, not now', 'Player1 stays the default for other games']];
+    return agentShell('Steam Deck', 'Games', `${fhHead(profileChip())}
+      <div class="card"><div class="card-h"><h3>Setting up Forza Horizon here</h3></div><div class="card-b"><div class="progress-list">${steps.map(([t, s], i) => `<div><span class="dot ${r > i ? 'dot-ok' : r === i ? 'dot-info' : ''}"></span><span style="flex:1;${r > i ? '' : 'color:var(--dim)'}">${t}</span><span class="mono" style="color:var(--faint)">${s}</span></div>`).join('')}</div></div></div>
+      ${r >= 4 ? `<div class="banner banner-ok"><div><b>Ready. Press Play in Game Mode</b><span class="d">Both profiles are on this Deck now; SaveLocker picks the right one each time a game starts.</span></div><button type="button" class="btn btn-p" ${go('tvPlay')}>Go to Game Mode</button></div>` : ''}
+      ${foldersCard(DECK, r >= 3 ? 'ok' : 'busy')}`);
+  },
+
+  tvPlay: () => tv('', 'Xenia’s config currently signs in as Player1. SaveLocker’s launch command runs first, before Xenia starts.', false),
+  tvModal: () => tv(decky('Xenia would start as Player1', `Forza Horizon’s save and its 18 achievements are under <b style="color:#fff">${gt()}</b>. As Player1 the game starts fresh.`,
+    `<button type="button" class="btn btn-p big" ${go('tvReady')}>${IC.user(15)}Start as ${gt()}</button>
+     <button type="button" class="btn big" ${go('tvPlayer1')}>Start as Player1</button>
+     <label class="check" style="font-size:13px;color:#b7c0d0"><input type="checkbox"> Don’t ask again for this game</label>
+     <p style="font-size:11.5px;color:#8a96ad">No answer in 30 s starts as ${gt()}.</p>`), 'The launch command is waiting for your answer; Xenia has not started.', false),
+  tvReady: () => tv(`<div class="sheet"><div class="sheet-h"><span class="eyebrow">SaveLocker</span><h3>Getting Forza Horizon ready</h3></div><div class="sheet-b"><div class="progress-list">
+      <div><span class="dot dot-ok"></span>Pulled the latest save · already up to date</div><div><span class="dot dot-ok"></span>Merged Forza Horizon’s row into ${gt()}’s profile</div><div><span class="dot dot-ok"></span>Xenia set to sign in as ${gt()}</div><div><span class="dot dot-info"></span>Starting Xenia…</div></div></div></div>`, 'Each step happens before Xenia reads its config.', false),
+  tvPlaying: () => tv('', 'Signed in as ' + gt() + '. The save and the achievements are the ones from PC.', true, toast('Forza Horizon started as ' + gt(), 'Player1 is still on this Deck. Other games under Player1 start as Player1.', '', 'SaveLocker · Decky')),
+
+  deckAfter: () => agentShell('Steam Deck', 'Activity', `<h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Activity</h2>
+    <div class="card"><div class="timeline">
+      <div class="tl done"><i></i><div><b>Pushed Forza Horizon</b><small>the save 4.1 MB · 4D5309C9.gpd · its row of ${gt()}’s profile (2 achievements unlocked here)</small></div><em>just now</em></div>
+      <div class="tl done"><i></i><div><b>Forza Horizon closed</b><small>played 48 min as ${gt()}</small></div><em>just now</em></div>
+      <div class="tl done"><i></i><div><b>Started Forza Horizon as ${gt()}</b><small>switched from Player1 · you chose it in Game Mode</small></div><em>49 min ago</em></div>
+      <div class="tl done"><i></i><div><b>Set up Forza Horizon under ${gt()}</b><small>copied the profile core, added its row, pulled the save</small></div><em>1 h ago</em></div></div></div>
+    <p style="font-size:12px;color:var(--dim)">Xenia’s config is left on ${gt()}. The next game launched through SaveLocker is checked again, so a Player1 game starts as Player1.</p>`),
+
+  deckCompare: () => agentShell('Steam Deck', 'Games', `${fhHead(profileChip() + '<span class="chip chip-warn">Differs from the cloud</span>')}
+    <div class="card"><div class="card-h"><h3>What “Pull latest” will change</h3><small>PC played Forza Horizon; this Deck played Halo 3 since</small></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th>In ${gt()}'s profile here</th><th>Now</th><th>After the pull</th><th></th></tr></thead><tbody>
+      ${[['Forza Horizon achievements', '4D5309C9.gpd', '20 of 50', '23 of 50', 'chip-info', 'From PC'], ['Forza Horizon row', 'FFFE07D1.gpd · 4D5309C9', '20 · 295 G', '23 · 340 G', 'chip-info', 'From PC'], ['Halo 3 achievements', '4D5307E6.gpd', '11 of 49', '11 of 49', '', 'Not touched'], ['Halo 3 row', 'FFFE07D1.gpd · 4D5307E6', '11 · 190 G', '11 · 190 G', '', 'Kept'], ['Gamerscore', 'FFFE07D1.gpd · total', '575 G', '620 G', 'chip-ok', 'Recounted'], ['Account and settings', 'core', 'as here', 'as here', '', 'Not this game’s']]
+        .map(([w, f, a, b, c, n]) => `<tr><td><div style="display:flex;flex-direction:column;gap:2px"><span>${w}</span><span class="mono" style="color:var(--dim)">${f}</span></div></td><td>${a}</td><td style="font-weight:600">${b}</td><td><span class="chip ${c}">${n}</span></td></tr>`).join('')}
+      </tbody></table></div></div>`),
+
+  consoleAfter: () => webShell('Games', `<main class="main" style="max-width:1100px"><div class="gh"><div class="gh-cover">FH</div><div style="flex:1"><h2>Forza Horizon</h2><div class="chips"><span class="chip chip-info">${IC.user()}Profile: ${gt()}</span><span class="chip chip-info">23 of 50 achievements</span></div></div></div>
+    <div class="card"><div class="card-h"><h3>Profile at launch</h3></div><div class="scroll"><table class="tbl"><thead><tr><th>Machine</th><th>Save folder under</th><th>Last launch</th><th></th></tr></thead><tbody>
+      <tr><td><b>PC</b></td><td>${gt()}</td><td style="color:var(--dim)">20 min ago · Playnite</td><td><span class="chip chip-ok">Right profile</span></td></tr>
+      <tr><td><b>Steam Deck</b></td><td>${gt()}</td><td style="color:var(--dim)">1 h ago · Game Mode</td><td><span class="chip chip-ok">Switched from Player1</span></td></tr></tbody></table></div></div>
+    <div class="card"><div class="card-h"><h3>Save folders</h3></div><div class="card-b"><dl class="kv"><dt>Main</dt><dd class="mono">content\\${XUID}\\4D5309C9</dd><dt>device</dt><dd class="mono">content\\0000000000000000\\4D5309C9</dd><dt>profile</dt><dd><span class="mono">…\\FFFE07D1\\00010000\\${XUID}\\4D5309C9.gpd</span> <span style="color:var(--dim)">+ its row, merged</span></dd></dl></div></div></main>`),
+
+  tvNoDecky: () => tv('', 'Without the Decky plugin nothing can draw over Game Mode, so “Ask” becomes “Switch”: SaveLocker sets ' + gt() + ' and starts the game.', true),
+
+  pcPlaynite: () => `<div class="app" style="background:#1b1f2a"><div class="bar" style="background:#252a37;border-color:#333a4a"><b style="font-size:14px;color:#dfe5f2">Playnite</b><span style="font-size:12px;color:#8f9ab0">Library · Forza Horizon</span></div>
+    <div style="flex:1;position:relative;padding:40px;display:flex;gap:26px;flex-wrap:wrap"><div class="tv-cover">FH</div><div><h2 style="color:#fff;font-size:26px">Forza Horizon</h2><p style="color:#8f9ab0;font-size:13px;margin-top:6px">Starting…</p></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="SaveLocker" style="border-radius:8px"><div class="sheet-h"><span class="eyebrow">SaveLocker · before Forza Horizon starts</span><h3>Xenia is set to start as Player1</h3><p>Forza Horizon’s saves are under ${gt()}. Start as ${gt()}?</p></div>
+      <div class="sheet-b"><div class="actions" style="justify-content:flex-end"><button type="button" class="btn" ${go('pcDirect')}>Start as Player1</button><button type="button" class="btn btn-p" ${go('pcDirect')}>Start as ${gt()}</button></div></div></div></div></div>`,
+
+  pcDirect: () => agentShell('PC', 'Games', `${fhHead(profileChip())}
+    <div class="banner banner-info"><div><b>Xenia was started directly, so nothing could ask first</b><span class="d">SaveLocker keeps Xenia set to ${gt()} after every sync while Xenia is closed. This time Xenia was switched to Player1 from its own menu, so Forza Horizon ran as Player1.</span></div><button type="button" class="btn btn-sm">Launch through Playnite next time</button></div>
+    ${launchCard('ask', 'direct')}`, toast('Forza Horizon ran as Player1', 'Its saves under ' + gt() + ' were not touched, and nothing Player1 saved was pushed.', '<button type="button" class="btn btn-sm">Open</button>')),
+
+  tvPlayer1: () => tv('', 'You chose Player1 for this launch.', true, toast('Started as Player1', `Forza Horizon’s saves under ${gt()} are untouched, and nothing Player1 saves is pushed over them. Next launch asks again.`, '', 'SaveLocker · Decky')),
+
+  deckNoProfile: () => agentShell('Steam Deck', 'Games', `<div class="gh"><div class="gh-cover">H3</div><div style="flex:1"><h2>Halo 3</h2><div class="chips"><span class="chip">Xenia</span><span class="chip">Xbox 360</span><span class="chip">No profile</span></div></div></div>
+    <div class="card"><div class="card-h"><h3>Launch</h3></div><div class="card-b"><p style="font-size:12.5px;color:var(--dim);line-height:1.5">This game’s saves are in <span class="mono">content/User/4D5307E6</span>, the layout of Xenia builds from before profiles. Who Xenia signs in as doesn’t change where it saves, so there is nothing to check at launch.</p></div></div>`)
+};
+
+const STEPS = [
+  { stage: 'On PC, where the profile lives' },
+  { id: 'pcAdd', who: 'Agent · PC', title: 'Adding the game picks its profile', narr: 'The save folder is under an XUID, so the game gets that profile: its achievements file and its row of the main profile file become the game’s third folder, and the launch check is on by default. The first machine’s profile becomes the game’s profile on the server.', built: [3, 5], next: 'pcGame' },
+  { id: 'pcGame', who: 'Agent · PC', title: 'The game page shows both halves', narr: 'What syncs (three folders, nothing shared with other games) and what happens at launch. On Windows the prompt comes through the Playnite plugin, which already hooks the moment before a game starts.', built: [3, 7, 8], next: 'consoleGame' },
+  { id: 'consoleGame', who: 'Console', title: 'The console shows each machine’s profile', narr: 'Under which profile each machine keeps the save, and which profile the last launch used. The Deck still has only its own Player1, which is the problem the next stage solves.', built: [5, 10], next: 'deckAdd' },
+  { stage: 'Setting up the Deck' },
+  { id: 'deckAdd', who: 'Agent · Steam Deck', title: 'One choice when the Deck uses another profile', narr: 'Xenia gives each new profile a random XUID, so the Deck’s Player1 can never match. Using the game’s profile here means the save lands in the same folder as on PC. Keeping Player1 is allowed, as a separate game.', built: [5, 6], next: 'deckSetup' },
+  { id: 'deckSetup', who: 'Agent · Steam Deck', title: 'Copy the core, add the row, pull', narr: 'The core (account, header, settings) is copied only because this Deck lacks the profile. The row goes in before the save, because Xenia ignores an achievements file the main file does not list. Xenia’s config is not touched yet.', built: [4, 3, 6], next: 'tvPlay', anim: 'ready' },
+  { stage: 'Launching in Game Mode' },
+  { id: 'tvPlay', who: 'Steam Deck · Game Mode', title: 'Press Play', narr: 'The game runs through SaveLocker’s launch command, which already pulls before launch. The profile check is one more step there, before Xenia starts.', built: [8], next: 'tvModal' },
+  { id: 'tvModal', who: 'Steam Deck · Game Mode', title: 'Decky asks', narr: 'The launch command waits while the Decky plugin shows the question over Game Mode. No answer in 30 seconds starts the game’s profile. “Start as Player1” is a real choice and leaves everything alone.', built: [9], next: 'tvReady' },
+  { id: 'tvReady', who: 'Steam Deck · Game Mode', title: 'Ready in a second or two', narr: 'Pull, merge the row, write one line in Xenia’s config, start Xenia. Xenia reads the line at boot and signs in.', built: [7, 8], next: 'tvPlaying', anim: 'auto' },
+  { id: 'tvPlaying', who: 'Steam Deck · Game Mode', title: 'Playing as the right profile', narr: 'The save and achievements are PC’s. Player1 is still there for games that are saved under it.', built: [8], next: 'deckAfter' },
+  { id: 'deckAfter', who: 'Agent · Steam Deck', title: 'After playing', narr: 'The push after exit sends the save, the game’s achievements file and its row. Activity records the switch, and the console learns it on the next heartbeat.', built: [3, 8, 10], next: 'deckCompare' },
+  { stage: 'Why other games are safe' },
+  { id: 'deckCompare', who: 'Agent · Steam Deck', title: 'A pull changes one game only', narr: 'PC played Forza Horizon while the Deck played Halo 3. Pulling Forza Horizon replaces its file and its row; Halo 3’s file and row stay, and the gamerscore is recounted from the rows.', built: [2, 3], next: 'consoleAfter' },
+  { id: 'consoleAfter', who: 'Console', title: 'Every machine on the same profile', narr: 'Both machines keep the save under the same profile and start it as that profile.', built: [10], next: 'tvNoDecky' },
+  { stage: 'Other ways to launch' },
+  { id: 'tvNoDecky', who: 'Steam Deck · Game Mode', title: 'Game Mode without Decky', narr: 'Nothing can draw over Game Mode, so “Ask” switches without asking. The agent’s Activity and the console still show it.', built: [8], next: 'pcPlaynite' },
+  { id: 'pcPlaynite', who: 'Windows · Playnite', title: 'Windows through Playnite', narr: 'The Playnite plugin’s pre-launch hook asks in a real dialog, as the other Playnite actions do.', built: [9], next: 'pcDirect' },
+  { id: 'pcDirect', who: 'Agent · PC', title: 'Xenia started directly', narr: 'Nothing sits before the launch, so SaveLocker sets the profile ahead of time, after every sync while Xenia is closed. If Xenia still ran as another profile, it says so after exit. Nothing is ever pushed from the wrong profile.', built: [8], next: 'tvPlayer1' },
+  { id: 'tvPlayer1', who: 'Steam Deck · Game Mode', title: 'Starting as Player1 on purpose', narr: 'Player1 saves into its own folder, which SaveLocker doesn’t sync for this game, so nothing can overwrite the game’s profile.', built: [8], next: 'deckNoProfile' },
+  { id: 'deckNoProfile', who: 'Agent · Steam Deck', title: 'Games without a profile', narr: 'The pre-profile layouts (<code>content/&lt;title ID&gt;</code>, <code>content/User/&lt;title ID&gt;</code>) don’t depend on sign-in, so they skip the check.', built: [7], next: null }
+];
+
+const PLAN = [
+  ['Capture and confirm first (no code)', 'From PC and Deck: <code>FFFE07D1.gpd</code>, two title GPDs, <code>Account</code>, the profile header and <code>xenia-canary.config.toml</code>. Confirm on real Xenia: (a) <code>logged_profile_slot_0_xuid</code> under <code>[Profiles]</code> signs in at boot; (b) whether Xenia rewrites it when you sign in from its own menu, or on exit; (c) where the config lives in each setup (EmuDeck Windows, Proton on the Deck, portable, Documents).', ['These become the test fixtures for steps 2–3', 'If (b) is “yes”, “Leave it” must read the config after exit, not before']],
+  ['XDBF reader and writer', '<code>Agent.Core/Xdbf.cs</code>: the header, entry table and free-space table; achievements (namespace 1), settings (3), title rows (4). Writes keep every entry it does not change. Real files round-trip unchanged.', ['Tests on the captured files, byte for byte where nothing changed', 'Xenia reads a file written by it: checked by loading it in Xenia once (Group H)']],
+  ['The game’s part of the profile', 'Every Xenia game under an XUID gets a <code>profile</code> folder: <code>content/&lt;XUID&gt;/FFFE07D1/00010000/&lt;XUID&gt;</code>, scope <code>&lt;TID&gt;.gpd</code>. Its row travels as a small file in a SaveLocker-owned folder (<code>&lt;state&gt;/xenia/rows/&lt;game&gt;</code>, key <code>profile-row</code>): exported from <code>FFFE07D1.gpd</code> before a push, merged into it after a pull (insert or replace that one row, recount the gamerscore and achievement totals). A per-emulator hook in <code>SyncEngine</code> (before push / after restore); never while Xenia runs (<code>GameActivity</code>).', ['No two games share a file, so <code>SaveFolderClaims</code> is unchanged', 'Two-machine test: Halo 3’s newer row survives a Forza Horizon pull; a whole-file copy fails it (mutation check)', '“Save files on this PC” shows the row as its own line']],
+  ['The profile core, copied once', 'The account, header and the main file’s settings, exported to <code>&lt;state&gt;/xenia/core/&lt;XUID&gt;</code> (key <code>profile-core</code>, about 100 KB) and restored only where the profile is missing. Settings changed later are not synced in this phase (newest-wins per setting is a follow-up).', ['Restore-if-missing is a new folder mode: never overwrites', 'Test: a machine with the profile is never touched by it']],
+  ['The game’s profile on the server', '<code>Game.EmulatorProfile</code> (e.g. <code>xenia:E030000033894516</code>), set by the first enrollment from its folder, shown and changeable in the console. Migration; regenerate <code>openapi.json</code> and <code>api-types.ts</code>.', ['Agents get it with the game list', 'Changing it in the console asks every machine to re-align (step 6)']],
+  ['Aligning a machine', 'Add games on a machine whose save for the game is under another XUID, or nowhere: offer “Use [profile] here” (folder <code>content/&lt;game XUID&gt;/&lt;TID&gt;</code>, declared before it exists) or “Keep [own] as a separate game”. Then core (step 4) → row (step 3) → pull, in that order.', ['Scan rank: a folder under the game’s XUID beats one under another XUID', 'Test: the Deck’s Player1 save is never touched']],
+  ['Xenia config and the decision', '<code>XeniaConfig</code>: finds the config through the existing Xenia setups, reads and writes <code>logged_profile_slot_0_xuid</code> line by line (keeps comments and order, adds <code>[Profiles]</code> if missing, atomic write, a backup once). <code>XeniaLaunchProfile.Decide(configured, game profile, policy, canPrompt)</code> → start / switch / ask / leave; pure, unit-tested. Policy: game override → machine setting → console default (Ask).', ['Pre-profile layouts skip the check', 'Never writes while Xenia runs']],
+  ['Into every launch path', '<code>PrepareLaunchAsync</code> (Linux launch command, the Playnite route, the agent API) gets a profile step after the pull. “Ask” raises a pending prompt (<code>GET /api/launch/prompts</code>, <code>POST …/{id}/answer</code>) and waits up to 30 s, then uses the game’s profile. With nothing before the launch (Xenia started directly) the agent sets the config after each sync while Xenia is closed and, after exit, notifies if it ran as another profile.', ['Activity entries and agent event codes (<code>AgentEventCodes</code>) for the console', 'Nothing is pushed from a profile the game is not under: the folder already guarantees it']],
+  ['Prompts: Decky, Playnite, agent UI', 'The Decky plugin (its own repo) shows the prompt as a modal over Game Mode while a launch waits; the Playnite plugin shows a real dialog (its existing pattern); the agent UI shows it too when open. Without Decky in Game Mode, Ask acts as Switch and says so afterwards.', ['Decky plugin release + the agent’s plugin update path', 'Playnite plugin version bump']],
+  ['Console, help, testenv, real games', 'Game page: the profile line and the “Profile at launch” table from heartbeat reports; Configuration default. Help article; testenv: two profiles on WSL with a config file, one on Windows; Group H: Forza Horizon between PC (Playnite) and Deck (Game Mode, with and without Decky).', ['Then the DLC check reuses the Decky prompt for its “Ask” in Game Mode']]
+];
+
+let timer;
+function startAnim(kind) {
+  clearInterval(timer);
+  if (kind === 'ready') { S.ready = 0; timer = setInterval(() => { S.ready++; render(); if (S.ready >= 4) clearInterval(timer); }, 650); }
+  if (kind === 'auto') { timer = setTimeout(() => { if (S.step === 'tvReady') goTo('tvPlaying'); }, 2000); }
+}
+function goTo(id) {
+  if (!SCREENS[id]) return;
+  S.step = id; S.seen.add(id); S.view = 'journey';
+  const st = STEPS.find(s => s.id === id);
+  clearInterval(timer); clearTimeout(timer);
+  render();
+  if (st && st.anim) startAnim(st.anim);
+}
+const NUMBERED = STEPS.filter(s => s.id);
+function renderJourney() {
+  const st = STEPS.find(s => s.id === S.step), i = NUMBERED.indexOf(st), prev = NUMBERED[i - 1];
+  const list = STEPS.map(s => s.id
+    ? `<button type="button" class="stp ${S.seen.has(s.id) ? 'seen' : ''}" ${s.id === S.step ? 'aria-current="step"' : ''} ${go(s.id)}><span class="n">${NUMBERED.indexOf(s) + 1}</span><span>${s.title}<small>${s.who}</small></span></button>`
+    : `<div class="stage">${s.stage}</div>`).join('');
+  return `<div class="journey"><nav class="steps" aria-label="Journey">${list}</nav>
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div class="narr"><div><span class="eyebrow">${i + 1} of ${NUMBERED.length} · ${st.who}</span><h2>${st.title}</h2><p>${st.narr}</p></div>
+        <div class="nav-btns"><button type="button" class="btn btn-sm" ${prev ? go(prev.id) : 'disabled'}>${IC.back()}Back</button><button type="button" class="btn btn-sm btn-p" ${st.next ? go(st.next) : 'disabled'}>Next${IC.next()}</button></div>
+        <div class="built">Built in: ${st.built.map(n => `<button type="button" class="chip" data-plan="${n}">Step ${n} · ${PLAN[n - 1][0]}</button>`).join('')}</div></div>
+      <section class="frame"><div class="framebar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span class="where">${st.who}</span><span style="margin-left:auto;font-size:11.5px;color:var(--faint)">Buttons that move the story are live</span></div>${SCREENS[S.step]()}</section>
+    </div></div>`;
+}
+function renderPlan() {
+  return `<div class="brief two"><div><span class="eyebrow">Build plan</span><h2>Ten steps, one commit each</h2><p>Steps 1–4 make the profile sync safely per game; 5–6 put every machine on the game’s profile; 7–9 add the check at launch; 10 shows it and proves it on real hardware. Each step leaves older agents working.</p></div>
+    <div><span class="eyebrow">Decided by this design</span><div class="how">
+      <div><b class="k">Per game</b><span>Its achievements file and its row of <code>FFFE07D1.gpd</code>, merged; never another game’s</span></div>
+      <div><b class="k">Once</b><span>The account, header and settings, only where the profile is missing</span></div>
+      <div><b class="k">At launch</b><span>Ask where a prompt can show (Decky, Playnite, agent UI); otherwise switch and say so</span></div>
+      <div><b class="k">Identity</b><span>The game’s profile is set by its first machine; others align once</span></div></div></div></div>
+    <div class="card"><div class="plan">${PLAN.map(([t, d, bullets], i) => `<div class="plan-row" id="plan-${i + 1}"><span class="n">${i + 1}</span><div><b>${t}</b><p>${d}</p><ul>${bullets.map(b => `<li>${b}</li>`).join('')}</ul>
+      <div class="chips">${NUMBERED.filter(s => s.built.includes(i + 1)).map(s => `<button type="button" class="chip" ${go(s.id)}>${s.title}</button>`).join('')}</div></div></div>`).join('')}</div></div>`;
+}
+function render() {
+  document.querySelectorAll('[data-view]').forEach(t => t.setAttribute('aria-selected', String(t.dataset.view === S.view)));
+  document.getElementById('root').innerHTML = S.view === 'journey' ? renderJourney() : renderPlan();
+}
+document.addEventListener('click', e => {
+  const v = e.target.closest('[data-view]');
+  if (v) { S.view = v.dataset.view; render(); return; }
+  const p = e.target.closest('[data-plan]');
+  if (p) { S.view = 'plan'; render(); document.getElementById('plan-' + p.dataset.plan)?.scrollIntoView({ block: 'center' }); return; }
+  const g = e.target.closest('[data-go]');
+  if (g && !g.disabled) goTo(g.dataset.go);
+});
+document.getElementById('gamertag').addEventListener('input', e => { S.gamertag = e.target.value.slice(0, 15); render(); });
+render();
+</script>
+</body>
+</html>

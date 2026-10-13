@@ -281,6 +281,44 @@ namespace SaveLocker.Server.Migrations
                     b.ToTable("Conflicts");
                 });
 
+            modelBuilder.Entity("SaveLocker.Server.Data.ContentTransfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("FromMachineId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("GameId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PartsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ToMachineId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GameId", "ToMachineId");
+
+                    b.ToTable("ContentTransfers");
+                });
+
             modelBuilder.Entity("SaveLocker.Server.Data.EnrollmentToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -324,6 +362,9 @@ namespace SaveLocker.Server.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("CustomPathsJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EmulatorProfile")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("Enabled")
@@ -471,6 +512,34 @@ namespace SaveLocker.Server.Migrations
                     b.ToTable("Machines");
                 });
 
+            modelBuilder.Entity("SaveLocker.Server.Data.MachineGameContent", b =>
+                {
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("GameId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LaunchAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LaunchJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("MachineId", "GameId");
+
+                    b.HasIndex("GameId");
+
+                    b.ToTable("MachineGameContents");
+                });
+
             modelBuilder.Entity("SaveLocker.Server.Data.MachineGameSource", b =>
                 {
                     b.Property<Guid>("MachineId")
@@ -558,6 +627,9 @@ namespace SaveLocker.Server.Migrations
 
                     b.Property<string>("ContentHash")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentJson")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
@@ -662,6 +734,15 @@ namespace SaveLocker.Server.Migrations
                     b.Navigation("Game");
                 });
 
+            modelBuilder.Entity("SaveLocker.Server.Data.ContentTransfer", b =>
+                {
+                    b.HasOne("SaveLocker.Server.Data.Game", null)
+                        .WithMany()
+                        .HasForeignKey("GameId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SaveLocker.Server.Data.GameSavePath", b =>
                 {
                     b.HasOne("SaveLocker.Server.Data.Game", null)
@@ -688,6 +769,21 @@ namespace SaveLocker.Server.Migrations
                     b.Navigation("Game");
 
                     b.Navigation("Machine");
+                });
+
+            modelBuilder.Entity("SaveLocker.Server.Data.MachineGameContent", b =>
+                {
+                    b.HasOne("SaveLocker.Server.Data.Game", null)
+                        .WithMany()
+                        .HasForeignKey("GameId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SaveLocker.Server.Data.Machine", null)
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SaveLocker.Server.Data.MachineGameSource", b =>

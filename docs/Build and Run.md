@@ -201,7 +201,7 @@ artifact is always `SaveLocker.zip`) or let the GitHub fetch read the tag.
 `.\tests\testenv.ps1 <command>`, run from Windows, drives a whole disposable fleet — a Windows
 agent, a headless WSL agent, a dashboard container and (optionally) a real Steam Deck — all running
 **beside**, never instead of, the installed release agent and any real save data. Commands:
-`build`, `up`, `down`, `status`, `test`, `sync`, `logs`, `clean`. `-Only windows|linux|deck|console`
+`build`, `up`, `down`, `status`, `test`, `sync`, `logs`, `clean`, and `help` (`help <command>` for one command's whole entry). `-Only windows|linux|deck|console`
 scopes `build`/`up` to one target; `down`/`status`/`logs`/`clean` always touch everything that's
 configured. Isolation is `SAVELOCKER_STATE_ROOT`/`SAVELOCKER_TRAY_PORT`/`SAVELOCKER_RUNKEY_SUBPATH`
 on Windows and `XDG_DATA_HOME` on Linux ([[Gotchas]] → *Test-only environment variables*) — never
@@ -312,7 +312,123 @@ Group D adds, on both machines (each `PARAM.SFO` written byte-accurate by `New-P
 - **shadPS4:** *Bloodborne* — the old layout (`saves\shadps4\saves\1\CUSA00900`) on Windows, the new one
   (`~/.local/share/shadPS4/home/1000/savedata`, in `emu-home-wsl`) on WSL. Both must join one game.
 
-The Emulators chip then opens an Emulator row with thirteen chips, and a Console row (PS1, PS2, PS3, PS4, PS Vita, PSP, GameCube, Wii, …). `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
+Group E adds (title-ID folders; the 3DS ROM headers written by `New-Ncsd`/`New-Ncch`):
+- **Cemu:** *Mario Kart 8* (`saves\Cemu\saves\00050000\10145d00`, named by a `title_list_cache.xml` in the Windows
+  fixture home); WSL has an older save and no cache, so it calls it *Wii U 10145D00* and must still join. *Wii U
+  101C9500* (Windows, in no cache) must survive every Mario Kart pull; the `00050010` system app is never listed.
+- **Azahar:** *Super Mario 3D Land* (USA, from its ROM's product code `CTR-P-AREE` in `roms\n3ds`; a state
+  `0004000000054000.01.cst` on Windows, an older save on WSL). *Metroid - Samus Returns* (Windows) is named from its
+  installed `content\00000000.app`, which never syncs; WSL's *3DS 0016E300* (no ROM) must survive every Mario pull.
+- **Xenia:** *Forza Horizon* (`4D5309C9`) under Windows' profile `E030000033894516`, with a DLC beside it that never
+  syncs, and on WSL's old layout (`saves\xenia\saves\4D5309C9`); both must join one game. *Forza Horizon 2* (Windows)
+  and *Plants vs. Zombies* (WSL, an Arcade title) stay put.
+  *Rock Band 3* (`45410914`, Windows) has only a device save in `saves\xenia\saves\0000000000000000`: it is listed,
+  its game page shows a second folder `device`, and its DLC beside it never syncs. WSL's *Halo 3* is in the 2023
+  named-profile layout (`saves\xenia\saves\User\4D5307E6`) and is listed like any other.
+
+Phase 5c adds **the Xenia profile checked at launch** (Windows):
+- *Forza Horizon*'s saves are under `E030000033894516`, whose `Account` says **Driver**.
+- `saves\xenia\xenia-canary.config.toml`, and Xenia Manager's own `saves\xenia\config\Forza Horizon.config.toml`, sign
+  in as `E03000004A1C77B2` (**Player1**, with its own `Account`).
+- WSL's *Forza Horizon* is in the layout from before profiles, so it is never asked.
+
+Ask the gate the way Decky and Playnite do, against the Windows test agent (after adding *Forza Horizon* there). Run from the Claude desktop app, put the rig outside `%LOCALAPPDATA%` first: add
+`$env:SAVELOCKER_TEST_ROOT = 'D:\SaveLocker-testenv'` to `tests\testenv.local.ps1` — Windows redirects a packaged app's
+writes there, and WSL then never sees the fixture. The token is then in `D:\SaveLocker-testenv\SaveLocker\api-token`.
+:
+```powershell
+$t = (Get-Content "$env:LOCALAPPDATA\SaveLocker-test\SaveLocker\api-token" -Raw).Trim()   # or <SAVELOCKER_TEST_ROOT>\SaveLocker\api-token
+$h = @{ 'X-SaveLocker-Token' = $t }
+$id = ((irm http://localhost:5188/api/games -Headers $h) | ? name -eq 'Forza Horizon').id
+$r = irm -Method Post http://localhost:5188/api/games/$id/pre-launch-sync -Headers $h -ContentType application/json -Body '{}'
+$r | ConvertTo-Json -Depth 5
+```
+1. `decision` is `Ask`. Its question is:
+   - the title "Xenia would start as Player1";
+   - the choices "Start as Driver" and "Start as Player1";
+   - the default `profile`.
+
+   Both config files now say `E030000033894516`.
+2. Answer "keep":
+   ```powershell
+   irm -Method Post http://localhost:5188/api/games/$id/launch-answer -Headers $h -ContentType application/json -Body (@{ questionId = $r.question.id; choice = 'keep' } | ConvertTo-Json)
+   ```
+   Both configs go back to `E03000004A1C77B2`. The same answer sent again gets a 404.
+3. Ask again: it asks again (an answer only carries over to the Linux wrapper's check in the same launch). Answer `profile` with `remember = $true`. Both configs stay on Driver, and the next
+   `pre-launch-sync` answers `Proceed` with no question. The game's `xeniaProfileAtLaunch` in the test agent's
+   `config.json` is `Switch`.
+4. On Windows, open *Forza Horizon* → **Emulator settings** → **Xbox 360 profile**: it shows the saves under Driver and what Xenia starts as.
+   Set *At launch, for this game* to **Leave Xenia as it is**, and set either Xenia config back to Player1.
+   `pre-launch-sync` now answers `Proceed` and leaves the configs alone. Set it back to *This machine's setting* after.
+5. On WSL, `pre-launch-sync` for *Forza Horizon* never asks: there, the saves are not under a profile.
+
+Phase 5c adds **the DLC check and hand-over** (Forza Horizon, title `4D5309C9`):
+- Windows has two DLC packs and a title update in `saves\xenia\saves\0000000000000000\4D5309C9`:
+  - *Pre-Order Car Pack*, 0.3 MB;
+  - *Rally Expansion Pack*, 6 MB;
+  - *Title Update 2*.
+- WSL has only *Pre-Order Car Pack*, in the old layout's `saves\xenia\saves\4D5309C9`.
+
+UIs: the Windows test tray at http://localhost:5188, the WSL daemon at http://localhost:5187, the console at
+http://localhost:5080. Add *Forza Horizon* on both machines first (Windows first, so its save is the latest).
+
+1. **What a save was made with:**
+   - On Windows, open *Forza Horizon* and **Push**.
+   - The console's game page has an **Emulator settings** button with a count of 1. Its **DLC and title updates**
+     section shows Windows *All 3*, and WSL *Needs 2 · 6 MB* with **Send from WinTest**.
+   - On WSL, the game page's **Emulator settings** button shows 1; its DLC section lists the two packs as *Missing*.
+   - The header shows the chip **Xbox 360 profile E030000033894516**.
+2. **A held pull:**
+   - On WSL, open *Forza Horizon* and **Pull latest**.
+   - The pull is held: the WSL save file still reads *old forza horizon profile on the WSL machine*.
+   - The page switches to **Emulator settings → DLC and title updates**, shows *Pull on hold*, and the dialog opens,
+     with three choices: **Hand them over from \<Windows\>**, **Pull the save anyway**, **Not now**. Back on the game
+     page, a *Pull on hold* banner's **Choose** opens it again.
+   - WSL's Overview shows a banner for it. The activity feed has a *held the pull* line.
+3. **Ask for a hand-over:**
+   - Click **Hand them over from \<Windows\>**. WSL's page now shows *Asked … waiting for it to agree*.
+   - The console's **Emulator settings → Hand-overs** (and **Configuration → DLC hand-overs**) lists it as *asked,
+     not answered* until Windows' next poll.
+4. **Sent without asking** (the default, *Send it automatically*):
+   - Within about 20 s Windows answers by itself: no notice, no **Send** button. The console card shows *sending*, then *on the server*. The bytes held go up to about 6 MB.
+   - Within the next poll, WSL downloads and installs it. Check the folders under
+     `<StateRoot>\Emulation-wsl\saves\xenia\saves\4D5309C9\00000002` and `...\000B0000`: they now hold
+     `BBBB…0B` and `tu00000002_00000000`, each with its `Headers\…\*.header`.
+   - The console shows the hand-over as *delivered*, and **Held right now** is back to 0 B.
+   - The `_handover` folder under the console's archive root is empty.
+5. **The held pull goes ahead by itself:**
+   - Within a minute of the install, WSL pulls. Its save file now reads the Windows save.
+   - The hold, its banner and the Overview banner are gone, and the console's DLC check shows WSL *All 3*.
+6. **Decline, and never send:**
+   - On WSL, delete `BBBB…0B` and its header. Then push on Windows again, and pull on WSL: it is held again.
+   - On Windows, open *Forza Horizon* → **Emulator settings** → **Sharing DLC** and set *Ask me first*. **Hand them
+     over** again: within 20 s the Windows tray raises *\<WSL\> asks for Forza Horizon's DLC*, Windows' Overview
+     shows a banner, its *Forza Horizon* page shows an **Answer** banner, and **Sharing DLC** shows **Send** /
+     **Decline**.
+   - Click **Decline**. WSL's page shows *declined*, with **Ask again**, and a notice says so.
+   - Set *Never send it*. Ask again: it is declined without a prompt.
+   - Set *Send it automatically* again. Ask again: it is sent without a prompt.
+7. **Pull anyway:**
+   - With a pull held again, choose **Pull the save anyway**. The save is restored without the pack, and the hold
+     goes.
+8. **Installed by hand:**
+   - Hold it again. Then copy `BBBB…0B` and its header back into WSL's `4D5309C9` folder by hand.
+   - Within a minute the held pull goes ahead without any hand-over.
+9. **Cancel from the console:**
+   - Ask again, then click **Cancel** in the console's **Emulator settings → Hand-overs**. Both agents show it as
+     cancelled, and nothing is left under `_handover`.
+   - With the pull held again, click **Send from WinTest** in the console's **DLC and title updates** instead: Windows
+     sends, WSL installs, and the held pull goes ahead, as if WSL had asked.
+10. **Profile at launch on the console:**
+    - Run the `pre-launch-sync` steps above on Windows.
+    - The console's *Forza Horizon* → **Emulator settings** → **Xbox 360 profile** shows the profile at launch. Windows' row reads *Xenia was set
+      to Player1 (E03000004A1C77B2)*, *Switched, and asked*. After a *keep* answer it reads *Asked — kept the other
+      profile*, in amber.
+    - **Hand-overs** lists every request from steps 3–9.
+11. **CLI** (Windows test agent): `SaveLocker.exe dlc status` lists Forza Horizon's packages and any hand-over id.
+    `dlc ask "Forza Horizon"` and `dlc send <id>` / `dlc decline <id>` do what the buttons do.
+
+The Emulators chip then opens an Emulator row with sixteen chips, and a Console row (PS1, PS2, PS3, PS4, PS Vita, PSP, GameCube, Wii, Wii U, 3DS, Xbox 360, …). `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
 `Emulation` folder is the safe way to try real saves. The Deck needs no override: its test daemon scans
 the Deck's real EmuDeck install, so add only a game whose save you have backed up.
 
@@ -391,6 +507,11 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Emulator saves Phase 16, linking by hand + Model 2 states (2026-10-07, `emulator-saves-group-b`) | `dotnet test tests/SaveLocker.Agent.Tests` **325** (+5 `LinkByHandTests` — two machines against a real server; the re-check of a pick and the here-first `TrackedFor` each mutation-checked; +1 `ArcadeSavesTests` for Model 2 states, slot names mutation-checked) · Windows agent and `Agent.Linux` build · `agent-ui` lint + build clean · `agent-ui/src/api-types.ts` regenerated from a scratch tray on :5190, additions only · Add games checked in the browser against a scratch server seeded as a Deck (join, keep as its own game, greyed-out different files) |
 | Emulator saves Group C (2026-10-07, `emulator-saves-group-c`) | `dotnet test tests/SaveLocker.Agent.Tests` **361** (+29: `MemoryCardTests` 17 — the shared-card detection and the PCSX2 per-game scope each mutation-checked; `GroupCSyncTests` 5, two or three machines against a real server — PS2 folder card, PS1 card, Wii, and Dolphin vs PrimeHack kept apart, the emulator rule and the in-batch emulator each mutation-checked; `EmulatorChipTests` 7 — a missing chip fails it) · Windows agent, `Agent.Linux` and server build · `web` + `agent-ui` lint and build clean · `openapi.json`, `web/src/api-types.ts` and `agent-ui/src/api-types.ts`: additions only (`GameDto.emulators`; `CandidateDto.notSyncable`/`emulatorConsole`), the agent's regenerated from a scratch tray on :5193 · `testenv emu-fixture` written to a scratch folder and scanned with the dev CLI; Add games checked in the browser against a sandboxed tray (the live rig was in use, see CONTEXT) |
 | Emulator saves Group C, names by serial (2026-10-08) | `dotnet test tests/SaveLocker.Agent.Tests` **363** (+2: the Prince of Persia case — two sequels whose `icon.sys` says only the series, and one game from two regions — mutation-checked; `ConsoleTitles` spellings; the four console tests now assert serial names and a fallback each) · solution build · `testenv.ps1` parses |
+| Emulator settings, DLC sent automatically, 8 GB hand-overs (2026-10-13) | `dotnet test tests/SaveLocker.Agent.Tests` **523** (+6 since 517: an answer applies to one launch, a client that can ask asks again, a refused resolve says why (the bare-string body, mutation-checked), the default send policy sends (mutation-checked), the console asks for a machine and its agent installs what it lacked (the missing-pack filter mutation-checked), the 9 GB over-limit request) · server build clean · `web` + `agent-ui` lint and build clean · `openapi.json` and `web/src/api-types.ts`: additions only (`ConsoleTransferRequest`, `POST /api/games/{id}/transfers`); the agent API is unchanged · agent Emulator settings clicked through against the rig's Windows tray (all three sections); console Emulator settings against the new server on a scratch copy of the rig's database, including **Send from WinTest** creating a hand-over that **Hand-overs** then lists with **Cancel** |
+| Phase 5c steps 5–14: the profile split by game, the core, the game's profile, DLC check and hand-over, held pulls, console cards (2026-10-13) | `dotnet test tests/SaveLocker.Agent.Tests` **517** (+5 since 513: the hand-over end to end between two machines against a real server — held, asked, sent, installed, delivered and deleted, the held pull then restores; never-send declines; a received zip installs only its own package at the listed size and refuses a path outside it; every launch check reports what it did) · solution build clean · `web` + `agent-ui` typecheck and lint clean · `openapi.json` and `web/src/api-types.ts`: additions only; `agent-ui/src/api-types.ts` edited by hand · migration `AddLaunchProfileReport` · `testenv emu-fixture` writes the packages with headers matching `XeniaContent.BuildHeader` byte for byte · Decky PR #5 `tsc` clean |
+| Phase 5c steps 1–4: Xenia file formats, launch questions, the profile at launch (2026-10-12) | `dotnet test tests/SaveLocker.Agent.Tests` **495** (+21: `XeniaFormatsTests` 14 — XDBF layout and round trip, one row merged with the others kept and the totals recounted, Account with both keys, both header sizes, both DLC layouts, config edits that change only the value, Xenia Manager's per-game config; `XeniaLaunchProfileTests` 7 — ask with the default applied, keep puts it back and the wrapper's check after it honours that (mutation-checked), don't ask again, the wrapper switches silently, Leave / already right / Xenia running / pre-profile layout leave it, per-game config). With `SAVELOCKER_XENIA_CAPTURE` pointing at captured profile files, the real PC's and Deck's GPDs round-trip and their totals match · solution build clean · `agent-ui` typecheck clean, `agent-ui/src/api-types.ts` edited by hand (additions only: `Ask`, `LaunchQuestion`, `LaunchChoice`, `LaunchAnswerRequest`, `launch-answer`) · Decky PR #5 `tsc` + build clean · Playnite PR #8 **28** tests, Release build clean |
+| Emulator saves Group E, Xenia device saves + named profiles (2026-10-12) | `dotnet test tests/SaveLocker.Agent.Tests` **474** (+3: a device-only game, the named layout, a device save between two machines with its DLC left) |
+| Emulator saves Group E (2026-10-12, `emulator-saves-group-e`) | `dotnet test tests/SaveLocker.Agent.Tests` **471** (`main`'s 450 + 21: `TitleIdSavesTests` 16 — Cemu, Azahar with NCSD/NCCH headers, Xenia's two layouts, the title cache, `qt-config.ini` and `content_root`; `GroupESyncTests` 2 — Azahar with states and Xenia across two profiles, two machines against a real server, both scopes mutation-checked; 3 chip labels) |
 | Region beside the name, not in it (2026-10-11, `emulator-saves-group-c`) | `dotnet test tests/SaveLocker.Agent.Tests` **387** (+4: another region's release takes the same name and never joins, release fields per reader; +3 `GameReleaseServerTests` against a real server — two regions of one name are two games, a region-less game takes the first release, an oversized release refused; the server's region match mutation-checked) · solution build clean · `web` + `agent-ui` typecheck, lint and build clean · `openapi.json` and both `api-types.ts`: additions only (`GameReleaseDto`, `GameDto.release`, `CreateGameRequest.release`; agent's `TrackedGameDto.release`/`saveFiles`, `CandidateDto.region`), the agent's regenerated from a scratch daemon on :5298 · migration `AddGameRelease` applied on a fresh database · console and agent pages checked in the browser against a seeded scratch server and daemon (two Warrior Withins, Homebrew's *Details* chip, Esc closes) |
 | "N machines following" (2026-10-11, appearance follow-up b) | `run-health-tests` **35** (+2: a beat says the machine follows by default, and one with *Follow the console* off says so — both fail with the server's assignment removed) · `run-appearance-consistency-tests` 46 · solution build clean · `web` typecheck, lint and build clean · migration `AddAgentFollowsConsoleAppearance` applied on a fresh database · `openapi.json` and `web/src/api-types.ts`: additions only (`AgentHeartbeat`/`AgentHealthDto.followsConsoleAppearance`) |
 | PR #62 review fixes (2026-10-09) | `SaveFileTree*` + `ArtCache*` **17/17** (+2: a name held twice in a zip — diff and hashes keep the later entry; `NotInHead` both ways and no head comparing nothing) · full suite **348/349** (the 1 failure is the known `ArcadeSavesTests` Supermodel EmuDeck-gamelist leak) · solution build clean · `web` + `agent-ui` typecheck and lint clean · `agent-ui/src/api-types.ts`: one addition, `LocalFileDto.notInHead` (edited by hand, matching the generator's shape); server `openapi.json` unchanged |

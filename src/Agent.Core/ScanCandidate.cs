@@ -155,7 +155,10 @@ public sealed record ScanCandidate(
     GameReleaseDto? Release = null,
     /// <summary>Found by its save states alone: the game has not saved in-game on this machine yet. Its save folder is
     /// declared all the same, so the first in-game save syncs with the states.</summary>
-    bool StatesOnly = false)
+    bool StatesOnly = false,
+    /// <summary>The emulator profile the save is under here, <c>xenia:&lt;XUID&gt;</c>, or null (tasks/emulator-saves Phase 5c):
+    /// the first machine's becomes the game's, and another machine's game is put under that one.</summary>
+    string? EmulatorProfile = null)
 {
     /// <summary>
     /// What a scanner merges duplicates on: the normalised name, so one game found by two sources is one
