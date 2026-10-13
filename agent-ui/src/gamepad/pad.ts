@@ -26,12 +26,22 @@ const REPEAT_EVERY_MS = 90
 const STICK_DEADZONE = 0.55
 const STICK_REPEAT_DELAY_MS = 380
 const SCROLL_DEADZONE = 0.18
+/** The hint bar's Auto/On/Off is a device preference like the glyph ones, so it survives a restart. */
+const UI_MODE_KEY = 'savelocker.pad.uiMode'
 
 const listeners = new Set<() => void>()
-let snapshot: PadSnapshot = { connected: false, controller: '', detected: 'xbox', uiMode: 'auto', lastAction: null, seq: 0 }
+let snapshot: PadSnapshot = { connected: false, controller: '', detected: 'xbox', uiMode: readUiMode(), lastAction: null, seq: 0 }
 let actionHandler: ((a: PadAction) => void) | null = null
 let scrollHandler: ((rx: number, ry: number, dtMs: number) => void) | null = null
 let started = false
+
+function readUiMode(): PadUiMode {
+  try {
+    const raw = localStorage.getItem(UI_MODE_KEY)
+    if (raw === 'on' || raw === 'off' || raw === 'auto') return raw
+  } catch { /* private window: the default */ }
+  return 'auto'
+}
 
 function emit(patch: Partial<PadSnapshot>) {
   snapshot = { ...snapshot, ...patch }
@@ -48,6 +58,7 @@ export function setScrollHandler(fn: ((rx: number, ry: number, dtMs: number) => 
 }
 
 export function setPadUiMode(mode: PadUiMode): void {
+  try { localStorage.setItem(UI_MODE_KEY, mode) } catch { /* private window: lasts this visit */ }
   emit({ uiMode: mode })
 }
 
@@ -155,6 +166,15 @@ function poll() {
 
   if (!pad) {
     if (snapshot.connected) emit({ connected: false, controller: '', detected: 'xbox' })
+    // A pad unplugged mid-hold must not leave a button "pressed" for the next one: the initial
+    // press would be swallowed (pressed && was) or an immediate repeat would fire on reconnect.
+    for (const key of [...Object.keys(prev), ...Object.keys(heldSince), ...Object.keys(nextRepeat)] as PadAction[]) {
+      delete prev[key]
+      delete heldSince[key]
+      delete nextRepeat[key]
+    }
+    stickDir = null
+    lastFrame = 0
     return
   }
   if (!snapshot.connected || snapshot.controller !== pad.id) {

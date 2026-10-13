@@ -421,7 +421,7 @@ export function AddGamesView({ onEnrolled }: Props) {
         title="Add games"
         sub={`${listed.length} found on this machine · ${listed.filter(c => !c.hasSteamCloud).length} suggested`}
         actions={
-          <Button disabled={busy} onClick={() => void scan(true)}>
+          <Button disabled={busy} data-pad-action="rescan" onClick={() => void scan(true)}>
             <RefreshCw size={13} strokeWidth={1.9} className={scanning ? 'sl-spin' : undefined} aria-hidden="true" />
             Rescan <PadGlyph id="l3" />
           </Button>
@@ -564,6 +564,7 @@ export function AddGamesView({ onEnrolled }: Props) {
                   <Button
                     size="sm"
                     variant="quiet"
+                    data-pad-action="folder-change"
                     aria-label={`Change the save folder for ${c.name}`}
                     onClick={e => { e.preventDefault(); void pickFolderFor(c) }}
                   >
@@ -577,6 +578,7 @@ export function AddGamesView({ onEnrolled }: Props) {
                   <span style={{ color: 'var(--color-watch-ink)', fontSize: 12 }}>No save folder set</span>
                   <Button
                     size="sm"
+                    data-pad-action="folder-change"
                     onClick={e => { e.preventDefault(); void pickFolderFor(c) }}
                   >
                     <FolderSearch size={12} strokeWidth={1.75} aria-hidden="true" />
@@ -652,10 +654,10 @@ export function AddGamesView({ onEnrolled }: Props) {
           {footText}
         </span>
         <div className="sl-inline">
-          <Button size="sm" variant="quiet" disabled={checked.size === 0 || busy} onClick={() => setChecked(new Set())}>
+          <Button size="sm" variant="quiet" data-pad-action="clear-selection" disabled={checked.size === 0 || busy} onClick={() => setChecked(new Set())}>
             Clear <PadGlyph id="lt" />
           </Button>
-          <Button variant="primary" disabled={busy || checked.size === 0 || enrollBlocked} onClick={() => void enroll()}>
+          <Button variant="primary" data-pad-action="add-games" disabled={busy || checked.size === 0 || enrollBlocked} onClick={() => void enroll()}>
             {checked.size === 0 ? 'Add games' : `Add ${checked.size} game${checked.size === 1 ? '' : 's'}`}
             <PadGlyph id="rt" />
           </Button>

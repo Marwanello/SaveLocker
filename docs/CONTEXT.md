@@ -2111,6 +2111,24 @@ permission checks re-run by hand.
 
 ---
 
+**PR #72 (controller support in the agent UI) reviewed and its findings fixed (2026-10-13, branch
+`gamepad-agent-ui`).** The CI failure was the repo's own `run-appearance-consistency-tests` (it scans
+every `.tsx` under `agent-ui/src`): the `StartGlyph` fallback SVG in `gamepad/glyphs.tsx` carried
+`#2c2c31`/`#fff`; now the tokens `--color-raise`/`--color-fg`, and the suite reads **50/50**.
+Also fixed: A over the Controller card's size slider opened the on-screen keyboard (and `NaN` px
+could persist for the session) — sliders now own left/right and step with A, the OSK only accepts
+text-like fields (textarea included); `aria-disabled` buttons are skipped by nav as the plan
+claimed (blocked server-game link options were still stops); Repeat state is cleared when a pad
+disconnects mid-hold; the hint-bar mode persists like the glyph prefs; `dispatchEscape` targets the
+overlay (a body-dispatched Escape never reached React's root listener); `hasResolveButton` ignores
+disabled buttons; overlay detection is cached briefly and picks the highest z-index; the main
+bindings now use `data-pad-action` attributes with the old text lookups as fallback; and the game
+page's LT/RT hints no longer advertise Push/Pull while a conflict card owns those buttons.
+`agent-ui` `tsc -b && vite build` and `oxlint` clean. **Not verified:** Gamepad API input and
+gamescope on a real Deck — Phase 7's checklist still owns that.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

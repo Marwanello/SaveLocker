@@ -156,6 +156,7 @@ export function StatusHeader({ state, conflicts, games, onSynced }: Props) {
           {busy && <CancelButton />}
           <Button
             variant="primary"
+            data-pad-action="sync-all"
             onClick={() => void syncAll()}
             disabled={busy || !canSync}
             title={canSync ? undefined : 'Register this machine in Settings first.'}

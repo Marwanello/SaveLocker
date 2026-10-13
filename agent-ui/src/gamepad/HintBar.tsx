@@ -45,11 +45,11 @@ export function HintBar() {
   ]
   if (nav.section === 'Games') {
     if (isGamePage()) {
-      hints.push(
-        { key: 'x', glyphs: ['x'], label: 'Sync' },
-        { key: 'lt', glyphs: ['lt'], label: 'Push' },
-        { key: 'rt', glyphs: ['rt'], label: 'Pull' },
-      )
+      // A conflict card on the page owns LT/RT (keep-both / Resolve); only advertise Push/Pull when
+      // it does not, or the bar would show two different meanings for the same button.
+      hints.push({ key: 'x', glyphs: ['x'], label: 'Sync' })
+      if (!hasKeepBothOption()) hints.push({ key: 'lt', glyphs: ['lt'], label: 'Push' })
+      if (!hasResolveButton()) hints.push({ key: 'rt', glyphs: ['rt'], label: 'Pull' })
     } else {
       hints.push({ key: 'x', glyphs: ['x'], label: 'Search' })
       if (nav.viewToggleAvailable) hints.push({ key: 'r3', glyphs: ['r3'], label: 'List / Grid' })

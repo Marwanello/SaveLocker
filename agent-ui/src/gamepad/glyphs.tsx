@@ -29,7 +29,7 @@ export interface GlyphPrefs {
   set: GlyphSet
   variant: GlyphVariant
   tone: GlyphTone
-  /** Size in px for glyphs drawn on controls and previews. The hint bar is fixed at 22 px. */
+  /** Size in px for glyphs drawn on controls and previews. The hint bar is fixed at 15 px. */
   px: number
 }
 
@@ -135,8 +135,8 @@ function StartGlyph({ size }: { size: number }) {
         className="sl-glyph" width={size} height={size} viewBox="2.6 5.2 18.8 13.6"
         aria-hidden="true" data-glyph-id="start" data-glyph-size={String(size)}
       >
-        <rect x={2.6} y={5.2} width={18.8} height={13.6} rx={4.4} fill="#2c2c31" />
-        <path d="M7.6 9.5h8.8M7.6 12h8.8M7.6 14.5h8.8" stroke="#fff" strokeWidth={1.7} strokeLinecap="round" />
+        <rect x={2.6} y={5.2} width={18.8} height={13.6} rx={4.4} fill="var(--color-raise)" />
+        <path d="M7.6 9.5h8.8M7.6 12h8.8M7.6 14.5h8.8" stroke="var(--color-fg)" strokeWidth={1.7} strokeLinecap="round" />
       </svg>
     </span>
   )

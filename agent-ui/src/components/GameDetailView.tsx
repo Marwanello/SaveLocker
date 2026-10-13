@@ -206,15 +206,15 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
 
       {enrolled ? (
         <div className="sl-actions">
-          <Button variant="primary" disabled={locked} onClick={() => void run('sync')}>
+          <Button variant="primary" data-pad-action="sync-this-game" disabled={locked} onClick={() => void run('sync')}>
             {pending === 'sync' ? 'Syncing…' : 'Sync this game'}
             <PadGlyph id="x" />
           </Button>
-          <Button disabled={locked} onClick={() => void run('push')}>
+          <Button data-pad-action="push-now" disabled={locked} onClick={() => void run('push')}>
             {pending === 'push' ? 'Pushing…' : 'Push now'}
             <PadGlyph id="lt" />
           </Button>
-          <Button disabled={locked} onClick={() => void run('pull')}>
+          <Button data-pad-action="pull-latest" disabled={locked} onClick={() => void run('pull')}>
             {pending === 'pull' ? 'Pulling…' : 'Pull latest'}
             <PadGlyph id="rt" />
           </Button>

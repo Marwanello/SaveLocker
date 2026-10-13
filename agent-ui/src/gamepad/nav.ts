@@ -13,7 +13,7 @@ import type { PadAction } from './pad'
  */
 
 const FOCUSABLE = [
-  'button:not([disabled])',
+  'button:not([disabled]):not([aria-disabled="true"])',
   '[role="button"]:not([aria-disabled="true"])',
   '[role="switch"]:not([disabled])',
   '[role="checkbox"]:not([aria-disabled="true"])',
@@ -32,7 +32,6 @@ export interface NavSnapshot {
   section: string
   contextLabel: string
   focusSeq: number
-  hasFocus: boolean
   folderActionAvailable: boolean
   viewToggleAvailable: boolean
   filtersActive: boolean
@@ -41,7 +40,7 @@ export interface NavSnapshot {
 
 const navListeners = new Set<() => void>()
 let navSnap: NavSnapshot = {
-  section: '', contextLabel: 'Select', focusSeq: 0, hasFocus: false,
+  section: '', contextLabel: 'Select', focusSeq: 0,
   folderActionAvailable: false, viewToggleAvailable: false, filtersActive: false, tileLevel: 'flat',
 }
 let focused: HTMLElement | null = null
@@ -88,23 +87,35 @@ function isVisible(el: HTMLElement): boolean {
 
 /** The topmost full-viewport fixed layer, if any — the app's own modals and the path browser. */
 function overlayScope(): HTMLElement | null {
-  let best: HTMLElement | null = null
+  // Cached briefly: one action calls this several times (focusables, scroller, hint queries) and the
+  // scan is O(all elements). The window is short enough that a layer opening between presses still
+  // revalidates, and shrinking it to one press would reintroduce the per-call scan on moves.
+  const now = performance.now()
   const vw = window.innerWidth
   const vh = window.innerHeight
+  if (overlayCache && now - overlayCache.at < 50 && overlayCache.w === vw && overlayCache.h === vh)
+    return overlayCache.el
+  let best: HTMLElement | null = null
+  let bestZ = -1
   for (const el of document.body.querySelectorAll<HTMLElement>('*')) {
     if (!CONTAINER_TAGS.has(el.tagName) || el.childElementCount === 0) continue
     const cs = getComputedStyle(el)
     if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') continue
-    if (Number.parseInt(cs.zIndex || '0', 10) < 10) continue
+    const z = Number.parseInt(cs.zIndex || '0', 10)
+    if (z < 10) continue
     const declaredFull =
       el.style.inset === '0px' || el.style.inset === '0'
       || (el.style.top === '0px' && el.style.left === '0px')
     const r = el.getBoundingClientRect()
     if (!declaredFull && (r.width < vw * 0.72 || r.height < vh * 0.6)) continue
-    best = el
+    // Highest z-index wins; equal ones keep the later document order (the later portal).
+    if (z >= bestZ) { best = el; bestZ = z }
   }
+  overlayCache = { at: now, w: vw, h: vh, el: best }
   return best
 }
+
+let overlayCache: { at: number; w: number; h: number; el: HTMLElement | null } | null = null
 
 function scopeRoot(): HTMLElement | ParentNode {
   return overlayScope() ?? document.querySelector('.sl-app') ?? document.body
@@ -215,16 +226,43 @@ function setRing(el: HTMLElement | null) {
 
 function contextLabelFor(el: HTMLElement): string {
   if (el.dataset.padTile === '1') return 'Open'
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return 'Type'
+  if (el instanceof HTMLInputElement && el.type === 'range') return 'Adjust'
+  if (isTextInput(el) || el instanceof HTMLTextAreaElement) return 'Type'
   if (el.getAttribute('role') === 'switch' || el.getAttribute('role') === 'checkbox') return 'Toggle'
   if (el.dataset.padLabel) return el.dataset.padLabel
   return 'Select'
 }
 
+/** Input types the browser treats as text entry — the ones the OSK knows how to write. */
+const TEXT_INPUT_TYPES = new Set(['text', 'search', 'url', 'email', 'password', 'tel', 'number'])
+const isTextInput = (el: Element): el is HTMLInputElement =>
+  el instanceof HTMLInputElement && TEXT_INPUT_TYPES.has(el.type)
+
+/** Writes through the native value setter + input event, so React-controlled fields see a keystroke. */
+function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, value)
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+/** A slider is adjusted with left/right (and stepped up by A) — never with the on-screen keyboard. */
+function adjustRange(el: HTMLInputElement, delta: number) {
+  const min = el.min === '' ? 0 : Number(el.min)
+  const max = el.max === '' ? 100 : Number(el.max)
+  const step = el.step === '' || Number(el.step) <= 0 ? 1 : Number(el.step)
+  const current = Number(el.value)
+  const base = Number.isFinite(current) ? current : min
+  setNativeValue(el, String(Math.min(max, Math.max(min, base + delta * step))))
+}
+
+function isFolderChangeButton(b: HTMLButtonElement): boolean {
+  return b.dataset.padAction === 'folder-change' || /change|set save folder/i.test(b.textContent ?? '')
+}
+
 function folderActionFor(el: HTMLElement | null): boolean {
   const row = el?.closest?.('.sl-check-row') as HTMLElement | null
   if (!row) return false
-  return [...row.querySelectorAll('button')].some(b => /change|set save folder/i.test(b.textContent ?? ''))
+  return [...row.querySelectorAll<HTMLButtonElement>('button')].some(isFolderChangeButton)
 }
 
 function tileLevel(): TileLevel {
@@ -234,7 +272,7 @@ function tileLevel(): TileLevel {
 
 function emitFocus(el: HTMLElement) {
   emitNav({
-    focusSeq: navSnap.focusSeq + 1, hasFocus: true,
+    focusSeq: navSnap.focusSeq + 1,
     contextLabel: contextLabelFor(el),
     folderActionAvailable: folderActionFor(el),
     viewToggleAvailable: !!document.querySelector('.sl-content .sl-seg'),
@@ -366,11 +404,9 @@ function rememberEntry(el: HTMLElement) {
 
 function pressA() {
   if (!focused || !focused.isConnected) { focusFirstInScope(); return }
-  if (focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) {
-    if (focused instanceof HTMLInputElement && focused.type === 'checkbox') { focused.click(); return }
-    openOsk(focused)
-    return
-  }
+  if (focused instanceof HTMLInputElement && focused.type === 'checkbox') { focused.click(); return }
+  if (focused instanceof HTMLInputElement && focused.type === 'range') { adjustRange(focused, 1); return }
+  if (isTextInput(focused) || focused instanceof HTMLTextAreaElement) { openOsk(focused); return }
   if (focused.dataset.padTile === '1') {
     const inner = leafFocusables(focused)
     if (inner.length > 0) {
@@ -381,6 +417,22 @@ function pressA() {
   }
   rememberEntry(focused)
   focused.click()
+}
+
+/** A bound control by its `data-pad-action` first — durable against a label change — text as fallback. */
+function findAction(action: string, fallback: RegExp): HTMLButtonElement | null {
+  const scope = overlayScope() ?? document
+  const byAttr = scope.querySelector<HTMLButtonElement>(`button[data-pad-action="${action}"]:not([disabled])`)
+  if (byAttr) return byAttr
+  return [...scope.querySelectorAll<HTMLButtonElement>('button:not([disabled])')]
+    .find(b => fallback.test((b.textContent ?? '').trim())) ?? null
+}
+
+function clickAction(action: string, fallback: RegExp): boolean {
+  const btn = findAction(action, fallback)
+  if (!btn) return false
+  btn.click()
+  return true
 }
 
 function clickButton(re: RegExp): boolean {
@@ -394,7 +446,7 @@ function clickButton(re: RegExp): boolean {
 
 function buttonByText(re: RegExp): HTMLButtonElement | null {
   const scope = overlayScope() ?? document
-  return [...scope.querySelectorAll<HTMLButtonElement>('button')]
+  return [...scope.querySelectorAll<HTMLButtonElement>('button:not([disabled])')]
     .find(b => re.test((b.textContent ?? '').trim())) ?? null
 }
 
@@ -402,7 +454,7 @@ function buttonByText(re: RegExp): HTMLButtonElement | null {
 function findBackupInput(): HTMLInputElement | null {
   const scope = overlayScope() ?? document
   for (const label of scope.querySelectorAll('label')) {
-    if (!/backup/i.test(label.textContent ?? '')) continue
+    if (!/keep the other one as a backup/i.test(label.textContent ?? '')) continue
     const input = label.querySelector<HTMLInputElement>('input[type="checkbox"]')
     if (input) return input
   }
@@ -422,7 +474,11 @@ function backButton(): HTMLElement | null {
 }
 
 function dispatchEscape() {
-  const target = (focused && focused.isConnected ? focused : document.body)
+  // The overlay itself when one is open: a body-dispatched event never reaches React's root
+  // listener (root is a CHILD of body), so a cancel handler there would silently miss it.
+  const target = overlayScope()
+    ?? (focused && focused.isConnected ? focused
+      : document.activeElement instanceof HTMLElement ? document.activeElement : document.body)
   const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
   ;(ev as { __slSynthetic?: boolean }).__slSynthetic = true
   target.dispatchEvent(ev)
@@ -466,7 +522,7 @@ function pressX() {
   const section = currentSection()
   if (section === 'Games') {
     if (isGamePage()) {
-      clickButton(/^Sync this game$/i)
+      clickAction('sync-this-game', /^Sync this game$/i)
       return
     }
     const search = document.querySelector<HTMLInputElement>('input.sl-search')
@@ -495,7 +551,7 @@ function pressView() {
 
 /** L3: Rescan in Add Games. */
 function pressL3() {
-  if (currentSection() === 'Add Games') clickButton(/^Rescan$/i)
+  if (currentSection() === 'Add Games') clickAction('rescan', /^Rescan$/i)
 }
 
 /** Start: the Hide enrolled switch in Add Games. */
@@ -506,25 +562,25 @@ function pressStart() {
 }
 
 function pressY() {
-  const syncAll = document.querySelector<HTMLButtonElement>('.sl-hero button.sl-btn--primary')
-  syncAll?.click()
+  if (clickAction('sync-all', /^Sync all$/i)) return
+  document.querySelector<HTMLButtonElement>('.sl-hero button.sl-btn--primary')?.click()
 }
 
 /** LT: keep-both on a conflict card; Push now on a game page; Clear the selection in Add Games. */
 function pressLT() {
   const backup = findBackupInput()
   if (backup) { backup.click(); return }
-  if (isGamePage()) { clickButton(/^Push now$/i); return }
-  if (currentSection() === 'Add Games') clickButton(/^Clear$/i)
+  if (isGamePage()) { clickAction('push-now', /^Push now$/i); return }
+  if (currentSection() === 'Add Games') clickAction('clear-selection', /^Clear$/i)
 }
 
 /** RT: Resolve (confirm-mode conflict card); Pull latest on a game page; Add games in Add Games. */
 function pressRT() {
   if (clickButton(/^Resolve\b/i)) return
-  if (isGamePage()) { clickButton(/^Pull latest$/i); return }
+  if (isGamePage()) { clickAction('pull-latest', /^Pull latest$/i); return }
   if (currentSection() === 'Add Games') {
-    const add = document.querySelector<HTMLButtonElement>('.sl-footbar .sl-btn--primary:not([disabled])')
-    add?.click()
+    if (clickAction('add-games', /^Add games$|^Add \d+ games?$/i)) return
+    document.querySelector<HTMLButtonElement>('.sl-footbar .sl-btn--primary:not([disabled])')?.click()
   }
 }
 
@@ -543,8 +599,7 @@ function pressR3() {
   if (section === 'Add Games') {
     const row = focused?.closest<HTMLElement>('.sl-check-row')
     if (!row) return
-    const actions = [...row.querySelectorAll<HTMLButtonElement>('button')]
-      .filter(b => /change|set save folder/i.test(b.textContent ?? ''))
+    const actions = [...row.querySelectorAll<HTMLButtonElement>('button')].filter(isFolderChangeButton)
     if (actions.length === 0) return
     if (cycleRow !== row) { cycleRow = row; cycleIndex = 0 }
     else cycleIndex = (cycleIndex + 1) % actions.length
@@ -561,6 +616,12 @@ function sectionStep(delta: number) {
 }
 
 export function handleAction(action: PadAction) {
+  // A focused slider owns left/right (and A steps it up); everything else moves the ring.
+  if ((action === 'left' || action === 'right')
+    && focused instanceof HTMLInputElement && focused.type === 'range') {
+    adjustRange(focused, action === 'right' ? 1 : -1)
+    return
+  }
   if (action === 'up' || action === 'down' || action === 'left' || action === 'right') move(action)
   else if (action === 'a') pressA()
   else if (action === 'b') pressB()
@@ -583,7 +644,7 @@ export function handleAction(action: PadAction) {
 interface OskSnapshot { open: boolean; title: string; text: string }
 const oskListeners = new Set<() => void>()
 let oskState: OskSnapshot = { open: false, title: '', text: '' }
-let oskInput: HTMLInputElement | null = null
+let oskInput: HTMLInputElement | HTMLTextAreaElement | null = null
 
 function emitOsk() { oskListeners.forEach(l => l()) }
 
@@ -597,7 +658,7 @@ export function useOsk(): OskSnapshot {
 export function oskOpen(): boolean { return oskState.open }
 
 export function openOsk(input: HTMLElement) {
-  if (!(input instanceof HTMLInputElement) || input.type === 'checkbox') return
+  if (!isTextInput(input) && !(input instanceof HTMLTextAreaElement)) return
   oskInput = input
   oskState = { open: true, title: input.getAttribute('aria-label') ?? input.placeholder ?? 'Type', text: input.value }
   emitOsk()
@@ -615,13 +676,7 @@ export function oskBackspace() {
 }
 
 export function oskCommit() {
-  const input = oskInput
-  const text = oskState.text
-  if (input) {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-    setter?.call(input, text)
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  if (oskInput) setNativeValue(oskInput, oskState.text)
   oskClose()
 }
 
@@ -720,7 +775,7 @@ export function attachFocusSync(): () => void {
     if (focused && !focused.isConnected) {
       focused = null
       setRing(null)
-      emitNav({ hasFocus: false })
+      emitNav({})
     }
     const now = performance.now()
     if (now - lastStructureCheck >= 120) {
