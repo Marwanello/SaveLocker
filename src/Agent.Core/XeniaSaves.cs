@@ -89,16 +89,20 @@ public static class XeniaSaves
         EmulatorRom: id,
         ViaEmuDeck: setup.EmuDeck,
         IncludeGlobs: ScopeFor(id),
-        // Every Xenia game declares the device's folder, even before it exists, so every machine's game has the same
-        // folders and a device save made on one reaches the others. A game under a profile also declares its part of
-        // that profile (XeniaProfileSlice): its achievements file and its row of the dashboard.
+        // Every Xenia game under a profile declares the device's folder, even before it exists, so every machine's game
+        // has the same folders and a device save made on one reaches the others. A game under an XUID also declares its
+        // part of that profile (XeniaProfileSlice): its achievements file and its row of the dashboard. A game in the
+        // layout from before profiles declares neither: its folder is content itself, the device's folder would sit
+        // inside it (one folder of a game never may), and those builds kept device saves with the rest.
         ExtraSaveDirs: Xuid(Path.GetFileName(dir)) is not null
             ?
             [
                 new DeclaredSavePath(DeviceKey, Path.Combine(setup.Content, NoProfile), ScopeFor(id)),
                 new DeclaredSavePath(XeniaProfileSlice.Key, EmuDeckRoots.RealPath(dir), XeniaProfileSlice.ScopeFor(id)),
             ]
-            : [new DeclaredSavePath(DeviceKey, Path.Combine(setup.Content, NoProfile), ScopeFor(id))],
+            : SamePath(dir, setup.Content)
+                ? []
+                : [new DeclaredSavePath(DeviceKey, Path.Combine(setup.Content, NoProfile), ScopeFor(id))],
         Release: ConsoleTitles.Release(System, [id]),
         EmulatorProfile: Xuid(Path.GetFileName(dir)) is { } profile ? EmulatorProfiles.XeniaPrefix + profile : null);
 
@@ -135,6 +139,10 @@ public static class XeniaSaves
 
     /// <summary>The key of a Xenia game's second folder: the saves no profile owns, <c>content/0000000000000000</c>.</summary>
     public const string DeviceKey = "device";
+
+    private static bool SamePath(string a, string b) =>
+        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     /// <summary>The XUID folder of content no profile owns.</summary>
     public const string NoProfile = "0000000000000000";
 

@@ -324,6 +324,21 @@ public sealed class TitleIdSavesTests : IDisposable
     }
 
     [Fact]
+    public void A_xenia_game_in_the_layout_from_before_profiles_declares_no_device_folder()
+    {
+        // Its folder is content itself, so the device's folder would sit inside it, and enrollment refuses nested
+        // folders (found in testenv: WSL's Forza Horizon could not be added). Those builds kept device saves with the rest.
+        const string content = "xenia/content";
+        Text($"{content}/4D5309C9/00000001/ForzaProfile/ForzaProfile", "old layout");
+        Text($"{content}/0000000000000000/4D5309C9/00000002/PACK/dlc.bin", "dlc");
+
+        var forza = Assert.Single(XeniaSaves.Scan([new XeniaFolders(P(content))]));
+
+        Assert.Equal(P(content), forza.SuggestedSaveDir);
+        Assert.Empty(forza.ExtraSaveDirs!);
+    }
+
+    [Fact]
     public void A_xenia_profile_named_by_its_folder_is_read_and_an_xuid_profile_wins()
     {
         const string content = "xenia/content";

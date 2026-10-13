@@ -93,9 +93,7 @@ public static class Enroller
                 var check = SavePathGuard.Check(c.SuggestedSaveDir, config.StateDir);
                 if (!check.Ok)
                 {
-                    AgentLogger.Log($"Enrollment skipped '{c.Name}': {check.Reason} " +
-                                    $"(scanner suggested '{c.SuggestedSaveDir}')");
-                    skipped++;
+                    Refuse(c.Name, $"{check.Reason} (scanner suggested '{c.SuggestedSaveDir}')");
                     continue;
                 }
 
@@ -108,9 +106,11 @@ public static class Enroller
 
                 // Folders the scanner declared alongside the primary one. Every refusal happens here,
                 // before the game exists on the server, for the same reason as the check above.
-                if (DeclaredFolders(config, c, check.Canonical!) is not { } extras)
+                // The reason goes back to the person, not only to the log: Add games said "skipped, already
+                // tracked" for a game it had refused, and left it ticked.
+                if (DeclaredFolders(config, c, check.Canonical!, out var refused) is not { } extras)
                 {
-                    skipped++;
+                    Refuse(c.Name, refused!);
                     continue;
                 }
 
@@ -425,14 +425,21 @@ public static class Enroller
     /// folders (nested, or an unscoped shared directory). One bad folder skips the whole candidate:
     /// enrolling the rest would define the game on the server without it, for every machine.
     /// </summary>
-    internal static List<DeclaredSavePath>? DeclaredFolders(AgentConfig config, ScanCandidate c, string primary)
+    internal static List<DeclaredSavePath>? DeclaredFolders(AgentConfig config, ScanCandidate c, string primary, out string? why)
     {
         var result = new List<DeclaredSavePath>();
-        List<DeclaredSavePath>? Skip(string why)
+        string? reason = null;
+        List<DeclaredSavePath>? Skip(string message)
         {
-            AgentLogger.Log($"Enrollment skipped '{c.Name}': {why}");
+            reason = message;
             return null;
         }
+        var folders = Folders();
+        why = reason;
+        return folders;
+
+        List<DeclaredSavePath>? Folders()
+        {
 
         foreach (var glob in (c.IncludeGlobs ?? Array.Empty<string>()).Concat(
                      (c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>()).SelectMany(e => e.IncludeGlobs ?? Array.Empty<string>())))
@@ -451,6 +458,7 @@ public static class Enroller
         roots.AddRange(result.Select(e => new SaveRoot(e.Key, e.Dir, e.IncludeGlobs)));
         if (SaveArchive.FolderRulesError(roots) is { } rules) return Skip(rules);
         return result;
+        }
     }
 
     /// <summary>The folder as a template other machines can expand — against the game's own prefix
