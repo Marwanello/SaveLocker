@@ -28,7 +28,7 @@ public sealed record LaunchAnswerRequest(string QuestionId, string Choice, bool 
 /// <summary>
 /// The questions asked at launch and their answers, on disk beside the config: on a Deck, Decky asks through the daemon
 /// and the launch then runs through the Linux wrapper, a separate process that must see the answer, or it would undo
-/// â€œStart as Player1â€ by applying the default again. An answer counts for <see cref="AnswerLife"/> â€” long enough to cover
+/// “Start as Player1” by applying the default again. An answer counts for <see cref="AnswerLife"/> — long enough to cover
 /// that relaunch, short enough that the next session asks again.
 /// </summary>
 public sealed class LaunchQuestionStore
@@ -39,7 +39,7 @@ public sealed class LaunchQuestionStore
         public Guid GameId { get; set; }
         public string Kind { get; set; } = "";
         public DateTimeOffset AskedAt { get; set; }
-        /// <summary>Each config file the default changed, and what it said before â€” what â€œkeepâ€ puts back.</summary>
+        /// <summary>Each config file the default changed, and what it said before — what “keep” puts back.</summary>
         public Dictionary<string, string> Before { get; set; } = new();
         public string Applied { get; set; } = "";
         public string? Choice { get; set; }
@@ -88,7 +88,7 @@ public sealed class LaunchQuestionStore
 
     /// <summary>
     /// The answer given for this game and kind within <see cref="AnswerLife"/> that no launch check has followed yet, if
-    /// any â€” and marks it followed. It is for the check that comes right after the question within the same launch (on a
+    /// any — and marks it followed. It is for the check that comes right after the question within the same launch (on a
     /// Deck, Decky asks and then the Linux wrapper checks again); a later launch is asked afresh.
     /// </summary>
     public Entry? TakeRecentAnswer(Guid gameId, string kind)

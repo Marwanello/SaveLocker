@@ -363,7 +363,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         _activity?.SetPhase(SyncPhase.Pushing);
 
         // A Xenia game's row of its profile is copied out of the shared dashboard first, so the push carries it.
-        XeniaProfileSlice.Export(game, _log);
+        XeniaProfileSlice.Export(game, _log, stateDir: _config.StateDir);
 
         // One pass over the save folder answers both questions a push asks of it: the aggregate
         // content hash (has anything changed at all?) and the per-file manifest a delta negotiates
@@ -801,7 +801,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 if (restored.SkippedKeys.Count > 0)
                     _log($"[{game.Name}] the server's save holds folder(s) this game no longer has " +
                          $"({string.Join(", ", restored.SkippedKeys)}); left out.");
-                XeniaProfileSlice.AfterPull(game, _log);
+                XeniaProfileSlice.AfterPull(game, _log, stateDir: _config.StateDir);
             }
             catch (SaveArchive.UnsafeArchiveException ex)
             {
@@ -867,7 +867,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // only raise a "save directory missing" warning and inflate the "N of M" count.
         var games = allGames.Where(g => g.IsEnrolledHere).ToList();
         var skipped = new List<string>();
-        int done = 0, uploaded = 0, pulled = 0, current = 0, conflicts = 0, queued = 0, unreachable = 0, failed = 0;
+        int done = 0, uploaded = 0, pulled = 0, current = 0, conflicts = 0, queued = 0, unreachable = 0, failed = 0, held = 0;
         long bytes = 0;
         var cancelled = false;
 
@@ -891,6 +891,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     case UploadStatus.Created: uploaded++; bytes += g.LastPushBytes ?? 0; break;
                     case UploadStatus.NoChange when pull is PullOutcome.Restored: pulled++; break;
                     case UploadStatus.NoChange when pull is PullOutcome.Unreachable: unreachable++; break;
+                    case UploadStatus.NoChange when pull is PullOutcome.HeldForDlc: held++; break;
                     case UploadStatus.NoChange: current++; break;
                     case UploadStatus.Conflict: conflicts++; break;
                     case null when _offlineQueue?.Contains(g.GameId) == true: queued++; break;
@@ -902,7 +903,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         {
             _activity?.EndRun(new SyncRunSummary(
                 DateTime.UtcNow, done, uploaded, current, conflicts, failed, bytes, cancelled,
-                pulled, queued, unreachable));
+                pulled, queued, unreachable, held));
         }
 
         if (cancelled)
@@ -1004,11 +1005,11 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         };
     }
 
-    /// <summary>What a pull did, as one sentence — shared by every surface that answers a person.</summary>
     /// <summary>
     /// The DLC check before a pull (tasks/emulator-saves Phase 5c, step 9): true, with the hold recorded and reported, when
     /// the latest save was made with packages this machine lacks. Only for a game whose emulator lists its DLC, and only
-    /// when the latest save said what it was made with; a check that cannot run never holds a pull.
+    /// when the latest save said what it was made with; a check that cannot run never holds a pull. Never for a save this
+    /// machine made or already has: there is nothing to restore, and packs removed here since must not hold its own save.
     /// </summary>
     private async Task<bool> HoldForDlcAsync(TrackedGame game, CancellationToken ct)
     {
@@ -1018,7 +1019,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         try { head = (await _api.GetStateAsync(game.GameId, ct))?.Head; }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return false; }
         if (head?.Content is not { } content) return false;
-        var missing = DlcCheck.Missing(content, here);
+        var missing = head.MachineId == _config.MachineId || head.Id == game.LastKnownVersionId
+            ? []
+            : DlcCheck.Missing(content, here);
         if (missing.Count == 0)
         {
             holds.Clear(game.GameId);
@@ -1033,6 +1036,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         return true;
     }
 
+    /// <summary>What a pull did, as one sentence — shared by every surface that answers a person.</summary>
     public static string DescribePull(TrackedGame game, PullOutcome outcome) => outcome switch
     {
         PullOutcome.HeldForDlc => $"Not pulled: the latest save of {game.Name} was made with DLC this machine doesn't have. Open the game to choose.",
@@ -1419,8 +1423,16 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // decide whether to trigger its own separate pull). The open-conflict check above and the
         // commit-before-choose push above THAT stay unconditional — disabling the pull only skips
         // fetching newer data, it must never also skip the safety check for a genuinely diverged save.
-        if (EffectivePullBeforeLaunch(game))
-            await PullAsync(game, force: false, ct);
+        // A pull held for missing DLC leaves this machine's older save in place, so the player is told the launch did not
+        // take the newer one (clients show the reason, as for a lease held elsewhere), and the profile check switches
+        // without asking: one question at a time.
+        if (EffectivePullBeforeLaunch(game) && await PullAsync(game, force: false, ct) == PullOutcome.HeldForDlc)
+        {
+            CheckXeniaProfile(game, canAsk: false);
+            return new LaunchGateResult(LaunchDecision.ProceedSyncPaused,
+                "the newer save needs DLC this device doesn't have, so it was not pulled — launching with this device's save. " +
+                "Open the game in SaveLocker to get the DLC or pull anyway.");
+        }
         return CheckXeniaProfile(game, canAsk) ?? new LaunchGateResult(LaunchDecision.Proceed);
     }
 

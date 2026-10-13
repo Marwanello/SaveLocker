@@ -35,13 +35,30 @@ public static class XeniaConfig
                 : existing.FirstOrDefault();
             if (chosen is not null) configs.Add(chosen);
         }
-        if (!string.IsNullOrWhiteSpace(gameName))
-        {
-            var own = Path.Combine(root, "config", gameName + ".config.toml");
-            if (File.Exists(own)) configs.Add(own);
-        }
+        if (GameConfig(root, gameName) is { } own) configs.Add(own);
         return configs;
     }
+
+    /// <summary>
+    /// Xenia Manager's config for one game, <c>config/&lt;its title&gt;.config.toml</c>. Its title is its own, so the file is
+    /// matched on letters and digits only, region and tags left out (<c>Halo 3 - ODST</c> is <c>Halo 3: ODST</c>'s), and only
+    /// among the files in that folder: the game's name comes from the server and is never made into a path.
+    /// </summary>
+    private static string? GameConfig(string root, string? gameName)
+    {
+        if (string.IsNullOrWhiteSpace(gameName)) return null;
+        const string suffix = ".config.toml";
+        var dir = Path.Combine(root, "config");
+        List<string> files;
+        try { files = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*" + suffix).Order(StringComparer.Ordinal).ToList() : []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+        string Stem(string f) { var n = Path.GetFileName(f); return n[..^suffix.Length]; }
+        return files.FirstOrDefault(f => string.Equals(Stem(f), gameName, StringComparison.OrdinalIgnoreCase))
+               ?? files.FirstOrDefault(f => Comparable(Stem(f)) is { Length: > 0 } c && c == Comparable(gameName));
+    }
+
+    private static string Comparable(string title) =>
+        new([.. RomNames.CleanTitle(title).Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant)]);
 
     /// <summary>
     /// The Xenia folder whose configs go with <paramref name="content"/>. Usually the folder holding it — but a game's saves

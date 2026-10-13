@@ -46,16 +46,22 @@ public static partial class XeniaProfileSlice
     }
 
     /// <summary>Copies the game's dashboard row and the profile's core out to their files, before a push hashes the
-    /// folders. Each is written only when it changed, so an unchanged profile never looks like a change.</summary>
-    public static void Export(TrackedGame game, Action<string> log)
+    /// folders. Each is written only when it changed, so an unchanged profile never looks like a change. A pulled row still
+    /// waiting to be merged (Xenia was running) is merged first, and while it still waits the row is not exported: this
+    /// machine's older row would replace the pulled one, and the push would carry it to every machine.</summary>
+    public static void Export(TrackedGame game, Action<string> log, Func<bool>? xeniaRunning = null, string? stateDir = null)
     {
         if (Of(game) is not { } slice) return;
         var dashboard = Path.Combine(slice.Dir, XeniaProfile.Dashboard + ".gpd");
+        var rowWaits = stateDir is not null && File.Exists(PendingFile(stateDir, game.GameId))
+                       && !Merge(game, log, xeniaRunning, stateDir) && File.Exists(PendingFile(stateDir, game.GameId));
         try
         {
             if (!File.Exists(dashboard)) return;
             var bytes = File.ReadAllBytes(dashboard);
-            if (XeniaProfile.TitleRow(bytes, Convert.ToUInt32(slice.TitleId, 16)) is { } row)
+            if (rowWaits)
+                log($"[{game.Name}] its pulled row of the Xenia profile is not merged yet, so this push keeps it as pulled.");
+            else if (XeniaProfile.TitleRow(bytes, Convert.ToUInt32(slice.TitleId, 16)) is { } row)
                 WriteIfChanged(Path.Combine(slice.Dir, RowFile(slice.TitleId)), row);
             var account = Path.Combine(slice.Dir, "Account");
             if (File.Exists(account))
@@ -65,6 +71,27 @@ public static partial class XeniaProfileSlice
         {
             log($"[{game.Name}] could not read its row of the Xenia profile: {ex.Message}");
         }
+    }
+
+    /// <summary>The marker of a pulled row that waits to be merged, beside the agent's other state: the pull and the next
+    /// push may run in different processes (the Linux launch wrapper and the daemon).</summary>
+    private static string PendingFile(string stateDir, Guid gameId) =>
+        Path.Combine(stateDir, "xenia", "merge-pending", gameId.ToString("N"));
+
+    private static void SetPending(string? stateDir, Guid gameId, bool pending)
+    {
+        if (stateDir is null) return;
+        var file = PendingFile(stateDir, gameId);
+        try
+        {
+            if (pending)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                if (!File.Exists(file)) AtomicFile.WriteAllText(file, DateTime.UtcNow.ToString("O"));
+            }
+            else if (File.Exists(file)) File.Delete(file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     private static void WriteIfChanged(string path, byte[] bytes)
@@ -88,10 +115,10 @@ public static partial class XeniaProfileSlice
 
     /// <summary>What a pull runs after it restored the game's folders: the profile unpacked where it is missing, then the
     /// game's row merged in.</summary>
-    public static void AfterPull(TrackedGame game, Action<string> log, Func<bool>? xeniaRunning = null)
+    public static void AfterPull(TrackedGame game, Action<string> log, Func<bool>? xeniaRunning = null, string? stateDir = null)
     {
         Seed(game, log, xeniaRunning);
-        Merge(game, log, xeniaRunning);
+        Merge(game, log, xeniaRunning, stateDir);
     }
 
     /// <summary>
@@ -133,31 +160,38 @@ public static partial class XeniaProfileSlice
     /// <summary>
     /// Merges the pulled row into this machine's dashboard: that game's row replaced or added, the totals recounted, every
     /// other row kept. Nothing happens without a dashboard here (the profile itself is not on this machine yet), or while
-    /// Xenia runs, which keeps the dashboard open and writes it back on exit.
+    /// Xenia runs, which keeps the dashboard open and writes it back on exit; then, given <paramref name="stateDir"/>, the
+    /// row is marked as waiting, and the next push merges it before anything else (<see cref="Export"/>).
     /// </summary>
-    public static bool Merge(TrackedGame game, Action<string> log, Func<bool>? xeniaRunning = null)
+    public static bool Merge(TrackedGame game, Action<string> log, Func<bool>? xeniaRunning = null, string? stateDir = null)
     {
         if (Of(game) is not { } slice) return false;
         var file = Path.Combine(slice.Dir, RowFile(slice.TitleId));
         var dashboard = Path.Combine(slice.Dir, XeniaProfile.Dashboard + ".gpd");
         try
         {
-            if (!File.Exists(file)) return false;
-            if (!File.Exists(dashboard))
+            if (!File.Exists(file) || !File.Exists(dashboard))
             {
-                log($"[{game.Name}] its achievements arrived, but this machine has no copy of the profile yet.");
+                if (File.Exists(file)) log($"[{game.Name}] its achievements arrived, but this machine has no copy of the profile yet.");
+                SetPending(stateDir, game.GameId, false);
                 return false;
             }
             if ((xeniaRunning ?? XeniaLaunchProfile.XeniaRunning)())
             {
-                log($"[{game.Name}] Xenia is running, so its row of the profile is merged on the next pull.");
+                log($"[{game.Name}] Xenia is running, so its row of the profile is merged once it has closed.");
+                SetPending(stateDir, game.GameId, true);
                 return false;
             }
             var before = File.ReadAllBytes(dashboard);
             var row = File.ReadAllBytes(file);
             var tid = Convert.ToUInt32(slice.TitleId, 16);
-            if (XeniaProfile.TitleRow(before, tid) is { } current && current.AsSpan().SequenceEqual(row)) return false;
+            if (XeniaProfile.TitleRow(before, tid) is { } current && current.AsSpan().SequenceEqual(row))
+            {
+                SetPending(stateDir, game.GameId, false);
+                return false;
+            }
             AtomicFile.WriteAllBytes(dashboard, XeniaProfile.MergeTitleRow(before, tid, row));
+            SetPending(stateDir, game.GameId, false);
             log($"[{game.Name}] merged its row into the Xenia profile; other games' rows kept.");
             return true;
         }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, errorText } from '../../api';
 import type { ContentTransfer, Game, GameContent, HandoverOverview } from '../../types';
 import { ago, fmtSize } from '../../format';
+import { missingPacks } from '../../dlc';
 import { toast, toastError } from '../../toast';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -74,11 +75,7 @@ export function EmulatorSettings({ game, tab, onTab, onBack, refreshKey }: Props
   }
 
   const head = content?.headContent ?? [];
-  const key = (p: { kind: string; id: string }) => `${p.kind}/${p.id}`.toLowerCase();
-  const short = (content?.machines ?? []).filter(m => {
-    const have = new Set(m.packages.map(key));
-    return head.some(p => !have.has(key(p)));
-  }).length;
+  const short = (content?.machines ?? []).filter(m => missingPacks(head, m.packages).length > 0).length;
   const open = transfers.filter(t => OPEN.includes(t.status)).length;
 
   return (

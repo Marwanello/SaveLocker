@@ -245,6 +245,21 @@ public sealed class XeniaFormatsTests : IDisposable
     }
 
     [Fact]
+    public void Xenia_Managers_config_is_found_under_its_own_spelling_of_the_title_and_never_outside_its_folder()
+    {
+        var dir = Install("xenia-manager-odst", Config);
+        Directory.CreateDirectory(Path.Combine(dir, "config"));
+        File.WriteAllText(Path.Combine(dir, "config", "Halo 3 - ODST.config.toml"), Config);
+        File.WriteAllText(Path.Combine(dir, "config", "Halo 3.config.toml"), Config);
+        File.WriteAllText(Path.Combine(dir, "outside.config.toml"), Config);
+
+        Assert.Equal(
+            [Path.Combine(dir, "xenia-canary.config.toml"), Path.Combine(dir, "config", "Halo 3 - ODST.config.toml")],
+            XeniaConfig.For(Path.Combine(dir, "content"), "Halo 3: ODST"));
+        Assert.Equal([Path.Combine(dir, "xenia-canary.config.toml")], XeniaConfig.For(Path.Combine(dir, "content"), "../outside"));
+    }
+
+    [Fact]
     public void With_no_profile_line_anywhere_the_installed_builds_config_is_the_one()
     {
         var dir = Install("emudeck", "[Storage]\n");

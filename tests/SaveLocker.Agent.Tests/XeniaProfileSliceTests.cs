@@ -84,6 +84,46 @@ public sealed class XeniaProfileSliceTests : IDisposable
         Assert.False(File.Exists(Dashboard));
     }
 
+    [Fact]
+    public void A_row_pulled_while_Xenia_runs_is_never_replaced_by_the_older_row_here()
+    {
+        // The pull lands the newer row; Xenia is open, so it waits. The push that follows must not export this machine's
+        // older row over it — that push would carry the older row to every machine.
+        var state = Path.Combine(_root, "state");
+        var game = Game();
+        var older = XeniaFormatsTests.Row(Forza, 12, 180, "Forza Horizon");
+        var pulled = XeniaFormatsTests.Row(Forza, 18, 260, "Forza Horizon");
+        File.WriteAllBytes(Dashboard, XeniaFormatsTests.Dashboard(older));
+        File.WriteAllBytes(RowFile, pulled);
+
+        XeniaProfileSlice.AfterPull(game, _log.Add, () => true, state);
+        XeniaProfileSlice.Export(game, _log.Add, () => true, state);
+        Assert.Equal(pulled, File.ReadAllBytes(RowFile));
+
+        // Xenia closed: the next push merges first, then exports the merged row.
+        XeniaProfileSlice.Export(game, _log.Add, () => false, state);
+        Assert.Equal(pulled, File.ReadAllBytes(RowFile));
+        Assert.Equal(pulled, XeniaProfile.TitleRow(File.ReadAllBytes(Dashboard), Forza));
+
+        // Nothing waits any more: progress made here is exported as usual.
+        var played = XeniaFormatsTests.Row(Forza, 20, 300, "Forza Horizon");
+        File.WriteAllBytes(Dashboard, XeniaFormatsTests.Dashboard(played));
+        XeniaProfileSlice.Export(game, _log.Add, () => false, state);
+        Assert.Equal(played, File.ReadAllBytes(RowFile));
+    }
+
+    [Theory]
+    [InlineData("xenia_canary", true)]
+    [InlineData("xenia_canary.exe", true)]
+    [InlineData("xenia_canary.ex", true)] // Proton on Linux: 15 characters of xenia_canary.exe
+    [InlineData("Xenia_Edge.exe", true)]
+    [InlineData("xenia", true)]
+    [InlineData("xenia_manager", false)]
+    [InlineData("xenia_canary_x", false)]
+    [InlineData("steam", false)]
+    public void Xenia_is_recognised_by_its_process_name_even_cut_short(string name, bool xenia) =>
+        Assert.Equal(xenia, XeniaLaunchProfile.IsXeniaProcessName(name));
+
     private string CoreFile => Path.Combine(_profile, "SaveLocker-4D5309C9.core");
     private string Account => Path.Combine(_profile, "Account");
 

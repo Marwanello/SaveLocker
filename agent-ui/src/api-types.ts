@@ -3980,6 +3980,11 @@ export interface components {
              * @default 0
              */
             unreachable: number;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            heldForDlc: number;
         };
         SyncStatusDto: {
             inSync: boolean;

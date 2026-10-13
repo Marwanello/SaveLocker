@@ -248,11 +248,6 @@ public class AgentCommand
 }
 
 /// <summary>
-/// A machine's stored save-folder path for a specific game. Keyed on
-/// (MachineId, GameId); one row per machine that has mapped a local folder.
-/// Injected into the agent's game list for reconcile and surfaced in the dashboard.
-/// </summary>
-/// <summary>
 /// The DLC and title updates one machine has for one game (tasks/emulator-saves Phase 5c, the DLC check), as it last
 /// reported them: what lets the console show which machine can pull the latest save safely before anyone tries.
 /// </summary>
@@ -286,6 +281,11 @@ public class ContentTransfer
     public string PartsJson { get; set; } = "[]";
 }
 
+/// <summary>
+/// A machine's stored save-folder path for a specific game. Keyed on
+/// (MachineId, GameId); one row per machine that has mapped a local folder.
+/// Injected into the agent's game list for reconcile and surfaced in the dashboard.
+/// </summary>
 public class MachineSavePath
 {
     public Guid MachineId { get; set; }

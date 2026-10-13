@@ -81,7 +81,8 @@ public sealed partial class ContentTransferService
         });
 
     /// <summary>The asking machine's request. The other machine must have reported every pack, and the packs must fit the
-    /// cap. An open request for the same game and machine is answered with that one, never a second.</summary>
+    /// cap. An open request for the same game and machine is answered with that one, never a second — unless it asks
+    /// another machine or other packs (a newer save needs different ones) and nothing was sent yet: then it is replaced.</summary>
     public async Task<ContentTransferDto> CreateAsync(Guid toMachineId, CreateTransferRequest req)
     {
         if (req.Packages is not { Length: > 0 }) throw new TransferRefusedException("Name at least one package.");
@@ -101,7 +102,15 @@ public sealed partial class ContentTransferService
 
         var existing = await _db.ContentTransfers
             .Where(t => t.GameId == req.GameId && t.ToMachineId == toMachineId && Open.Contains(t.Status)).FirstOrDefaultAsync();
-        if (existing is not null) return await ToDtoAsync(existing);
+        if (existing is not null)
+        {
+            var asked = PartsOf(existing).Select(p => $"{p.Kind}/{p.PackageId}").ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var same = existing.FromMachineId == req.FromMachineId && asked.SetEquals(req.Packages.Select(p => $"{p.Kind}/{p.Id}"));
+            if (same || existing.Status != TransferStatus.Requested) return await ToDtoAsync(existing);
+            existing.Status = TransferStatus.Cancelled;
+            existing.UpdatedAt = DateTime.UtcNow;
+            Audit(toMachineId, game.Id, "dlc.handover.cancel", "replaced by a request for other packs");
+        }
 
         var now = DateTime.UtcNow;
         var transfer = new ContentTransfer
@@ -128,8 +137,7 @@ public sealed partial class ContentTransferService
             ?? throw new TransferRefusedException("Nothing has been uploaded for this game yet.");
         if (head.MachineId is not { } from) throw new TransferRefusedException("The machine that made the latest save was removed.");
         var reported = await _db.MachineGameContents.FindAsync(toMachineId, gameId);
-        var has = new HashSet<string>((Mapping.ReadContent(reported?.ContentJson) ?? []).Select(p => $"{p.Kind}/{p.Id}"), StringComparer.OrdinalIgnoreCase);
-        var missing = (Mapping.ReadContent(head.ContentJson) ?? []).Where(p => !has.Contains($"{p.Kind}/{p.Id}")).ToArray();
+        var missing = ContentPackageDto.Missing(Mapping.ReadContent(head.ContentJson), Mapping.ReadContent(reported?.ContentJson));
         if (missing.Length == 0) throw new TransferRefusedException("That machine already has every pack the latest save needs.");
         return await CreateAsync(toMachineId, new CreateTransferRequest(gameId, from, missing));
     }

@@ -466,6 +466,19 @@ public record ContentPackageDto(string Kind, string Id, string Name, long Size)
     public const string Dlc = "dlc", Update = "update";
     public const int MaxPackages = 1000;
 
+    /// <summary>
+    /// The packages of <paramref name="needed"/> that <paramref name="here"/> lacks. DLC matches by kind and ID. A title
+    /// update is there when any title update is installed: each one replaces the last, nothing on disk says which is
+    /// newer, and a machine that updated since must not be held against a save made with the update before.
+    /// </summary>
+    public static ContentPackageDto[] Missing(IReadOnlyList<ContentPackageDto>? needed, IReadOnlyList<ContentPackageDto>? here)
+    {
+        if (needed is null || needed.Count == 0) return [];
+        var have = new HashSet<string>((here ?? []).Select(p => p.Kind + "/" + p.Id), StringComparer.OrdinalIgnoreCase);
+        var anyUpdate = (here ?? []).Any(p => p.Kind == Update);
+        return [.. needed.Where(p => !(p.Kind == Update ? anyUpdate : have.Contains(p.Kind + "/" + p.Id)))];
+    }
+
     /// <summary>Null when a reported list can be stored, else why not.</summary>
     public static string? Validate(ContentPackageDto[]? packages)
     {

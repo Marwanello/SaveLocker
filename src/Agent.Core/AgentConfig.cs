@@ -743,6 +743,10 @@ public sealed class AgentConfig
     public void SaveGamePushAfterExit(Guid gameId, bool? enabled) =>
         MutateGameUnderLock(gameId, g => g.PushAfterExitEnabled = enabled);
 
+    /// <summary>Persist one game's profile-at-launch override — see <see cref="MutateGameUnderLock"/>.</summary>
+    public void SaveGameProfileAtLaunch(Guid gameId, ProfileAtLaunch? value) =>
+        MutateGameUnderLock(gameId, g => g.XeniaProfileAtLaunch = value);
+
     /// <summary>
     /// Persist a Windows Steam AppID backfill (tasks/playnite-plugin/plan.md, Phase 2) without
     /// clobbering concurrent changes to anything else — see <see cref="MutateGameUnderLock"/>. Unlike
@@ -750,10 +754,6 @@ public sealed class AgentConfig
     /// requests, so a plain mutate-then-<see cref="Save"/> could lose a concurrent write instead of
     /// only ever adding information nothing else was going to touch.
     /// </summary>
-    /// <summary>Persist one game's profile-at-launch override — see <see cref="MutateGameUnderLock"/>.</summary>
-    public void SaveGameProfileAtLaunch(Guid gameId, ProfileAtLaunch? value) =>
-        MutateGameUnderLock(gameId, g => g.XeniaProfileAtLaunch = value);
-
     public void SaveGameSteamAppId(Guid gameId, string appId) =>
         MutateGameUnderLock(gameId, g => g.SteamAppId = appId);
 

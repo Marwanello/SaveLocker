@@ -4,6 +4,7 @@ import type {
   AgentHealth, Command, Conflict, GameContent, GameIntent, GameSummary, Machine, MachineGameSource, MachineSavePath, MachineScanCandidate, Version,
 } from '../../types';
 import { toast, toastError } from '../../toast';
+import { missingPacks } from '../../dlc';
 import { problemGameIds, standing } from './gameState';
 import { ArtPicker } from '../ArtPicker';
 import { GameHead } from './GameHead';
@@ -74,10 +75,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
     return () => { live = false; };
   }, [game.id, xenia, versions.length]);
   const headContent = content?.headContent ?? [];
-  const short = (content?.machines ?? []).filter(m => {
-    const have = new Set(m.packages.map(p => `${p.kind}/${p.id}`.toLowerCase()));
-    return headContent.some(p => !have.has(`${p.kind}/${p.id}`.toLowerCase()));
-  }).length;
+  const short = (content?.machines ?? []).filter(m => missingPacks(headContent, m.packages).length > 0).length;
 
   async function reloadVersions() { setVersions(await api.versions(game.id)); }
 

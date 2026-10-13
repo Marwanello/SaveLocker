@@ -475,7 +475,11 @@ public sealed class SyncService
         var game = await _db.Games.FindAsync(gameId);
         if (game is null) return null;
         var head = await _db.SaveVersions.Include(v => v.Machine).Where(v => v.Id == game.HeadVersionId).FirstOrDefaultAsync();
-        var rows = await _db.MachineGameContents.Where(c => c.GameId == gameId).ToListAsync();
+        // Only machines that still keep the game: a row outlives a machine that stopped tracking it, and the console must
+        // not count that machine as missing packs.
+        var rows = await _db.MachineGameContents
+            .Where(c => c.GameId == gameId && _db.MachineSavePaths.Any(p => p.GameId == gameId && p.MachineId == c.MachineId))
+            .ToListAsync();
         var names = await _db.Machines.Where(m => rows.Select(r => r.MachineId).Contains(m.Id))
             .ToDictionaryAsync(m => m.Id, m => m.Name);
         return new GameContentDto(head?.Id, head is null ? null : Mapping.UploaderName(head), Mapping.ReadContent(head?.ContentJson),

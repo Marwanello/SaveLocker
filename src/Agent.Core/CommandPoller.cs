@@ -71,7 +71,7 @@ public sealed class CommandPoller : IDisposable
         _health = health;
         _offlineQueue = offlineQueue;
         _notices = notices;
-        _handover = new DlcHandoverRunner(config, api, engine, notices, m => { AgentLogger.Log(m); notify(m); });
+        _handover = new DlcHandoverRunner(config, api, engine, notices, notify);
         _timer = new System.Timers.Timer(pollMs) { AutoReset = true };
         _timer.Elapsed += (_, _) => _lastTick = TickAsync();
     }

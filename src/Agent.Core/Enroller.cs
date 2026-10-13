@@ -440,24 +440,23 @@ public static class Enroller
 
         List<DeclaredSavePath>? Folders()
         {
+            foreach (var glob in (c.IncludeGlobs ?? Array.Empty<string>()).Concat(
+                         (c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>()).SelectMany(e => e.IncludeGlobs ?? Array.Empty<string>())))
+                if (SaveArchive.ValidateIncludeGlob(glob) is { } badGlob) return Skip(badGlob);
 
-        foreach (var glob in (c.IncludeGlobs ?? Array.Empty<string>()).Concat(
-                     (c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>()).SelectMany(e => e.IncludeGlobs ?? Array.Empty<string>())))
-            if (SaveArchive.ValidateIncludeGlob(glob) is { } badGlob) return Skip(badGlob);
+            foreach (var e in c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>())
+            {
+                if (SaveRoot.ValidateExtraKey(e.Key) is { } badKey) return Skip(badKey);
+                var check = SavePathGuard.Check(e.Dir, config.StateDir);
+                if (!check.Ok) return Skip($"save folder '{e.Key}': {check.Reason} (scanner suggested '{e.Dir}')");
+                var template = PathResolver.IsTemplate(e.Template) ? e.Template : TemplateFor(c, check.Canonical!);
+                result.Add(e with { Dir = check.Canonical!, Template = template });
+            }
 
-        foreach (var e in c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>())
-        {
-            if (SaveRoot.ValidateExtraKey(e.Key) is { } badKey) return Skip(badKey);
-            var check = SavePathGuard.Check(e.Dir, config.StateDir);
-            if (!check.Ok) return Skip($"save folder '{e.Key}': {check.Reason} (scanner suggested '{e.Dir}')");
-            var template = PathResolver.IsTemplate(e.Template) ? e.Template : TemplateFor(c, check.Canonical!);
-            result.Add(e with { Dir = check.Canonical!, Template = template });
-        }
-
-        var roots = new List<SaveRoot> { SaveRoot.Primary(primary, c.IncludeGlobs) };
-        roots.AddRange(result.Select(e => new SaveRoot(e.Key, e.Dir, e.IncludeGlobs)));
-        if (SaveArchive.FolderRulesError(roots) is { } rules) return Skip(rules);
-        return result;
+            var roots = new List<SaveRoot> { SaveRoot.Primary(primary, c.IncludeGlobs) };
+            roots.AddRange(result.Select(e => new SaveRoot(e.Key, e.Dir, e.IncludeGlobs)));
+            if (SaveArchive.FolderRulesError(roots) is { } rules) return Skip(rules);
+            return result;
         }
     }
 

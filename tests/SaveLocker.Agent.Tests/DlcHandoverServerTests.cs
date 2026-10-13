@@ -100,6 +100,24 @@ public sealed class DlcHandoverServerTests : IClassFixture<ServerProcess>, IDisp
     }
 
     [Fact]
+    public async Task An_unanswered_request_for_other_packs_is_replaced_and_one_in_progress_is_kept()
+    {
+        // A newer save needs different packs: the request still waiting is replaced, never answered with the old one.
+        var (pc, deck, pcId, gameId) = await SetUp();
+        var car = new ContentPackageDto(ContentPackageDto.Dlc, "AAAA", "Car Pack", 300);
+        await pc.ReportContentAsync(gameId, [Rally, car], null);
+
+        var first = await deck.CreateTransferAsync(new CreateTransferRequest(gameId, pcId, [Rally]));
+        Assert.Equal(first.Id, (await deck.CreateTransferAsync(new CreateTransferRequest(gameId, pcId, [Rally]))).Id);
+        var second = await deck.CreateTransferAsync(new CreateTransferRequest(gameId, pcId, [Rally, car]));
+        Assert.NotEqual(first.Id, second.Id);
+        Assert.Equal(TransferStatus.Cancelled, (await deck.ListTransfersAsync()).Single(t => t.Id == first.Id).Status);
+
+        await pc.AnswerTransferAsync(second.Id, approve: true);
+        Assert.Equal(second.Id, (await deck.CreateTransferAsync(new CreateTransferRequest(gameId, pcId, [car]))).Id);
+    }
+
+    [Fact]
     public async Task Declined_or_cancelled_nothing_can_be_uploaded_or_fetched()
     {
         var (pc, deck, pcId, gameId) = await SetUp();

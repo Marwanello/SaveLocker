@@ -1019,7 +1019,7 @@ public sealed class AgentApiServer : IDisposable
                 recent,
                 run is null ? null : new SyncRunDto(
                     run.FinishedAtUtc, run.Games, run.Uploaded, run.AlreadyCurrent, run.Conflicts,
-                    run.Failed, run.BytesSent, run.Cancelled, run.Pulled, run.Queued, run.Unreachable));
+                    run.Failed, run.BytesSent, run.Cancelled, run.Pulled, run.Queued, run.Unreachable, run.HeldForDlc));
         }).Produces<ActivityDto>();
 
         // Stops a running Sync all after the game it is on. Cooperative on purpose — see
@@ -2332,9 +2332,6 @@ public sealed record ErrorResponse(string Error, bool NeedsConfirm = false, bool
     /// predate <see cref="NeedsConfirm"/>; newer ones drop it and ask the question in their own words.</summary>
     public const string ConfirmHint = " Re-send with confirm to use it anyway.";
 }
-/// <param name="Notes">Why each refused game was not added ("Chrono Trigger: the server's …"), one line each;
-/// null when every skip was a game already set up here.</param>
-/// <summary>A pull the DLC check holds (tasks/emulator-saves Phase 5c).</summary>
 internal static class ServerErrors
 {
     /// <summary>The server's own sentence from an <see cref="ApiClient"/> error (“409: "The request is declined."”).</summary>
@@ -2354,8 +2351,12 @@ public sealed record GameProfileAtLaunchRequest(ProfileAtLaunch? ProfileAtLaunch
 
 public sealed record Xbox360SettingsDto(ProfileAtLaunch ProfileAtLaunch, DlcSendPolicy DlcSend);
 
+/// <summary>A pull the DLC check holds (tasks/emulator-saves Phase 5c).</summary>
 public sealed record DlcHoldDto(Guid GameId, string GameName, int MissingCount, long MissingSize, string Summary, DateTimeOffset HeldAt);
 
+/// <param name="Notes">Why each refused game was not added ("Chrono Trigger: the server's …"), one line each;
+/// null when every skip was a game already set up here.</param>
+/// <param name="Info">What was added differently from how it was found ("Forza Horizon: added under …"), one line each.</param>
 public sealed record EnrollResponse(int Enrolled, int Skipped, string[]? Notes = null, string[]? Info = null);
 public sealed record EnrollProgressDto(bool Active, int Index, int Total, string? Game, string Step, int Enrolled, int Skipped);
 public sealed record RegisterResponse(string MachineName);
@@ -2381,9 +2382,10 @@ public sealed record ActivityDto(
     ActivitySnapshotDto Current, ActivityLogEntryDto[] Recent, SyncRunDto? LastRun = null);
 /// <param name="Failed">Pushes that were refused or could not run. A save waiting in the offline queue
 /// is <paramref name="Queued"/>, and a game the server could not be asked about is <paramref name="Unreachable"/>.</param>
+/// <param name="HeldForDlc">Games whose newer save was not pulled because it needs DLC this machine lacks.</param>
 public sealed record SyncRunDto(
     DateTime FinishedAtUtc, int Games, int Uploaded, int AlreadyCurrent, int Conflicts, int Failed,
-    long BytesSent, bool Cancelled, int Pulled = 0, int Queued = 0, int Unreachable = 0);
+    long BytesSent, bool Cancelled, int Pulled = 0, int Queued = 0, int Unreachable = 0, int HeldForDlc = 0);
 public sealed record SyncNowResponse(string Message);
 /// <param name="Requested">False when no Sync all was running, so there was nothing to cancel.</param>
 public sealed record CancelSyncResponse(bool Requested);

@@ -291,7 +291,7 @@ public sealed class DlcCheckSyncTests : IClassFixture<ServerProcess>, IDisposabl
     }
 
     [Fact]
-    public void The_check_matches_packages_by_kind_and_id_and_says_what_is_missing()
+    public void The_check_matches_dlc_by_kind_and_id_and_any_title_update_counts()
     {
         ContentPackageDto[] head =
         [
@@ -299,17 +299,115 @@ public sealed class DlcCheckSyncTests : IClassFixture<ServerProcess>, IDisposabl
             new(ContentPackageDto.Dlc, "BBBB", "Rally Expansion Pack", 1028L * 1024 * 1024),
             new(ContentPackageDto.Update, "tu00000002_00000000", "Title Update 2", 15 * 1024 * 1024),
         ];
-        ContentPackageDto[] here = [new(ContentPackageDto.Dlc, "aaaa", "Pre-Order Car Pack", 52 * 1024 * 1024), new(ContentPackageDto.Update, "BBBB", "x", 1)];
+        ContentPackageDto[] noUpdate = [new(ContentPackageDto.Dlc, "aaaa", "Pre-Order Car Pack", 52 * 1024 * 1024)];
+        // A title update named BBBB is no DLC BBBB; but any title update stands for the one the save was made with, since
+        // each replaces the last and nothing says which is newer.
+        ContentPackageDto[] updated = [.. noUpdate, new(ContentPackageDto.Update, "BBBB", "Title Update 3", 1)];
 
-        var missing = DlcCheck.Missing(head, here);
-
+        var missing = DlcCheck.Missing(head, noUpdate);
         Assert.Equal(["BBBB", "tu00000002_00000000"], missing.Select(p => p.Id));
         Assert.Equal("2 DLC packs (Rally Expansion Pack, Title Update 2, 1043 MB)", DlcCheck.Summary(missing));
-        Assert.Empty(DlcCheck.Missing(null, here));
-        var described = DlcCheck.Describe(new SaveVersionDto(Guid.NewGuid(), Guid.NewGuid(), null, "PC", DateTime.UtcNow, "h", 1, null, Content: head), here, held: true);
-        Assert.Equal(2, described.MissingCount);
-        Assert.Equal([true, false, false], described.Packages!.Select(p => p.Here));
-        Assert.Null(DlcCheck.Describe(new SaveVersionDto(Guid.NewGuid(), Guid.NewGuid(), null, "PC", DateTime.UtcNow, "h", 1, null), here, false).Packages);
+        Assert.Equal(["BBBB"], DlcCheck.Missing(head, updated).Select(p => p.Id));
+        Assert.Empty(DlcCheck.Missing(null, noUpdate));
+        var described = DlcCheck.Describe(new SaveVersionDto(Guid.NewGuid(), Guid.NewGuid(), null, "PC", DateTime.UtcNow, "h", 1, null, Content: head), updated, held: true);
+        Assert.Equal(1, described.MissingCount);
+        Assert.Equal([true, false, true], described.Packages!.Select(p => p.Here));
+        Assert.Null(DlcCheck.Describe(new SaveVersionDto(Guid.NewGuid(), Guid.NewGuid(), null, "PC", DateTime.UtcNow, "h", 1, null), noUpdate, false).Packages);
+    }
+
+    [Fact]
+    public async Task A_save_this_machine_made_or_already_has_is_never_held()
+    {
+        // The PC made the save with a pack it later removed: its own sync must not hold its own save, nor say this
+        // machine lacks something for it.
+        var title = "9A" + _id;
+        const string pcContent = "Xenia Canary/content";
+        Write("pc", $"{pcContent}/{Xuid}/{title}/00000001/Profile/save.dat", "pc-save");
+        Package("pc", pcContent, title, "00000002", "AAAA", "Pre-Order Car Pack", 300);
+        var pc = await Machine("pc7");
+        var pcGame = await Enroll(pc, XeniaSaves.Scan([new XeniaFolders(P("pc", pcContent))]), title);
+        await using var enginePc = new SyncEngine(pc, ApiClient.For(pc));
+        Assert.NotNull(await enginePc.PushAsync(pcGame, force: true));
+        Directory.Delete(P("pc", $"{pcContent}/{XeniaSaves.NoProfile}/{title}/00000002/AAAA"), recursive: true);
+
+        Assert.Equal(PullOutcome.UpToDate, await enginePc.PullAsync(pcGame));
+        Assert.Null(DlcHoldStore.For(pc).For(pcGame.GameId));
+    }
+
+    [Fact]
+    public async Task A_launch_whose_pull_is_held_says_it_starts_with_this_machines_save()
+    {
+        var title = "9B" + _id;
+        const string pcContent = "Xenia Canary/content";
+        const string deckContent = "SDCard/Emulation/roms/xbox360/content";
+        Write("pc", $"{pcContent}/{Xuid}/{title}/00000001/Profile/save.dat", "pc-save");
+        Package("pc", pcContent, title, "00000002", "BBBB", "Rally Expansion Pack", 900);
+        Write("deck", $"{deckContent}/{Xuid}/{title}/00000001/Profile/save.dat", "deck-old");
+        var pc = await Machine("pc8");
+        var deck = await Machine("deck8");
+        var pcGame = await Enroll(pc, XeniaSaves.Scan([new XeniaFolders(P("pc", pcContent))]), title);
+        var deckGame = await Enroll(deck, XeniaSaves.Scan([new XeniaFolders(P("deck", deckContent), EmuDeck: true)]), title);
+        await using var enginePc = new SyncEngine(pc, ApiClient.For(pc));
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        Assert.NotNull(await enginePc.PushAsync(pcGame, force: true));
+        deckGame.LastSyncedHash = deckGame.LocalHash(deck.StateDir);
+        deck.SaveGameSyncState(deckGame);
+
+        var gate = await engineDeck.PrepareLaunchAsync(deckGame, canAsk: true);
+        await engineDeck.ReleaseLaunchLeaseAsync(deckGame);
+
+        Assert.Equal(LaunchDecision.ProceedSyncPaused, gate.Decision);
+        Assert.Null(gate.HolderMachineName);
+        Assert.Contains("DLC", gate.Reason);
+        Assert.Equal("deck-old", File.ReadAllText(P("deck", $"{deckContent}/{Xuid}/{title}/00000001/Profile/save.dat")));
+    }
+
+    [Fact]
+    public async Task A_request_for_a_pack_not_installed_here_is_cancelled_and_nothing_else_is_read()
+    {
+        // The sender reads only packs it lists itself, whatever the request names.
+        var title = "9C" + _id;
+        const string pcContent = "Xenia Canary/content";
+        Write("pc", $"{pcContent}/{Xuid}/{title}/00000001/Profile/save.dat", "pc-save");
+        Package("pc", pcContent, title, "00000002", "BBBB", "Rally Expansion Pack", 900);
+        var pc = await Machine("pc9");
+        var deck = await Machine("deck9");
+        var pcGame = await Enroll(pc, XeniaSaves.Scan([new XeniaFolders(P("pc", pcContent))]), title);
+        await using var enginePc = new SyncEngine(pc, ApiClient.For(pc));
+        await enginePc.PushAsync(pcGame, force: true);
+        var asked = await ApiClient.For(deck).CreateTransferAsync(new CreateTransferRequest(pcGame.GameId, pc.MachineId!.Value,
+            [new ContentPackageDto(ContentPackageDto.Dlc, "BBBB", "Rally Expansion Pack", 900)]));
+        Directory.Delete(P("pc", $"{pcContent}/{XeniaSaves.NoProfile}/{title}/00000002/BBBB"), recursive: true);
+
+        await new DlcHandoverRunner(pc, () => ApiClient.For(pc), () => enginePc, null, _ => { }, () => false).RunAsync();
+
+        Assert.Equal(TransferStatus.Cancelled, (await ApiClient.For(deck).ListTransfersAsync()).Single(t => t.Id == asked.Id).Status);
+    }
+
+    [Fact]
+    public void A_received_zip_with_a_name_twice_or_more_bytes_than_listed_is_refused_before_anything_is_written()
+    {
+        var content = CreateDir(P("y", "content"));
+        var pack = new ContentPackageDto(ContentPackageDto.Dlc, "EEEE", "Car Pack", 10);
+        var header = XeniaContent.BuildHeader(2, "Car Pack", "EEEE", 0x4D5309C9);
+
+        var twice = Path.Combine(_dir, "twice.zip");
+        using (var z = System.IO.Compression.ZipFile.Open(twice, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            for (var i = 0; i < 2; i++)
+                using (var w = z.CreateEntry("00000002/EEEE/data.bin").Open()) w.Write(new byte[5]);
+            using (var h = z.CreateEntry("Headers/00000002/EEEE.header").Open()) h.Write(header);
+        }
+        Assert.Throws<InvalidDataException>(() => DlcPackageFiles.Install(twice, content, "4D5309C9", legacy: false, pack));
+
+        var big = Path.Combine(_dir, "big.zip");
+        using (var z = System.IO.Compression.ZipFile.Open(big, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            using (var w = z.CreateEntry("00000002/EEEE/data.bin").Open()) w.Write(new byte[1024 * 1024]);
+            using (var h = z.CreateEntry("Headers/00000002/EEEE.header").Open()) h.Write(header);
+        }
+        Assert.Throws<InvalidDataException>(() => DlcPackageFiles.Install(big, content, "4D5309C9", legacy: false, pack));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(content));
     }
 
     [Fact]

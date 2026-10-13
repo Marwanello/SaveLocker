@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ContentTransfer, GameContent } from '../../types';
 import { ago, fmtSize } from '../../format';
+import { missingPacks } from '../../dlc';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 
@@ -35,8 +36,6 @@ export function DlcCheckCard({ content, transfers, onSend }: Props) {
       </Card>
     );
   }
-  const key = (p: { kind: string; id: string }) => `${p.kind}/${p.id}`.toLowerCase();
-
   async function send(machineId: string) {
     setSending(machineId);
     try { await onSend(machineId); } finally { setSending(null); }
@@ -61,8 +60,7 @@ export function DlcCheckCard({ content, transfers, onSend }: Props) {
           </thead>
           <tbody>
             {content.machines.map(m => {
-              const have = new Set(m.packages.map(key));
-              const missing = head.filter(p => !have.has(key(p)));
+              const missing = missingPacks(head, m.packages);
               const missingSize = missing.reduce((n, p) => n + p.size, 0);
               const open = transfers.find(t => t.toMachineId === m.machineId && OPEN.includes(t.status));
               return (

@@ -5,7 +5,7 @@ using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
-/// <summary>What this machine does when another asks for DLC it has (tasks/emulator-saves Phase 5c). Null in the config means Ask.</summary>
+/// <summary>What this machine does when another asks for DLC it has (tasks/emulator-saves Phase 5c). Null in the config means Auto.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<DlcSendPolicy>))]
 public enum DlcSendPolicy { Ask, Auto, Never }
 
@@ -18,6 +18,8 @@ public static class DlcPackageFiles
     private static string TypeOf(string kind) => kind == ContentPackageDto.Update ? XeniaContent.TitleUpdateType : XeniaContent.DlcType;
 
     private static string HeaderPath(string home, string type, string id) => Path.Combine(home, "Headers", type, id + ".header");
+
+    private const long MaxHeaderBytes = 64 * 1024;
 
     /// <summary>The title folder that holds the package, the current layout (<c>content/0000000000000000/&lt;TID&gt;</c>) first.</summary>
     public static string? FindHome(string content, string titleId, ContentPackageDto p)
@@ -35,9 +37,11 @@ public static class DlcPackageFiles
         var dir = Path.Combine(home, type, p.Id);
         var tmp = zipPath + ".tmp";
         File.Delete(tmp);
+        // Links are not followed: a pack is its own files, never what a link inside it points at.
+        var walk = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
         using (var zip = ZipFile.Open(tmp, ZipArchiveMode.Create))
         {
-            foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
+            foreach (var f in Directory.EnumerateFiles(dir, "*", walk).Order(StringComparer.Ordinal))
                 zip.CreateEntryFromFile(f, $"{type}/{p.Id}/" + Path.GetRelativePath(dir, f).Replace('\\', '/'), CompressionLevel.NoCompression);
             zip.CreateEntryFromFile(HeaderPath(home, type, p.Id), $"Headers/{type}/{p.Id}.header", CompressionLevel.NoCompression);
         }
@@ -47,8 +51,9 @@ public static class DlcPackageFiles
     /// <summary>
     /// Installs a received package where this machine's Xenia reads it: <c>content/&lt;TID&gt;</c> for a game in the layout from
     /// before profiles, else <c>content/0000000000000000/&lt;TID&gt;</c>. Unpacked beside it first and checked — nothing outside the
-    /// package's own folder and header, a header Xenia can read, the size the sender listed — then moved into place. A package
-    /// already installed is left alone. Throws <see cref="InvalidDataException"/> when the zip fails a check.
+    /// package's own folder and header, no name twice, no more bytes than the sender listed (checked before anything is
+    /// written), a header Xenia can read, the exact size — then moved into place. A package already installed is left alone.
+    /// Throws <see cref="InvalidDataException"/> when the zip fails a check.
     /// </summary>
     public static void Install(string zipPath, string content, string titleId, bool legacy, ContentPackageDto p)
     {
@@ -62,6 +67,16 @@ public static class DlcPackageFiles
             {
                 var prefix = $"{type}/{p.Id}/";
                 var header = $"Headers/{type}/{p.Id}.header";
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var e in zip.Entries)
+                {
+                    var name = e.FullName.Replace('\\', '/');
+                    if (!name.EndsWith('/') && !names.Add(name))
+                        throw new InvalidDataException($"{p.Name}: the zip holds {name} twice.");
+                }
+                // A header is 332 bytes; anything past the listed size plus one is more than this package.
+                if (zip.Entries.Sum(e => e.Length) > p.Size + MaxHeaderBytes)
+                    throw new InvalidDataException($"{p.Name}: the zip unpacks to more than the {p.Size:N0} bytes listed.");
                 foreach (var e in zip.Entries)
                 {
                     var name = e.FullName.Replace('\\', '/');
@@ -164,7 +179,7 @@ public sealed class DlcHandoverRunner
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _log($"[{t.GameName}] DLC hand-over: {ex.Message}");
+                LogOnce(t.Id, $"[{t.GameName}] DLC hand-over: {ex.Message}");
             }
         }
         CleanUp(list);
@@ -202,7 +217,16 @@ public sealed class DlcHandoverRunner
         if (t.Status != TransferStatus.Approved) return;
         if (Game(t.GameId) is not { } game || ContentInventory.Home(game) is not { } home)
         {
-            _log($"[{t.GameName}] cannot send its DLC: the game is not set up on this machine.");
+            LogOnce(t.Id, $"[{t.GameName}] cannot send its DLC: the game is not set up on this machine.");
+            return;
+        }
+        // Only packs this machine itself lists as installed are read, whatever the server names: a request is never a
+        // way to have other files on this machine zipped and uploaded.
+        var installed = (ContentInventory.For(game) ?? []).Select(p => p.Kind + "/" + p.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (t.Parts.FirstOrDefault(p => !p.Complete && !installed.Contains(p.Kind + "/" + p.PackageId)) is { } gone)
+        {
+            await api.CancelTransferAsync(t.Id, ct);
+            _log($"[{t.GameName}] cancelled {t.ToMachineName}'s request: {gone.Name} is not installed here.");
             return;
         }
 
@@ -261,7 +285,7 @@ public sealed class DlcHandoverRunner
         // Never into a running game: the packs wait in the agent's folder until Xenia closes.
         if (_xeniaRunning())
         {
-            _log($"[{t.GameName}] the DLC from {t.FromMachineName} is downloaded and installs once Xenia closes.");
+            LogOnce(t.Id, $"[{t.GameName}] the DLC from {t.FromMachineName} is downloaded and installs once Xenia closes.");
             return;
         }
         try
@@ -303,6 +327,20 @@ public sealed class DlcHandoverRunner
             _log($"[{game.Name}] the DLC its pull waited for is installed. {SyncEngine.DescribePull(game, outcome)}");
             if (outcome == PullOutcome.Restored) _notices?.Raise(NoticeCatalog.HeldPullDone(game.GameId, game.Name));
         }
+    }
+
+    // What was last said about each hand-over: a pass runs every 20 s, and a standing condition (Xenia still open, a
+    // download that keeps failing the same way) is said once, not three times a minute.
+    private readonly Dictionary<Guid, string> _said = new();
+
+    private void LogOnce(Guid transfer, string message)
+    {
+        lock (_said)
+        {
+            if (_said.TryGetValue(transfer, out var last) && last == message) return;
+            _said[transfer] = message;
+        }
+        _log(message);
     }
 
     private bool MarkSeen(Guid id)

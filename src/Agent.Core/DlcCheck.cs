@@ -29,13 +29,9 @@ public sealed record DlcCheckDto(
 /// </summary>
 public static class DlcCheck
 {
-    /// <summary>The packages of <paramref name="head"/> this machine does not have, matched by kind and package ID.</summary>
-    public static IReadOnlyList<ContentPackageDto> Missing(IReadOnlyList<ContentPackageDto>? head, IReadOnlyList<ContentPackageDto>? here)
-    {
-        if (head is null || head.Count == 0) return [];
-        var have = new HashSet<string>((here ?? []).Select(Key), StringComparer.OrdinalIgnoreCase);
-        return [.. head.Where(p => !have.Contains(Key(p)))];
-    }
+    /// <summary>The packages of <paramref name="head"/> this machine does not have (<see cref="ContentPackageDto.Missing"/>).</summary>
+    public static IReadOnlyList<ContentPackageDto> Missing(IReadOnlyList<ContentPackageDto>? head, IReadOnlyList<ContentPackageDto>? here) =>
+        ContentPackageDto.Missing(head, here);
 
     private static string Key(ContentPackageDto p) => p.Kind + "/" + p.Id;
 
