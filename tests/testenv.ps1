@@ -507,6 +507,26 @@ function New-XeniaAccount([string]$Gamertag) {
     return [byte[]]($hash + $out)
 }
 
+# A DLC or title-update package header as Xenia writes it (Headers/<type>/<id>.header, 332 bytes): device, content type,
+# display name UTF-16BE at 8, file name at 0x108, title ID at 0x140. The DLC check names packages from it.
+function New-XeniaContentHeader([uint32]$ContentType, [string]$Name, [string]$FileName, [uint32]$TitleId) {
+    $b = New-Object byte[] 332
+    foreach ($field in @(@(1, 0), @($ContentType, 4), @($TitleId, 0x140))) {
+        $v = [uint32]$field[0]; $at = $field[1]
+        $b[$at] = ($v -shr 24) -band 255; $b[$at + 1] = ($v -shr 16) -band 255; $b[$at + 2] = ($v -shr 8) -band 255; $b[$at + 3] = $v -band 255
+    }
+    $n = [Text.Encoding]::BigEndianUnicode.GetBytes($Name); [Array]::Copy($n, 0, $b, 8, [Math]::Min($n.Length, 0xFE))
+    $f = [Text.Encoding]::ASCII.GetBytes($FileName); [Array]::Copy($f, 0, $b, 0x108, [Math]::Min($f.Length, 0x37))
+    return $b
+}
+
+# One installed package for Forza Horizon (4D5309C9): its folder, with a data file of the given size, and its header.
+function Write-XeniaPackage([string]$TitleHome, [string]$Type, [string]$Id, [string]$Name, [int]$Bytes) {
+    Write-FixtureBytes (Join-Path $TitleHome "$Type\$Id\Content\data.bin") (New-Object byte[] $Bytes)
+    $ct = if ($Type -eq '00000002') { 2 } else { 0xB0000 }
+    Write-FixtureBytes (Join-Path $TitleHome "Headers\$Type\$Id.header") (New-XeniaContentHeader $ct $Name $Id 0x4D5309C9)
+}
+
 function New-XeniaConfig([string]$Xuid) {
     return "[Profiles]`nlogged_profile_slot_0_xuid = `"$Xuid`"   `t# XUID of the profile to load on boot in slot 0`n" +
         "logged_profile_slot_1_xuid = `"`"                   `t# XUID of the profile to load on boot in slot 1`n`n[Storage]`ncontent_root = `"`"`n"
@@ -641,6 +661,11 @@ function New-EmuDeckFixture {
     $x360Device = Join-Path $target 'saves\xenia\saves\0000000000000000'
     Write-FixtureFile (Join-Path $x360Device '45410914\00000001\globaloptions\options') "rock band 3 calibration $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $x360Device '45410914\00000002\SONGPACK\song.bin') 'rock band dlc - never synced'
+    # The DLC check and hand-over (Phase 5c): Forza Horizon's two packs and a title update where Xenia installs them
+    # (content/0000000000000000/<title ID>). The WSL machine has only the first pack, so its pull of a Windows save is held.
+    Write-XeniaPackage (Join-Path $x360Device '4D5309C9') '00000002' 'AAAA0000000000000000000000000000000000000A' 'Pre-Order Car Pack' 300000
+    Write-XeniaPackage (Join-Path $x360Device '4D5309C9') '00000002' 'BBBB0000000000000000000000000000000000000B' 'Rally Expansion Pack' 6000000
+    Write-XeniaPackage (Join-Path $x360Device '4D5309C9') '000B0000' 'tu00000002_00000000' 'Title Update 2' 150000
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
@@ -747,6 +772,8 @@ function New-EmuDeckFixture {
         $wX360 = Join-Path $wsl 'saves\xenia\saves'
         Write-FixtureFile (Join-Path $wX360 '4D5309C9\00000001\ForzaProfile\ForzaProfile') 'old forza horizon profile on the WSL machine'
         Write-FixtureFile (Join-Path $wX360 '584109FF\00000001\save.dat') 'wsl plants vs. zombies - must survive every Forza pull'
+        # The DLC check: the old layout keeps packages in content/<title ID>; only the first of Windows' two packs is here.
+        Write-XeniaPackage (Join-Path $wX360 '4D5309C9') '00000002' 'AAAA0000000000000000000000000000000000000A' 'Pre-Order Car Pack' 300000
         # Canary's 2023 named-profile layout (content/User/<title ID>): Halo 3, found and listed like any other.
         Write-FixtureFile (Join-Path $wX360 'User\4D5307E6\00000001\Halo3Save\save') 'halo 3 save in the named-profile layout'
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
