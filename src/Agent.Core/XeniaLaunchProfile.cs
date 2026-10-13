@@ -64,7 +64,7 @@ public static partial class XeniaLaunchProfile
             string.IsNullOrEmpty(configured) ? null : XeniaProfile.Gamertag(profile.Content, configured), action));
 
         var target = profile.Xuid;
-        if (store.RecentAnswer(game.GameId, Kind) is { } answered)
+        if (store.TakeRecentAnswer(game.GameId, Kind) is { } answered)
         {
             // Asked a moment ago (on a Deck, by Decky, before this same launch reached the wrapper): keep that answer.
             if (answered.Choice == KeepCurrent) return null;

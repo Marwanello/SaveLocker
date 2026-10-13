@@ -28,7 +28,7 @@ public sealed record LaunchAnswerRequest(string QuestionId, string Choice, bool 
 /// <summary>
 /// The questions asked at launch and their answers, on disk beside the config: on a Deck, Decky asks through the daemon
 /// and the launch then runs through the Linux wrapper, a separate process that must see the answer, or it would undo
-/// “Start as Player1” by applying the default again. An answer counts for <see cref="AnswerLife"/> — long enough to cover
+/// â€œStart as Player1â€ by applying the default again. An answer counts for <see cref="AnswerLife"/> â€” long enough to cover
 /// that relaunch, short enough that the next session asks again.
 /// </summary>
 public sealed class LaunchQuestionStore
@@ -39,15 +39,17 @@ public sealed class LaunchQuestionStore
         public Guid GameId { get; set; }
         public string Kind { get; set; } = "";
         public DateTimeOffset AskedAt { get; set; }
-        /// <summary>Each config file the default changed, and what it said before — what “keep” puts back.</summary>
+        /// <summary>Each config file the default changed, and what it said before â€” what â€œkeepâ€ puts back.</summary>
         public Dictionary<string, string> Before { get; set; } = new();
         public string Applied { get; set; } = "";
         public string? Choice { get; set; }
         public DateTimeOffset? AnsweredAt { get; set; }
+        /// <summary>A launch check already followed this answer; the next one asks afresh.</summary>
+        public bool Used { get; set; }
     }
 
     public static readonly TimeSpan QuestionLife = TimeSpan.FromMinutes(15);
-    public static readonly TimeSpan AnswerLife = TimeSpan.FromMinutes(10);
+    public static readonly TimeSpan AnswerLife = TimeSpan.FromMinutes(2);
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
     private readonly string _path;
@@ -84,11 +86,24 @@ public sealed class LaunchQuestionStore
         return ok;
     }
 
-    /// <summary>The answer given for this game and kind within <see cref="AnswerLife"/>, if any.</summary>
-    public Entry? RecentAnswer(Guid gameId, string kind) => ReadDisk()
-        .Where(e => e.GameId == gameId && e.Kind == kind && e.AnsweredAt > DateTimeOffset.UtcNow - AnswerLife)
-        .OrderByDescending(e => e.AnsweredAt)
-        .FirstOrDefault();
+    /// <summary>
+    /// The answer given for this game and kind within <see cref="AnswerLife"/> that no launch check has followed yet, if
+    /// any â€” and marks it followed. It is for the check that comes right after the question within the same launch (on a
+    /// Deck, Decky asks and then the Linux wrapper checks again); a later launch is asked afresh.
+    /// </summary>
+    public Entry? TakeRecentAnswer(Guid gameId, string kind)
+    {
+        Entry? taken = null;
+        Mutate(list =>
+        {
+            taken = list
+                .Where(e => e.GameId == gameId && e.Kind == kind && !e.Used && e.AnsweredAt > DateTimeOffset.UtcNow - AnswerLife)
+                .OrderByDescending(e => e.AnsweredAt)
+                .FirstOrDefault();
+            if (taken is not null) taken.Used = true;
+        });
+        return taken;
+    }
 
     private static bool Live(Entry e) =>
         e.AskedAt > DateTimeOffset.UtcNow - QuestionLife || e.AnsweredAt > DateTimeOffset.UtcNow - AnswerLife;

@@ -85,6 +85,9 @@ public sealed class XeniaLaunchProfileTests : IDisposable
         Assert.Null(Check(canAsk: false));
         Assert.Equal(Player1, XeniaConfig.Read(_rootConfig));
         Assert.False(XeniaLaunchProfile.Answer(_config, _game, _store, new LaunchAnswerRequest(q.Id, XeniaLaunchProfile.UseGameProfile), _log.Add));
+
+        // The answer was for that launch only: the next launch asks again (found in testenv — it stayed silent for 10 minutes).
+        Assert.Equal(LaunchDecision.Ask, Check(canAsk: true)!.Decision);
     }
 
     [Fact]

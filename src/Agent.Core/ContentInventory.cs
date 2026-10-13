@@ -42,5 +42,5 @@ public static partial class ContentInventory
     // A named profile's home sits in content, beside the device's folder or an XUID's; content itself sits in Xenia's folder.
     private static bool LooksLikeContent(string? dir) =>
         dir is not null && RomSaves.SafeSubdirs(dir).Select(Path.GetFileName)
-            .Any(n => n == XeniaSaves.NoProfile || XeniaSaves.Xuid(n) is not null);
+            .Any(n => n == XeniaSaves.NoProfile || (n is not null && XeniaSaves.Xuid(n) is not null));
 }
