@@ -187,6 +187,10 @@ public static class NoticeCatalog
                 $"{code}:{gameId:D}", gameId, $"{gameName}: pull refused", body,
                 AgentEventSeverity.Error, NoticeAction.Game(gameId), "Open game", "Dismiss"),
 
+            AgentEventCodes.PullHeldForDlc => new AgentNotice(
+                $"{code}:{gameId:D}", gameId, $"{gameName} needs DLC", body,
+                AgentEventSeverity.Warning, NoticeAction.Game(gameId), "Open game", "Later"),
+
             AgentEventCodes.LeaseHeldElsewhere => new AgentNotice(
                 $"{code}:{gameId:D}", gameId, $"{gameName} is checked out elsewhere", body,
                 AgentEventSeverity.Warning, NoticeAction.Game(gameId), "Open game", "Dismiss"),
@@ -230,6 +234,43 @@ public static class NoticeCatalog
         "SaveLocker found save folders it is not syncing yet. Choose which to add, or skip for now.",
         AgentEventSeverity.Info, NoticeAction.Folders, "Review folders", "Later",
         ClearedBySync: false);
+
+    // ----- The DLC hand-over (tasks/emulator-saves Phase 5c) -----
+
+    private static string Packs(ContentTransferDto t)
+    {
+        var mb = Math.Max(1, (t.Parts.Sum(p => p.Size) + 512 * 1024) / (1024 * 1024));
+        return $"{t.Parts.Length} DLC pack{(t.Parts.Length == 1 ? "" : "s")} ({mb} MB)";
+    }
+
+    /// <summary>Another machine asked this one for packs, and this machine's setting is to ask first.</summary>
+    public static AgentNotice HandoverAsked(ContentTransferDto t) => new(
+        $"handover:ask:{t.Id:D}", t.GameId, $"{t.ToMachineName} asks for {t.GameName}'s DLC",
+        $"{Packs(t)} through your server. They are deleted there once delivered.",
+        AgentEventSeverity.Info, NoticeAction.Game(t.GameId), "Open game", "Later", ClearedBySync: false);
+
+    public static AgentNotice HandoverEnded(ContentTransferDto t) => new(
+        $"handover:end:{t.Id:D}", t.GameId,
+        t.Status switch
+        {
+            TransferStatus.Declined => $"{t.FromMachineName} declined to send {t.GameName}'s DLC",
+            TransferStatus.Expired => $"{t.GameName}'s DLC never arrived",
+            _ => $"{t.GameName}'s DLC hand-over was cancelled",
+        },
+        t.Status == TransferStatus.Expired
+            ? $"{t.FromMachineName} did not send it within the time allowed. Ask again, or install the packs yourself."
+            : "Install the packs yourself, or pull the save anyway from the game's page.",
+        AgentEventSeverity.Warning, NoticeAction.Game(t.GameId), "Open game", "Dismiss", ClearedBySync: false);
+
+    public static AgentNotice HandoverReceived(ContentTransferDto t) => new(
+        $"handover:got:{t.Id:D}", t.GameId, $"{t.GameName}'s DLC is installed",
+        $"{Packs(t)} from {t.FromMachineName}. The save held for it is pulled next.",
+        AgentEventSeverity.Info, NoticeAction.Game(t.GameId), "Open game", "Dismiss", ClearedBySync: false);
+
+    public static AgentNotice HeldPullDone(Guid gameId, string gameName) => new(
+        $"handover:pulled:{gameId:D}", gameId, $"{gameName} is up to date",
+        "The DLC its latest save needs is installed, so the save was pulled.",
+        AgentEventSeverity.Info, NoticeAction.Game(gameId), "Open game", "Dismiss", ClearedBySync: false);
 
     public static AgentNotice ServerUnreachable(TimeSpan down)
     {

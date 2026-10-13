@@ -480,7 +480,35 @@ public sealed class SyncService
             .ToDictionaryAsync(m => m.Id, m => m.Name);
         return new GameContentDto(head?.Id, head is null ? null : Mapping.UploaderName(head), Mapping.ReadContent(head?.ContentJson),
             rows.Select(r => new MachineContentDto(r.MachineId, names.GetValueOrDefault(r.MachineId, ""),
-                Mapping.ReadContent(r.ContentJson) ?? [], r.UpdatedAt)).OrderBy(m => m.MachineName).ToArray());
+                Mapping.ReadContent(r.ContentJson) ?? [], r.UpdatedAt, ReadLaunch(r))).OrderBy(m => m.MachineName).ToArray());
+    }
+
+    private static LaunchProfileDto? ReadLaunch(MachineGameContent row)
+    {
+        if (row.LaunchJson is null || row.LaunchAt is not { } at) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<LaunchProfileReport>(row.LaunchJson, JsonSerializerOptions.Web) is { } r
+                ? new LaunchProfileDto(r.GameXuid, r.GameTag, r.ConfiguredXuid, r.ConfiguredTag, r.Action, at)
+                : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    /// <summary>A machine's last launch of a Xenia game: which profile Xenia was set to and what the check did.</summary>
+    public async Task<bool> ReportLaunchProfileAsync(Guid machineId, Guid gameId, LaunchProfileReport report)
+    {
+        if (!await _db.Games.AnyAsync(g => g.Id == gameId)) return false;
+        var row = await _db.MachineGameContents.FindAsync(machineId, gameId);
+        if (row is null)
+        {
+            row = new MachineGameContent { MachineId = machineId, GameId = gameId, UpdatedAt = DateTime.UtcNow };
+            _db.MachineGameContents.Add(row);
+        }
+        row.LaunchJson = JsonSerializer.Serialize(report, JsonSerializerOptions.Web);
+        row.LaunchAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
     }
 
     // ----- Games -----

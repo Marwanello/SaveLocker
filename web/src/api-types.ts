@@ -1092,6 +1092,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/games/{id}/launch-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LaunchProfileReport"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/transfers": {
         parameters: {
             query?: never;
@@ -2359,6 +2414,41 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["ContentTransferDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HandoverOverviewDto"];
                     };
                 };
             };
@@ -4893,6 +4983,15 @@ export interface components {
              */
             totalStorageBytes: number;
         };
+        HandoverOverviewDto: {
+            /** Format: int64 */
+            maxBytes: number;
+            /** Format: int32 */
+            expiryDays: number;
+            /** Format: int64 */
+            bytesInTransit: number;
+            open: components["schemas"]["ContentTransferDto"][];
+        };
         HeadFileDto: {
             path: string;
             /** Format: int64 */
@@ -4913,6 +5012,22 @@ export interface components {
             publishedSha256: null | string;
             checksumAsset: null | string;
             note: null | string;
+        };
+        LaunchProfileDto: {
+            gameXuid: string;
+            gameTag: null | string;
+            configuredXuid: null | string;
+            configuredTag: null | string;
+            action: string;
+            /** Format: date-time */
+            at: string;
+        };
+        LaunchProfileReport: {
+            gameXuid: string;
+            gameTag: null | string;
+            configuredXuid: null | string;
+            configuredTag: null | string;
+            action: string;
         };
         LeaseAcquireResponse: {
             granted: boolean;
@@ -4941,6 +5056,7 @@ export interface components {
             packages: components["schemas"]["ContentPackageDto"][];
             /** Format: date-time */
             updatedAt: string;
+            launch?: null | components["schemas"]["LaunchProfileDto"];
         };
         MachineDto: {
             /** Format: uuid */

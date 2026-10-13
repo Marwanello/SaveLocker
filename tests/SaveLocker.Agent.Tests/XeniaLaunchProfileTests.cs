@@ -112,6 +112,26 @@ public sealed class XeniaLaunchProfileTests : IDisposable
     }
 
     [Fact]
+    public void Every_check_reports_what_it_did_for_the_consoles_table()
+    {
+        var reports = new List<SaveLocker.Shared.LaunchProfileReport>();
+        LaunchGateResult? Run(bool canAsk, bool running = false) =>
+            XeniaLaunchProfile.Check(_config, _game, _store, canAsk, _log.Add, () => running, reports.Add);
+
+        _config.XeniaProfileAtLaunch = ProfileAtLaunch.Leave;
+        Run(canAsk: true);
+        _config.XeniaProfileAtLaunch = null;
+        Run(canAsk: true, running: true);
+        Run(canAsk: false);
+        Run(canAsk: false);
+
+        Assert.Equal(["left", "running", "switched", "already"], reports.Select(r => r.Action));
+        Assert.All(reports, r => Assert.Equal(Game, r.GameXuid));
+        Assert.Equal(Player1, reports[0].ConfiguredXuid);
+        Assert.Equal(Game, reports[3].ConfiguredXuid);
+    }
+
+    [Fact]
     public void Leave_already_right_running_or_no_profile_change_nothing()
     {
         _config.XeniaProfileAtLaunch = ProfileAtLaunch.Leave;

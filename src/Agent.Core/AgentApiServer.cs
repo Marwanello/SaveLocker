@@ -1140,8 +1140,18 @@ public sealed class AgentApiServer : IDisposable
             if (game is null) return TypedResults.NotFound();
             try
             {
-                var head = (await ApiClient.For(_config).GetStateAsync(id))?.Head;
-                return TypedResults.Ok(DlcCheck.Describe(head, ContentInventory.For(game), DlcHoldStore.For(_config).For(id) is not null));
+                var api = ApiClient.For(_config);
+                var head = (await api.GetStateAsync(id))?.Head;
+                var check = DlcCheck.Describe(head, ContentInventory.For(game), DlcHoldStore.For(_config).For(id) is not null);
+                ContentTransferDto[] transfers = [];
+                try { transfers = [.. (await api.ListTransfersAsync()).Where(t => t.GameId == id)]; }
+                catch (HttpRequestException) { } // an older server without hand-overs
+                return TypedResults.Ok(check with
+                {
+                    HeadMachineId = head?.MachineId,
+                    Handover = transfers.LastOrDefault(t => t.ToMachineId == _config.MachineId),
+                    Asked = [.. transfers.Where(t => t.FromMachineId == _config.MachineId)],
+                });
             }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         }).Produces<DlcCheckDto>();
@@ -1164,6 +1174,68 @@ public sealed class AgentApiServer : IDisposable
             }
             finally { gate.Release(); }
         }).Produces<SyncNowResponse>().Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
+        // Ask the machine the latest save came from to hand over the packs missing here (tasks/emulator-saves Phase 5c,
+        // step 12). The poller fetches and installs them once they are ready, and the held pull then goes ahead.
+        app.MapPost("/api/games/{id:guid}/dlc/handover",
+            async Task<Results<Ok<ContentTransferDto>, BadRequest<ErrorResponse>, NotFound>> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || !game.IsEnrolledHere) return TypedResults.NotFound();
+            try
+            {
+                var api = ApiClient.For(_config);
+                var head = (await api.GetStateAsync(id))?.Head;
+                var missing = DlcCheck.Missing(head?.Content, ContentInventory.For(game));
+                if (head?.MachineId is not { } from || missing.Count == 0)
+                    return TypedResults.BadRequest(new ErrorResponse("Nothing to ask for: this machine has every pack the latest save needs."));
+                if (from == _config.MachineId)
+                    return TypedResults.BadRequest(new ErrorResponse("The latest save was made on this machine."));
+                return TypedResults.Ok(await api.CreateTransferAsync(new CreateTransferRequest(id, from, [.. missing])));
+            }
+            catch (HttpRequestException ex) { return TypedResults.BadRequest(new ErrorResponse(ServerErrors.Of(ex))); }
+        }).Produces<ContentTransferDto>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
+        // This machine's answer to another's request, and cancelling a request either side made.
+        app.MapPost("/api/dlc/handovers/{id:guid}/answer",
+            async Task<Results<Ok<ContentTransferDto>, BadRequest<ErrorResponse>>> (Guid id, TransferAnswerRequest body) =>
+        {
+            try { return TypedResults.Ok(await ApiClient.For(_config).AnswerTransferAsync(id, body.Approve)); }
+            catch (HttpRequestException ex) { return TypedResults.BadRequest(new ErrorResponse(ServerErrors.Of(ex))); }
+        }).Produces<ContentTransferDto>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
+        app.MapPost("/api/dlc/handovers/{id:guid}/cancel",
+            async Task<Results<Ok<SyncNowResponse>, BadRequest<ErrorResponse>>> (Guid id) =>
+        {
+            try { await ApiClient.For(_config).CancelTransferAsync(id); return TypedResults.Ok(new SyncNowResponse("Hand-over cancelled.")); }
+            catch (HttpRequestException ex) { return TypedResults.BadRequest(new ErrorResponse(ServerErrors.Of(ex))); }
+        }).Produces<SyncNowResponse>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
+        // Requests from other machines waiting on this one's answer, for the Overview banner.
+        app.MapGet("/api/dlc/handovers", async () =>
+        {
+            try
+            {
+                return TypedResults.Ok((await ApiClient.For(_config).ListTransfersAsync())
+                    .Where(t => t.FromMachineId == _config.MachineId && t.Status == TransferStatus.Requested).ToArray());
+            }
+            catch (HttpRequestException) { return TypedResults.Ok(Array.Empty<ContentTransferDto>()); }
+        }).Produces<ContentTransferDto[]>();
+
+        // Xbox 360 settings of this machine: the profile at launch, and what to do when another machine asks for DLC.
+        app.MapGet("/api/settings/xbox360", () => TypedResults.Ok(
+            new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Ask)))
+            .Produces<Xbox360SettingsDto>();
+
+        app.MapPost("/api/settings/xbox360", (Xbox360SettingsDto body) =>
+        {
+            _config.UpdateSettings(c =>
+            {
+                c.XeniaProfileAtLaunch = body.ProfileAtLaunch;
+                c.DlcSend = body.DlcSend;
+            });
+            return TypedResults.Ok(new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Ask));
+        }).Produces<Xbox360SettingsDto>();
 
         // Every pull the DLC check holds on this machine, for the Overview banner.
         app.MapGet("/api/dlc/holds", () => TypedResults.Ok(DlcHoldStore.For(_config).Read()
@@ -2202,6 +2274,18 @@ public sealed record ErrorResponse(string Error, bool NeedsConfirm = false, bool
 /// <param name="Notes">Why each refused game was not added ("Chrono Trigger: the server's …"), one line each;
 /// null when every skip was a game already set up here.</param>
 /// <summary>A pull the DLC check holds (tasks/emulator-saves Phase 5c).</summary>
+internal static class ServerErrors
+{
+    /// <summary>The server's own sentence from an <see cref="ApiClient"/> error (“409: "The request is declined."”).</summary>
+    public static string Of(HttpRequestException ex)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(ex.Message, @"^\d{3}: (.*)$", System.Text.RegularExpressions.RegexOptions.Singleline);
+        return m.Success ? m.Groups[1].Value.Trim().Trim('"') : ex.Message;
+    }
+}
+
+public sealed record Xbox360SettingsDto(ProfileAtLaunch ProfileAtLaunch, DlcSendPolicy DlcSend);
+
 public sealed record DlcHoldDto(Guid GameId, string GameName, int MissingCount, long MissingSize, string Summary, DateTimeOffset HeldAt);
 
 public sealed record EnrollResponse(int Enrolled, int Skipped, string[]? Notes = null, string[]? Info = null);

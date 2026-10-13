@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, DlcCheck, DlcHold, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, Xbox360Settings, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -175,6 +175,12 @@ export const api = {
   gameDlc: (id: string) => req<DlcCheck>(`/api/games/${id}/dlc`),
   dlcPullAnyway: (id: string) => post<{ message: string }>(`/api/games/${id}/dlc/pull-anyway`, {}),
   dlcHolds: () => req<DlcHold[]>('/api/dlc/holds'),
+  dlcHandover: (id: string) => post<ContentTransfer>(`/api/games/${id}/dlc/handover`, {}),
+  dlcHandovers: () => req<ContentTransfer[]>('/api/dlc/handovers'),
+  dlcHandoverAnswer: (id: string, approve: boolean) => post<ContentTransfer>(`/api/dlc/handovers/${id}/answer`, { approve }),
+  dlcHandoverCancel: (id: string) => post<{ message: string }>(`/api/dlc/handovers/${id}/cancel`, {}),
+  xbox360Settings: () => req<Xbox360Settings>('/api/settings/xbox360'),
+  setXbox360Settings: (body: Xbox360Settings) => post<Xbox360Settings>('/api/settings/xbox360', body),
   // Hashes the whole save folder. Only ever on an explicit "Check now", never on a timer or a list.
   syncStatus: (id: string) => req<SyncStatus>(`/api/games/${id}/sync-status`),
   /** Every save file of the game here, each compared with the server's latest. Hashes the save — on demand only. */

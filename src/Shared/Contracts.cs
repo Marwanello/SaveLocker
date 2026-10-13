@@ -467,7 +467,21 @@ public record ReportContentRequest(ContentPackageDto[] Packages, Guid? VersionId
 /// <summary>The console's DLC check for one game: what the latest save was made with, and what each machine has.</summary>
 public record GameContentDto(Guid? HeadVersionId, string? HeadMachineName, ContentPackageDto[]? HeadContent, MachineContentDto[] Machines);
 
-public record MachineContentDto(Guid MachineId, string MachineName, ContentPackageDto[] Packages, DateTime UpdatedAt);
+public record MachineContentDto(Guid MachineId, string MachineName, ContentPackageDto[] Packages, DateTime UpdatedAt,
+    LaunchProfileDto? Launch = null);
+
+/// <summary>
+/// What the Xenia profile check did at a game's last launch on one machine (tasks/emulator-saves Phase 5c): the profile the
+/// game's saves are under, the one Xenia was set to, and <see cref="Action"/> — <c>already</c>, <c>switched</c>,
+/// <c>asked</c>, <c>kept</c> (asked, and the other profile was chosen), <c>left</c> (the setting says leave it) or
+/// <c>running</c> (Xenia was already open).
+/// </summary>
+public record LaunchProfileReport(string GameXuid, string? GameTag, string? ConfiguredXuid, string? ConfiguredTag, string Action)
+{
+    public static readonly string[] Actions = ["already", "switched", "asked", "kept", "left", "running"];
+}
+
+public record LaunchProfileDto(string GameXuid, string? GameTag, string? ConfiguredXuid, string? ConfiguredTag, string Action, DateTime At);
 
 /// <summary>Where a DLC hand-over is (tasks/emulator-saves Phase 5c). Appended values only: stored as integers.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<TransferStatus>))]
@@ -477,6 +491,9 @@ public enum TransferStatus { Requested, Approved, Ready, Delivered, Declined, Ca
 public record CreateTransferRequest(Guid GameId, Guid FromMachineId, ContentPackageDto[] Packages);
 
 public record TransferAnswerRequest(bool Approve);
+
+/// <summary>The console's view of DLC hand-overs: the size limit, how long one waits, the bytes held now, the open ones.</summary>
+public record HandoverOverviewDto(long MaxBytes, int ExpiryDays, long BytesInTransit, ContentTransferDto[] Open);
 
 /// <summary>One pack of a hand-over: its declared size, its zip's size once the sender said, and how much has arrived.</summary>
 public record TransferPartDto(string Kind, string PackageId, string Name, long Size, long? ZipSize, long Received, bool Complete);

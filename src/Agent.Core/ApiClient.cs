@@ -162,6 +162,9 @@ public sealed class ApiClient
         resp.EnsureSuccessStatusCode();
     }
 
+    public async Task ReportLaunchProfileAsync(Guid gameId, LaunchProfileReport report, CancellationToken ct = default) =>
+        (await _http.PutAsJsonAsync($"/api/agent/games/{gameId}/launch-profile", report, ct)).EnsureSuccessStatusCode();
+
     // ----- The DLC hand-over (tasks/emulator-saves Phase 5c, step 11) -----
 
     private static async Task<T> Read<T>(HttpResponseMessage resp, CancellationToken ct)

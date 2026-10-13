@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineGameSource, GameContent, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
+import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineGameSource, GameContent, ContentTransfer, HandoverOverview, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -343,6 +343,10 @@ export const api = {
     request<MachineGameSource[]>(`/games/${gameId}/sources`),
   getGameContent: (gameId: string) =>
     request<GameContent>(`/games/${gameId}/content`),
+  getGameTransfers: (gameId: string) =>
+    request<ContentTransfer[]>(`/games/${gameId}/transfers`),
+  handoverOverview: () => request<HandoverOverview>('/transfers'),
+  cancelTransfer: (id: string) => request<void>(`/transfers/${id}/cancel`, { method: 'POST' }),
   getGamePathCandidates: (gameId: string) =>
     request<MachineScanCandidate[]>(`/games/${gameId}/path-candidates`),
   setMachinePath: (gameId: string, machineId: string, path: string, key?: string) =>

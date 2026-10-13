@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
@@ -53,11 +54,14 @@ public static partial class XeniaLaunchProfile
     /// nowhere to show a question.
     /// </summary>
     public static LaunchGateResult? Check(AgentConfig config, TrackedGame game, LaunchQuestionStore store, bool canAsk,
-        Action<string> log, Func<bool>? xeniaRunning = null)
+        Action<string> log, Func<bool>? xeniaRunning = null, Action<LaunchProfileReport>? report = null)
     {
         if (GameProfile(game) is not { } profile) return null;
         var configs = XeniaConfig.For(profile.Content, game.Name);
         if (configs.Count == 0) return null;
+        void Report(string? configured, string action) => report?.Invoke(new LaunchProfileReport(profile.Xuid,
+            XeniaProfile.Gamertag(profile.Content, profile.Xuid), string.IsNullOrEmpty(configured) ? null : configured,
+            string.IsNullOrEmpty(configured) ? null : XeniaProfile.Gamertag(profile.Content, configured), action));
 
         var target = profile.Xuid;
         if (store.RecentAnswer(game.GameId, Kind) is { } answered)
@@ -68,21 +72,31 @@ public static partial class XeniaLaunchProfile
         }
 
         var current = configs.ToDictionary(c => c, c => XeniaConfig.Read(c) ?? "");
-        if (current.Values.All(v => v == target)) return null;
+        var before = current.FirstOrDefault(kv => kv.Value != target).Value ?? "";
+        if (current.Values.All(v => v == target))
+        {
+            Report(target, "already");
+            return null;
+        }
         var policy = PolicyFor(config, game);
-        if (policy == ProfileAtLaunch.Leave) return null;
+        if (policy == ProfileAtLaunch.Leave)
+        {
+            Report(before, "left");
+            return null;
+        }
         if ((xeniaRunning ?? XeniaRunning)())
         {
             log($"[{game.Name}] Xenia is already running, so its profile was left as it is.");
+            Report(before, "running");
             return null;
         }
 
-        var before = current.FirstOrDefault(kv => kv.Value != target).Value ?? "";
         foreach (var c in configs.Where(c => current[c] != target)) XeniaConfig.Write(c, target);
         var gameTag = Name(profile.Content, target);
         var beforeTag = before.Length == 0 ? null : Name(profile.Content, before);
         log($"[{game.Name}] Xenia set to start as {gameTag} (was {beforeTag ?? "no profile"}).");
 
+        Report(before, policy == ProfileAtLaunch.Switch || !canAsk ? "switched" : "asked");
         if (policy == ProfileAtLaunch.Switch || !canAsk)
             return new LaunchGateResult(LaunchDecision.Proceed, $"Xenia set to start as {gameTag}.");
 
@@ -105,15 +119,21 @@ public static partial class XeniaLaunchProfile
     /// Applies a client's answer. “keep” puts back what each config said before — only where it still says what this
     /// launch wrote, so a change made since is never undone. Remember stops asking for this game.
     /// </summary>
-    public static bool Answer(AgentConfig config, TrackedGame game, LaunchQuestionStore store, LaunchAnswerRequest answer, Action<string> log)
+    public static bool Answer(AgentConfig config, TrackedGame game, LaunchQuestionStore store, LaunchAnswerRequest answer, Action<string> log,
+        Action<LaunchProfileReport>? report = null)
     {
         if (store.Find(answer.QuestionId) is not { } q || q.GameId != game.GameId || q.Kind != Kind) return false;
         if (answer.Choice is not (UseGameProfile or KeepCurrent)) return false;
         if (!store.Answer(q.Id, answer.Choice)) return false;
 
         if (answer.Choice == KeepCurrent)
+        {
             foreach (var (path, value) in q.Before)
                 if (File.Exists(path) && XeniaConfig.Read(path) == q.Applied) XeniaConfig.Write(path, value);
+            if (GameProfile(game) is { } profile && q.Before.Values.FirstOrDefault() is { } kept)
+                report?.Invoke(new LaunchProfileReport(profile.Xuid, XeniaProfile.Gamertag(profile.Content, profile.Xuid),
+                    kept.Length == 0 ? null : kept, kept.Length == 0 ? null : XeniaProfile.Gamertag(profile.Content, kept), "kept"));
+        }
         if (answer.Remember)
         {
             var value = answer.Choice == KeepCurrent ? ProfileAtLaunch.Leave : ProfileAtLaunch.Switch;

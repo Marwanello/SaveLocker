@@ -579,6 +579,15 @@ agent.MapPut("/agent/games/{id:guid}/content", async (Guid id, HttpContext http,
 }).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
   .Produces(StatusCodes.Status404NotFound);
 
+agent.MapPut("/agent/games/{id:guid}/launch-profile", async (Guid id, HttpContext http, LaunchProfileReport req, SyncService sync) =>
+{
+    if (!LaunchProfileReport.Actions.Contains(req.Action) || req.GameXuid is not { Length: > 0 and <= 32 }
+        || req.ConfiguredXuid?.Length > 32 || req.GameTag?.Length > 64 || req.ConfiguredTag?.Length > 64)
+        return Results.BadRequest("invalid report");
+    return await sync.ReportLaunchProfileAsync(http.CurrentMachine().Id, id, req) ? Results.NoContent() : Results.NotFound();
+}).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
+  .Produces(StatusCodes.Status404NotFound);
+
 // The DLC hand-over (tasks/emulator-saves Phase 5c, step 11). The asking machine creates a request; the machine named
 // approves and uploads each pack's zip in pieces; only the asking machine downloads; delivery deletes the files.
 agent.MapPost("/agent/transfers", async (HttpContext http, CreateTransferRequest req, ContentTransferService transfers) =>
@@ -846,6 +855,9 @@ admin.MapGet("/games/{id:guid}/sources", async (Guid id, SyncService sync) =>
 
 admin.MapGet("/games/{id:guid}/transfers", async (Guid id, ContentTransferService transfers) =>
     Results.Ok(await transfers.ForGameAsync(id))).Produces<ContentTransferDto[]>();
+
+admin.MapGet("/transfers", async (ContentTransferService transfers) =>
+    Results.Ok(await transfers.OverviewAsync())).Produces<HandoverOverviewDto>();
 
 admin.MapPost("/transfers/{id:guid}/cancel", async (Guid id, ContentTransferService transfers) =>
     await transfers.CancelAsync(null, id) ? Results.NoContent() : Results.NotFound())

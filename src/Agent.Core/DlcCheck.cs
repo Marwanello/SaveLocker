@@ -12,7 +12,15 @@ public sealed record DlcPackageDto(string Kind, string Id, string Name, long Siz
 /// made it, or the game's emulator has no DLC this knows), and nothing is checked.
 /// </summary>
 public sealed record DlcCheckDto(
-    string? HeadMachineName, DateTime? HeadAt, DlcPackageDto[]? Packages, int MissingCount, long MissingSize, bool Held);
+    string? HeadMachineName, DateTime? HeadAt, DlcPackageDto[]? Packages, int MissingCount, long MissingSize, bool Held)
+{
+    /// <summary>The machine the latest save came from, which a hand-over asks (null when it was deleted).</summary>
+    public Guid? HeadMachineId { get; init; }
+    /// <summary>This machine's latest hand-over request for the game: open, or ended in the last day.</summary>
+    public ContentTransferDto? Handover { get; init; }
+    /// <summary>Other machines' requests for this game's packs that this machine is to answer or is sending.</summary>
+    public ContentTransferDto[] Asked { get; init; } = [];
+}
 
 /// <summary>
 /// The DLC check before a pull (tasks/emulator-saves Phase 5c, step 9): the latest save lists the DLC and title updates it

@@ -107,7 +107,8 @@ public sealed class DlcHandoverServerTests : IClassFixture<ServerProcess>, IDisp
         var asked = await deck.CreateTransferAsync(new CreateTransferRequest(gameId, pcId, [Rally]));
         Assert.Equal(TransferStatus.Declined, (await pc.AnswerTransferAsync(asked.Id, approve: false)).Status);
         await Assert.ThrowsAsync<HttpRequestException>(() => pc.UploadTransferPartAsync(asked.Id, "BBBB", 0, 10, new MemoryStream(new byte[10])));
-        Assert.Empty(await deck.ListTransfersAsync());
+        Assert.Empty(await pc.ListTransfersAsync());
+        Assert.Equal(TransferStatus.Declined, Assert.Single(await deck.ListTransfersAsync()).Status); // so the Deck can say so
 
         var again = await deck.CreateTransferAsync(new CreateTransferRequest(gameId, pcId, [Rally]));
         Assert.NotEqual(asked.Id, again.Id);

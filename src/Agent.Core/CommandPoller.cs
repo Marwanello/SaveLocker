@@ -35,6 +35,8 @@ public sealed class CommandPoller : IDisposable
     /// </summary>
     private readonly NotificationCenter? _notices;
     private readonly System.Timers.Timer _timer;
+    /// <summary>DLC hand-overs and held pulls (tasks/emulator-saves Phase 5c), on their own task: an upload can take minutes.</summary>
+    private readonly DlcHandoverRunner _handover;
     private int _busy; // 0/1 guard so slow ticks don't overlap
     private Task _lastTick = Task.CompletedTask;
 
@@ -69,6 +71,7 @@ public sealed class CommandPoller : IDisposable
         _health = health;
         _offlineQueue = offlineQueue;
         _notices = notices;
+        _handover = new DlcHandoverRunner(config, api, engine, notices, m => { AgentLogger.Log(m); notify(m); });
         _timer = new System.Timers.Timer(pollMs) { AutoReset = true };
         _timer.Elapsed += (_, _) => _lastTick = TickAsync();
     }
@@ -96,6 +99,7 @@ public sealed class CommandPoller : IDisposable
                 await Task.WhenAll(RunCommandsAsync(), CheckConflictsAsync());
             else
                 await RunCommandsAsync();
+            _handover.Kick();
             // After the commands: a first pass over a large library is up to MaxFetchesPerWarm downloads,
             // and a dashboard command must not wait behind cover art.
             await WarmArtAsync();
@@ -885,5 +889,6 @@ public sealed class CommandPoller : IDisposable
     {
         _timer.Stop();
         await _lastTick;
+        await _handover.StopAsync();
     }
 }

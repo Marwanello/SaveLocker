@@ -23,6 +23,7 @@ public sealed partial class ContentTransferService
     public const long MaxChunkBytes = 16L * 1024 * 1024;
 
     private static readonly TransferStatus[] Open = [TransferStatus.Requested, TransferStatus.Approved, TransferStatus.Ready];
+    private static readonly TransferStatus[] Ended = [TransferStatus.Declined, TransferStatus.Expired, TransferStatus.Cancelled];
 
     private readonly AppDbContext _db;
     private readonly string _root;
@@ -115,11 +116,16 @@ public sealed partial class ContentTransferService
         return await ToDtoAsync(transfer);
     }
 
-    /// <summary>The open hand-overs this machine sends or receives.</summary>
+    /// <summary>
+    /// The open hand-overs this machine sends or receives, and for the machine that asked, the ones that ended without
+    /// arriving in the last day, so it can say the request was declined or expired.
+    /// </summary>
     public async Task<ContentTransferDto[]> ForMachineAsync(Guid machineId)
     {
+        var since = DateTime.UtcNow.AddDays(-1);
         var list = await _db.ContentTransfers
-            .Where(t => Open.Contains(t.Status) && (t.FromMachineId == machineId || t.ToMachineId == machineId))
+            .Where(t => (Open.Contains(t.Status) && (t.FromMachineId == machineId || t.ToMachineId == machineId))
+                     || (Ended.Contains(t.Status) && t.ToMachineId == machineId && t.UpdatedAt > since))
             .OrderBy(t => t.CreatedAt).ToListAsync();
         var result = new List<ContentTransferDto>();
         foreach (var t in list) result.Add(await ToDtoAsync(t));
@@ -261,6 +267,15 @@ public sealed partial class ContentTransferService
                 if (!open.Contains(Path.GetFileName(dir))) DeleteFiles(Guid.TryParse(Path.GetFileName(dir), out var g) ? g : Guid.Empty);
         }
         return expired.Count;
+    }
+
+    /// <summary>The console's Configuration card: the limits, what the server holds now, and every open hand-over.</summary>
+    public async Task<HandoverOverviewDto> OverviewAsync()
+    {
+        var list = await _db.ContentTransfers.Where(t => Open.Contains(t.Status)).OrderBy(t => t.CreatedAt).ToListAsync();
+        var result = new List<ContentTransferDto>();
+        foreach (var t in list) result.Add(await ToDtoAsync(t));
+        return new HandoverOverviewDto(_maxBytes, _expiryDays, BytesInTransit(), [.. result]);
     }
 
     /// <summary>Bytes held for hand-overs right now, for the console.</summary>

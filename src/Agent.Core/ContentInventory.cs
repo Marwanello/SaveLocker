@@ -14,7 +14,16 @@ public static partial class ContentInventory
     private static partial Regex XeniaSaveScope();
 
     /// <summary>The packages installed here for the game, or null when its emulator has none this knows about.</summary>
-    public static ContentPackageDto[]? For(TrackedGame game)
+    public static ContentPackageDto[]? For(TrackedGame game) =>
+        Home(game) is { } home
+            ? [.. XeniaContent.Inventory(home.Content, home.TitleId).Select(p => new ContentPackageDto(p.Kind, p.Id, p.Name, p.Size))]
+            : null;
+
+    /// <summary>
+    /// Where a Xenia game's packages live: Xenia's <c>content</c> folder, the title ID, and whether the game is in the layout
+    /// from before profiles (save folder = content itself), whose builds read packages from <c>content/&lt;TID&gt;</c>.
+    /// </summary>
+    public static (string Content, string TitleId, bool Legacy)? Home(TrackedGame game)
     {
         if (string.IsNullOrEmpty(game.SaveDirectory)) return null;
         var titleId = game.IncludeGlobs.Select(g => XeniaSaveScope().Match(g.Replace('\\', '/'))).FirstOrDefault(m => m.Success)?.Groups[1].Value;
@@ -24,9 +33,10 @@ public static partial class ContentInventory
         var dir = EmuDeckRoots.RealPath(Path.TrimEndingDirectorySeparator(game.SaveDirectory));
         var name = Path.GetFileName(dir);
         var parent = Path.GetDirectoryName(dir);
-        var content = XeniaSaves.Xuid(name) is not null || (XeniaSaves.IsNamedProfile(name) && LooksLikeContent(parent)) ? parent : dir;
+        var profiled = XeniaSaves.Xuid(name) is not null || (XeniaSaves.IsNamedProfile(name) && LooksLikeContent(parent));
+        var content = profiled ? parent : dir;
         if (content is null || !Directory.Exists(content)) return null;
-        return [.. XeniaContent.Inventory(content, titleId.ToUpperInvariant()).Select(p => new ContentPackageDto(p.Kind, p.Id, p.Name, p.Size))];
+        return (content, titleId.ToUpperInvariant(), !profiled);
     }
 
     // A named profile's home sits in content, beside the device's folder or an XUID's; content itself sits in Xenia's folder.

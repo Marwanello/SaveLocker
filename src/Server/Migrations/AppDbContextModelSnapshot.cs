@@ -518,6 +518,12 @@ namespace SaveLocker.Server.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("LaunchAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LaunchJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
 

@@ -17,6 +17,10 @@ public static class AgentEventCodes
     /// until someone chooses a side — and on a headless box, nobody is being told.</summary>
     public const string PullBlocked = "pull.blocked";
 
+    /// <summary>A pull was held because the latest save was made with DLC or a title update this machine lacks
+    /// (tasks/emulator-saves Phase 5c). It goes ahead by itself once they are installed.</summary>
+    public const string PullHeldForDlc = "pull.held_dlc";
+
     /// <summary>A pull was refused because the game itself is running. Restoring under a live process
     /// loses the restored save the moment the game writes at exit.</summary>
     public const string PullBlockedRunning = "pull.blocked_running";

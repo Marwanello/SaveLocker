@@ -1045,7 +1045,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         if (!known)
             Alert($"[{game.Name}] held the pull: {head.MachineName}'s save was made with {DlcCheck.Summary(missing)} " +
                   "this machine doesn't have. Open the game in SaveLocker to pull anyway, or install them and it goes ahead.",
-                AgentEventCodes.PullBlocked, AgentEventSeverity.Warning, game.GameId);
+                AgentEventCodes.PullHeldForDlc, AgentEventSeverity.Warning, game.GameId);
         return true;
     }
 
@@ -1444,7 +1444,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// is the newest. Fails open like every other pre-launch check: a config it cannot read or write never stops a launch.</summary>
     private LaunchGateResult? CheckXeniaProfile(TrackedGame game, bool canAsk)
     {
-        try { return XeniaLaunchProfile.Check(_config, game, LaunchQuestionStore.For(_config), canAsk, _log); }
+        try { return XeniaLaunchProfile.Check(_config, game, LaunchQuestionStore.For(_config), canAsk, _log, report: r => ReportLaunch(game, r)); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException)
         {
             _log($"[{game.Name}] could not check Xenia's profile before launch: {ex.Message}");
@@ -1452,10 +1452,24 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         }
     }
 
+    /// <summary>The console's “profile at launch” table. Sent in the background: a launch never waits on the server.</summary>
+    private void ReportLaunch(TrackedGame game, LaunchProfileReport report) => _ = Task.Run(async () =>
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await _api.ReportLaunchProfileAsync(game.GameId, report, cts.Token);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            _log($"[{game.Name}] could not report the profile at launch: {ex.Message}");
+        }
+    });
+
     /// <summary>A client's answer to a launch question; false when it does not match an open question of this game.</summary>
     public bool AnswerLaunchQuestion(TrackedGame game, LaunchAnswerRequest answer)
     {
-        try { return XeniaLaunchProfile.Answer(_config, game, LaunchQuestionStore.For(_config), answer, _log); }
+        try { return XeniaLaunchProfile.Answer(_config, game, LaunchQuestionStore.For(_config), answer, _log, r => ReportLaunch(game, r)); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
             _log($"[{game.Name}] could not apply the launch answer: {ex.Message}");

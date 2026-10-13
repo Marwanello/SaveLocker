@@ -897,6 +897,52 @@
         }
       }
     },
+    "/api/agent/games/{id}/launch-profile": {
+      "put": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchProfileReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/agent/transfers": {
       "post": {
         "tags": [
@@ -2065,6 +2111,25 @@
                   "items": {
                     "$ref": "#/components/schemas/ContentTransferDto"
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transfers": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoverOverviewDto"
                 }
               }
             }
@@ -5720,6 +5785,35 @@
           }
         }
       },
+      "HandoverOverviewDto": {
+        "required": [
+          "maxBytes",
+          "expiryDays",
+          "bytesInTransit",
+          "open"
+        ],
+        "type": "object",
+        "properties": {
+          "maxBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiryDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bytesInTransit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "open": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentTransferDto"
+            }
+          }
+        }
+      },
       "HeadFileDto": {
         "required": [
           "path",
@@ -5816,6 +5910,83 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "LaunchProfileDto": {
+        "required": [
+          "gameXuid",
+          "gameTag",
+          "configuredXuid",
+          "configuredTag",
+          "action",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "gameXuid": {
+            "type": "string"
+          },
+          "gameTag": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "configuredXuid": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "configuredTag": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "action": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LaunchProfileReport": {
+        "required": [
+          "gameXuid",
+          "gameTag",
+          "configuredXuid",
+          "configuredTag",
+          "action"
+        ],
+        "type": "object",
+        "properties": {
+          "gameXuid": {
+            "type": "string"
+          },
+          "gameTag": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "configuredXuid": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "configuredTag": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "action": {
+            "type": "string"
           }
         }
       },
@@ -5918,6 +6089,16 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "launch": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LaunchProfileDto"
+              }
+            ]
           }
         }
       },

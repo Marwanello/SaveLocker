@@ -3052,6 +3052,46 @@ export interface components {
             /** Format: int64 */
             missingSize: number;
             held: boolean;
+            /** Format: uuid */
+            headMachineId?: null | string;
+            handover?: null | components["schemas"]["ContentTransferDto"];
+            asked?: components["schemas"]["ContentTransferDto"][];
+        };
+        ContentTransferDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            gameId: string;
+            gameName: string;
+            /** Format: uuid */
+            fromMachineId: string;
+            fromMachineName: string;
+            /** Format: uuid */
+            toMachineId: string;
+            toMachineName: string;
+            /** @enum {string} */
+            status: "Requested" | "Approved" | "Ready" | "Delivered" | "Declined" | "Cancelled" | "Expired";
+            createdAt: string;
+            expiresAt: string;
+            parts: components["schemas"]["TransferPartDto"][];
+        };
+        TransferPartDto: {
+            kind: string;
+            packageId: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: int64 */
+            zipSize?: null | number;
+            /** Format: int64 */
+            received: number;
+            complete: boolean;
+        };
+        Xbox360SettingsDto: {
+            /** @enum {string} */
+            profileAtLaunch: "Ask" | "Switch" | "Leave";
+            /** @enum {string} */
+            dlcSend: "Ask" | "Auto" | "Never";
         };
         DlcHoldDto: {
             /** Format: uuid */

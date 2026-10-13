@@ -14,6 +14,7 @@ import { GameStats } from './GameStats';
 import { VersionsCard } from './VersionsCard';
 import { SaveFoldersCard } from './SaveFoldersCard';
 import { DlcCheckCard } from './DlcCheckCard';
+import { LaunchProfileCard } from './LaunchProfileCard';
 import { RulesCard } from './RulesCard';
 import { ExcludePatternsCard } from './ExcludePatternsCard';
 import { RemoteCommandsCard } from './RemoteCommandsCard';
@@ -190,6 +191,8 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
       </div>
 
       <DlcCheckCard gameId={game.id} refreshKey={versions.length} />
+
+      {game.emulatorProfile?.startsWith('xenia:') && <LaunchProfileCard gameId={game.id} />}
 
       <RemoteCommandsCard commands={gameCmds} />
     </>

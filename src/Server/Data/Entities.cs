@@ -251,6 +251,9 @@ public class MachineGameContent
     /// <summary><see cref="ContentPackageDto"/>[] as JSON.</summary>
     public string ContentJson { get; set; } = "[]";
     public DateTime UpdatedAt { get; set; }
+    /// <summary>The last launch's Xenia profile check, <see cref="LaunchProfileReport"/> as JSON; null until one ran.</summary>
+    public string? LaunchJson { get; set; }
+    public DateTime? LaunchAt { get; set; }
 }
 
 /// <summary>

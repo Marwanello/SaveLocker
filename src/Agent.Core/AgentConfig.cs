@@ -94,6 +94,8 @@ public sealed class AgentConfig
     /// <summary>What to do before a Xenia game starts when Xenia is set to another profile than the one its saves are
     /// under (tasks/emulator-saves Phase 5c). Null means <see cref="ProfileAtLaunch.Ask"/>; a game can override it.</summary>
     public ProfileAtLaunch? XeniaProfileAtLaunch { get; set; }
+    /// <summary>What to do when another machine asks this one for DLC (tasks/emulator-saves Phase 5c). Null means Ask.</summary>
+    public DlcSendPolicy? DlcSend { get; set; }
     /// <summary>The look the console last pushed on a heartbeat; null until one carried a look.</summary>
     public AppearanceDto? ConsoleAppearance { get; set; }
     /// <summary>When <see cref="ConsoleAppearance"/> last <b>changed</b> (UTC) — not when a heartbeat
@@ -250,6 +252,8 @@ public sealed class AgentConfig
             ConsoleAppearance = onDisk.ConsoleAppearance;
             ConsoleAppearanceAt = onDisk.ConsoleAppearanceAt;
             LocalAppearance = onDisk.LocalAppearance;
+            XeniaProfileAtLaunch = onDisk.XeniaProfileAtLaunch;
+            DlcSend = onDisk.DlcSend;
 
             // And the opt-out has to be ENFORCED here, not just carried. A long-lived host loaded
             // its game list at boot and holds it for the process lifetime, so after another process
@@ -352,6 +356,8 @@ public sealed class AgentConfig
         SettleMaxWaitSeconds = fresh.SettleMaxWaitSeconds;
         UiSoundsMuted = fresh.UiSoundsMuted;
         FollowConsoleAppearance = fresh.FollowConsoleAppearance;
+        XeniaProfileAtLaunch = fresh.XeniaProfileAtLaunch;
+        DlcSend = fresh.DlcSend;
         ConsoleAppearance = fresh.ConsoleAppearance;
         ConsoleAppearanceAt = fresh.ConsoleAppearanceAt;
         LocalAppearance = fresh.LocalAppearance;

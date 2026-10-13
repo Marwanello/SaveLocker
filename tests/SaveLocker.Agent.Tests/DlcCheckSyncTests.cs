@@ -149,6 +149,108 @@ public sealed class DlcCheckSyncTests : IClassFixture<ServerProcess>, IDisposabl
     }
 
     [Fact]
+    public async Task Packs_handed_over_from_the_pc_install_on_the_deck_and_the_held_pull_goes_ahead()
+    {
+        // Phase 5c steps 12–13, end to end: the Deck's pull is held for a pack only the PC has; the Deck asks; the PC
+        // (set to send automatically) zips and uploads it; the Deck downloads, checks and installs it where its Xenia
+        // reads it, confirms — which deletes it on the server — and the held pull then restores the PC's save.
+        var title = "9E" + _id;
+        const string pcContent = "Xenia Canary/content";
+        const string deckContent = "SDCard/Emulation/roms/xbox360/content";
+        Write("pc", $"{pcContent}/{Xuid}/{title}/00000001/Profile/save.dat", "pc-save");
+        Package("pc", pcContent, title, "00000002", "AAAA", "Pre-Order Car Pack", 300);
+        Package("pc", pcContent, title, "00000002", "BBBB", "Rally Expansion Pack", 9_000_000);
+        Write("deck", $"{deckContent}/{Xuid}/{title}/00000001/Profile/save.dat", "deck-old");
+        Package("deck", deckContent, title, "00000002", "AAAA", "Pre-Order Car Pack", 300);
+
+        var pc = await Machine("pc4");
+        var deck = await Machine("deck4");
+        var pcGame = await Enroll(pc, XeniaSaves.Scan([new XeniaFolders(P("pc", pcContent))]), title);
+        var deckGame = await Enroll(deck, XeniaSaves.Scan([new XeniaFolders(P("deck", deckContent), EmuDeck: true)]), title);
+        await using var enginePc = new SyncEngine(pc, ApiClient.For(pc));
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        Assert.NotNull(await enginePc.PushAsync(pcGame, force: true));
+        deckGame.LastSyncedHash = deckGame.LocalHash(deck.StateDir);
+        deck.SaveGameSyncState(deckGame);
+        Assert.Equal(PullOutcome.HeldForDlc, await engineDeck.PullAsync(deckGame));
+
+        var head = (await ApiClient.For(deck).GetStateAsync(deckGame.GameId))!.Head!;
+        var missing = DlcCheck.Missing(head.Content, ContentInventory.For(deckGame));
+        var asked = await ApiClient.For(deck).CreateTransferAsync(new CreateTransferRequest(deckGame.GameId, head.MachineId!.Value, [.. missing]));
+
+        pc.DlcSend = DlcSendPolicy.Auto;
+        var logs = new List<string>();
+        var pcRunner = new DlcHandoverRunner(pc, () => ApiClient.For(pc), () => enginePc, null, logs.Add, () => false);
+        var deckRunner = new DlcHandoverRunner(deck, () => ApiClient.For(deck), () => engineDeck, null, logs.Add, () => false);
+        await pcRunner.RunAsync();
+        Assert.Equal(TransferStatus.Ready, (await ApiClient.For(deck).ListTransfersAsync()).Single(t => t.Id == asked.Id).Status);
+
+        await deckRunner.RunAsync();
+        var installed = P("deck", $"{deckContent}/{XeniaSaves.NoProfile}/{title}/00000002/BBBB/data.bin");
+        Assert.Equal(9_000_000, new FileInfo(installed).Length);
+        Assert.True(File.Exists(P("deck", $"{deckContent}/{XeniaSaves.NoProfile}/{title}/Headers/00000002/BBBB.header")));
+        Assert.DoesNotContain(await ApiClient.For(deck).ListTransfersAsync(), t => t.Id == asked.Id); // delivered, deleted
+
+        await deckRunner.RunAsync(); // the hold check: every pack is here now
+        Assert.Equal("pc-save", File.ReadAllText(P("deck", $"{deckContent}/{Xuid}/{title}/00000001/Profile/save.dat")));
+        Assert.Null(DlcHoldStore.For(deck).For(deckGame.GameId));
+        Assert.False(Directory.Exists(Path.Combine(deck.StateDir, "handover", "in", asked.Id.ToString("N"))));
+    }
+
+    [Fact]
+    public async Task A_machine_set_to_never_send_declines_and_the_asker_hears_once()
+    {
+        var title = "9F" + _id;
+        const string pcContent = "Xenia Canary/content";
+        Write("pc", $"{pcContent}/{Xuid}/{title}/00000001/Profile/save.dat", "pc-save");
+        Package("pc", pcContent, title, "00000002", "BBBB", "Rally Expansion Pack", 900);
+        var pc = await Machine("pc5");
+        var deck = await Machine("deck5");
+        var pcGame = await Enroll(pc, XeniaSaves.Scan([new XeniaFolders(P("pc", pcContent))]), title);
+        await using var enginePc = new SyncEngine(pc, ApiClient.For(pc));
+        await enginePc.PushAsync(pcGame, force: true);
+        var asked = await ApiClient.For(deck).CreateTransferAsync(new CreateTransferRequest(pcGame.GameId, pc.MachineId!.Value,
+            [new ContentPackageDto(ContentPackageDto.Dlc, "BBBB", "Rally Expansion Pack", 900)]));
+
+        pc.DlcSend = DlcSendPolicy.Never;
+        await new DlcHandoverRunner(pc, () => ApiClient.For(pc), () => enginePc, null, _ => { }, () => false).RunAsync();
+        Assert.Equal(TransferStatus.Declined, (await ApiClient.For(deck).ListTransfersAsync()).Single(t => t.Id == asked.Id).Status);
+    }
+
+    [Fact]
+    public void A_received_zip_installs_only_the_package_it_names_and_only_at_the_listed_size()
+    {
+        var content = P("x", "content");
+        Package("src", "content", "4D5309C9", "00000002", "CCCC", "Car Pack", 1000);
+        var pack = new ContentPackageDto(ContentPackageDto.Dlc, "CCCC", "Car Pack", 1000);
+        var zip = Path.Combine(_dir, "pack.zip");
+        DlcPackageFiles.Zip(P("src", "content"), "4D5309C9", pack, zip);
+
+        // Listed at another size: refused, nothing left behind.
+        Assert.Throws<InvalidDataException>(() => DlcPackageFiles.Install(zip, CreateDir(content), "4D5309C9", legacy: true, pack with { Size = 999 }));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(content));
+
+        // The layout from before profiles reads packages from content/<TID>.
+        DlcPackageFiles.Install(zip, content, "4D5309C9", legacy: true, pack);
+        Assert.True(File.Exists(Path.Combine(content, "4D5309C9", "00000002", "CCCC", "data.bin")));
+        Assert.Equal("Car Pack", XeniaContent.ReadHeader(Path.Combine(content, "4D5309C9", "Headers", "00000002", "CCCC.header"))!.Value.Name);
+
+        // A zip that reaches outside the package is refused.
+        var evil = Path.Combine(_dir, "evil.zip");
+        using (var z = System.IO.Compression.ZipFile.Open(evil, System.IO.Compression.ZipArchiveMode.Create))
+            using (var w = new StreamWriter(z.CreateEntry("00000002/DDDD/../../../escape.txt").Open())) w.Write("x");
+        Assert.Throws<InvalidDataException>(() => DlcPackageFiles.Install(evil, content, "4D5309C9", legacy: false,
+            new ContentPackageDto(ContentPackageDto.Dlc, "DDDD", "Evil", 1)));
+        Assert.False(File.Exists(Path.Combine(_dir, "x", "escape.txt")));
+    }
+
+    private static string CreateDir(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    [Fact]
     public void The_check_matches_packages_by_kind_and_id_and_says_what_is_missing()
     {
         ContentPackageDto[] head =
