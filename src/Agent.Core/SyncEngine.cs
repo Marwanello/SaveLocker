@@ -347,36 +347,15 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             return new UploadResult(UploadStatus.NoChange, null, null);
         }
 
-        if (!force && game.ConsecutiveConflicts >= ConflictUploadLimit && !await ConflictClosedAsync(game, ct))
+        if (!force && game.ConsecutiveConflicts >= ConflictUploadLimit && await ConflictStillOpenAsync(game, ct) is not false and var stillOpen)
         {
-            // The counter alone cannot tell "the server still refuses this save" from "someone
-            // resolved the conflict while this agent was down or between runs" — nothing pushes that
-            // news down to an agent, and a plain pull will not clear it either (this machine still
-            // has un-pushed local changes, so WA-02 refuses the pull). Without this check the latch
-            // outlives the conflict and locks the save out of uploading until a force-push.
-            bool? stillOpen = null;
-            try { stillOpen = (await _api.GetStateAsync(game.GameId, ct))?.HasOpenConflict; }
-            // Could not ask (unreachable, or an old server): keep the pause rather than gamble on a
-            // full upload the server has already rejected three times.
-            catch (Exception) when (!ct.IsCancellationRequested) { }
-
-            if (stillOpen is not false)
-            {
-                ReportOnly(
-                    $"[{game.Name}] CONFLICT still unresolved — upload paused after " +
-                    $"{game.ConsecutiveConflicts} rejected attempts; no archive was sent. " +
-                    (stillOpen is null ? "The server could not be asked whether it still is. " : "") +
-                    "Resolve it in the dashboard or force-push explicitly.",
-                    AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
-                return new UploadResult(UploadStatus.Conflict, null, null);
-            }
-
-            // No open conflict server-side: the count is stale. Clear it and let the ordinary push
-            // run — if the content really still diverges, the server records a fresh conflict and
-            // the latch simply starts again from one.
-            game.ConsecutiveConflicts = 0;
-            _config.SaveGameSyncState(game);
-            _log($"[{game.Name}] conflict latch cleared — the server has no open conflict; pushing again.");
+            ReportOnly(
+                $"[{game.Name}] CONFLICT still unresolved — upload paused after " +
+                $"{game.ConsecutiveConflicts} rejected attempts; no archive was sent. " +
+                (stillOpen is null ? "The server could not be asked whether it still is. " : "") +
+                "Resolve it in the dashboard or force-push explicitly.",
+                AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
+            return new UploadResult(UploadStatus.Conflict, null, null);
         }
 
         try
@@ -598,22 +577,27 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
     /// <summary>
     /// Uploads paused behind a conflict the server no longer has open (resolved in the console, or here
-    /// while the pull it queued was refused) would stay paused for good: no push reaches the server, so
-    /// no new conflict opens to ask again, and the agent goes on counting one nobody can see. True, with
-    /// the pause lifted, when the server has no open conflict of this machine's for the game; false
-    /// when it does or cannot be asked.
+    /// while the pull it queued was refused, or while this agent was down) would stay paused for good:
+    /// no push reaches the server, so no new conflict opens to ask again, and nothing pushes the news
+    /// down — a plain pull will not clear it either, since WA-02 refuses it over the un-pushed changes.
+    /// False, with the stale count cleared and saved, when the server has no open conflict of this
+    /// machine's for the game; true when it does; null when it cannot be asked — the caller keeps the
+    /// pause then rather than gamble on an upload the server already rejected three times.
     /// </summary>
-    private async Task<bool> ConflictClosedAsync(TrackedGame game, CancellationToken ct)
+    private async Task<bool?> ConflictStillOpenAsync(TrackedGame game, CancellationToken ct)
     {
         try
         {
             if ((await _api.GetOpenConflictsForMachineAsync(_config.MachineId, ct)).Any(c => c.GameId == game.GameId))
-                return false;
+                return true;
         }
-        catch (Exception) when (!ct.IsCancellationRequested) { return false; }
-        _log($"[{game.Name}] its conflict was resolved; uploads resume.");
+        catch (Exception) when (!ct.IsCancellationRequested) { return null; }
+        // If the content really still diverges, the server records a fresh conflict on this push and
+        // the latch starts again from one.
         game.ConsecutiveConflicts = 0;
-        return true;
+        _config.SaveGameSyncState(game);
+        _log($"[{game.Name}] its conflict was resolved; uploads resume.");
+        return false;
     }
 
     /// <summary>

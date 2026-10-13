@@ -195,9 +195,11 @@ public sealed class AdminAuth
     /// for an id that is not (or no longer) a live session.</summary>
     public async Task<bool> RevokeSessionByIdAsync(Guid id)
     {
-        var session = await _db.AdminSessions.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
+        var now = DateTime.UtcNow;
+        var session = await _db.AdminSessions.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id && s.ExpiresAt > now);
         if (session is null) return false;
-        await _db.AdminSessions.Where(s => s.Id == id).ExecuteDeleteAsync();
+        // Audited only when this call is what ended it: a concurrent revoke (or sign-out) got there first.
+        if (await _db.AdminSessions.Where(s => s.Id == id).ExecuteDeleteAsync() == 0) return false;
         await AuditAsync("admin.session_revoked",
             $"a session from {session.ClientAddress ?? "an unknown address"} was ended");
         return true;

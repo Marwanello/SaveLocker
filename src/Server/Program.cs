@@ -259,12 +259,12 @@ if (!string.IsNullOrWhiteSpace(artRootPath))
 app.MapGet("/health", () => Results.Ok(new { service = "SaveLocker", status = "ok" }));
 
 // ---- Public: machine registration + admin status ----
-// First-time registration is open so a new agent can enroll on a trusted LAN.
-// Re-registering an EXISTING machine name rotates that machine's API key — which
-// would let anyone able to reach the server hijack its identity (the real agent
-// gets locked out). So once an admin password is set, re-registration must carry
-// it in the X-Admin-Password header. With no password configured the endpoint
-// stays fully open (first-run behaviour, matching AdminPasswordFilter).
+// Registering is open only while no admin password is set (first run). Once one is, a NEW machine
+// needs it too unless Security:RequireAdminPasswordToRegister is turned off (see below).
+// Re-registering an EXISTING machine name rotates that machine's API key — which would let anyone
+// able to reach the server hijack its identity (the real agent gets locked out) — so it needs the
+// password in the X-Admin-Password header whatever that setting says. With no password configured
+// the endpoint stays fully open (first-run behaviour, matching AdminPasswordFilter).
 //
 // A machine key is FLEET-scoped (Decisions.md): it can read and write every game, so minting one is
 // the real door into the save data, and an open first-time registration means the admin password on

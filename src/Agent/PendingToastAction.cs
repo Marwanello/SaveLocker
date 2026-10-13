@@ -21,7 +21,8 @@ internal static class PendingToastAction
         try
         {
             Directory.CreateDirectory(stateDir);
-            File.WriteAllText(PathFor(stateDir),
+            // Atomic: the tray it starts may read the file the moment it comes up.
+            AtomicFile.WriteAllText(PathFor(stateDir),
                 JsonSerializer.Serialize(new Payload(command.Arguments, DateTime.UtcNow)));
         }
         catch (Exception ex) { AgentLogger.LogException("PendingToastAction.Write", ex); }

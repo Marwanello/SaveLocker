@@ -30,6 +30,7 @@ internal static class ToastActivationHost
         // its own lines into the INSTALLED agent's log, and its StartTray started the installed
         // agent (measured 2026-10-11).
         var configPath = RawOption(args, "--config");
+        var configArgument = configPath;
         if (configPath is not null &&
             Path.GetDirectoryName(Path.GetFullPath(configPath)) is { } dir &&
             Directory.GetParent(dir) is { } root)
@@ -40,7 +41,7 @@ internal static class ToastActivationHost
         configPath ??= AgentConfig.DefaultConfigPath;
         var config = AgentConfig.Load(configPath);
 
-        var clicked = ListenForClick(ToastActivation.HostExePath());
+        var clicked = ListenForClick(ToastActivation.HostExePath(), configArgument);
         if (clicked is null)
         {
             AgentLogger.Log("toast activation: no registered identity points at this exe; exiting.");
@@ -69,11 +70,12 @@ internal static class ToastActivationHost
     }
 
     /// <summary>
-    /// Serve every identity this exe is registered for — the DCOM launch names no CLSID, and a
-    /// machine can have the installed agent's beside a rig's. Null when nothing registered points at
-    /// this exe, so there is nothing an activation could reach and no waiting is warranted.
+    /// Serve the identity this launch is for — the one whose <c>LocalServer32</c> is this exe with this
+    /// <c>--config</c> (<see cref="ToastActivation.OwnedClsids"/>); the DCOM launch names no CLSID. Null
+    /// when nothing registered matches, so there is nothing an activation could reach and no waiting
+    /// is warranted.
     /// </summary>
-    private static Task<Click>? ListenForClick(string exePath)
+    private static Task<Click>? ListenForClick(string exePath, string? configPath)
     {
         var clicked = new TaskCompletionSource<Click>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -85,7 +87,7 @@ internal static class ToastActivationHost
         };
 
         var served = false;
-        foreach (var (_, clsid) in ToastActivation.OwnedClsids(exePath))
+        foreach (var (_, clsid) in ToastActivation.OwnedClsids(exePath, configPath))
         {
             ToastActivation.Serve(clsid, handler);   // lives to process exit
             served = true;

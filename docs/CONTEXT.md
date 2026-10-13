@@ -1139,7 +1139,7 @@ forced-`--user` volumes). **`X-Forwarded-*` is still never read by default**; `S
 is an opt-in for deployments behind a proxy — which the maintainer's own is, despite the LAN-only
 decision ([[Decisions]] amended). **Left for a maintainer decision, not changed:** first-time machine
 registration is still open by default (`Security:RequireAdminPasswordToRegister` exists, off) even
-though a machine key can read/write every game.
+though a machine key can read/write every game. *(Since PR #64 it defaults to on — see the quick-wins entry.)*
 <br>**Not verified here:** the Windows-agent suites, `run-server-bugbounty-tests` (216) and the CI-only
 Linux/cross-OS chain — this session had no agent build; the server, the new suite, the compat guard,
 `web` build/lint and a real container were all run. Release notes for the next release must cover:
@@ -1919,7 +1919,9 @@ commit, so this session did not touch it: run `testenv clean` first.
 
 **Quick-wins batch: seven backlog items closed, one verification item retired (2026-10-09, branch
 `fix/backlog-quick-wins`, no PR yet).** One pass, each with the verification the item named:
-- **Registration default flipped** — `Security:RequireAdminPasswordToRegister` now defaults to `true`:
+- **Registration default flipped** (**release notes must call this out**: a scripted `savelocker
+  register` without `--admin-password` against a server with a password now gets 401) —
+  `Security:RequireAdminPasswordToRegister` now defaults to `true`:
   once an admin password is set, a **new** machine name must present it. A machine key is
   fleet-scoped, so the open door meant the password guarded the dashboard but not the saves. No
   password set is unchanged (first-run stays open); `savelocker register --admin-password` and
@@ -1931,13 +1933,19 @@ commit, so this session did not touch it: run `testenv clean` first.
   pause threshold it asks the server whether the game still has an open conflict before holding the
   save back, so a resolve that landed while the agent was down clears the latch and the push runs.
   Server unreachable keeps the pause. New `ConflictLatchTests` (3, stub server; the stale-latch
-  clear is mutation-checked). **Related, same area:** a dashboard **Push** command answered with a
+  clear is mutation-checked). *(Superseded 2026-10-12, PR #64–67 review: #63's `ConflictClosedAsync` had
+  already fixed this in parallel — the two checks are now one, `ConflictStillOpenAsync`, asking the
+  machine-scoped conflict list; the test stub answers that route instead of 500ing it.)* **Related, same area:** a dashboard **Push** command answered with a
   conflict now reports Failed with the reason instead of "pushed — latest save …" (`CommandPoller`
   had ignored the engine's result).
 - **`post-exit-sync` releases the lease even while Sync all holds the agent-wide gate**: the route
   still answers 409 (the running sync pushes the game) but now stops that game's renewer and releases
   its checkout through a new `SyncEngine.ReleaseLaunchLeaseAsync`, so the fleet is not locked out of
   a game nobody is playing. `run-local-api-tests` holds a real Sync all open and asserts the release.
+  *(Changed 2026-10-12, PR #64–67 review: releasing without the push let another machine launch on an
+  older save — the gate's holder need not push this game. The whole exit, push then release, is now
+  queued behind the gate (`AgentApiServer.QueueDeferredExit`); the test asserts no release while the
+  gate is held and the release once it frees.)*
 - **Signed-in browsers are listable and revocable one by one** (Configuration → Admin password):
   `GET /api/admin/sessions` (current session marked), `DELETE /api/admin/sessions/{id}` (404 when not
   live, audited as `admin.session_revoked`); "Sign out everywhere" stays.
