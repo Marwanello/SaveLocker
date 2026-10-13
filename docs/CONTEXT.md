@@ -1944,6 +1944,18 @@ lets the console send a machine its missing DLC. Unit **523**. Checked by hand a
 database. Gotcha: a stuck conflict whose two versions are both behind Latest can't be closed from the agent (both choices
 would rewind) — the console's *Set as Latest* on one side closes it; making "keep the cloud's" mean "the current Latest" is
 an open question for the maintainer.
+<br>**2026-10-13: PR #68 and its plugin PRs reviewed, every finding fixed on the PRs.** The one that mattered: a pull while
+Xenia ran left the profile row unmerged, and the next push exported this machine's older row over it — carrying it to every
+machine. A skipped merge is now marked (`<state>/xenia/merge-pending/<game>`); the next push merges first and never exports
+the row while it waits. Also: Xenia under Proton is `xenia_canary.ex` to Linux (15-character names), so it was never seen as
+running on the Deck; a title update counts as present when any title update is installed (`ContentPackageDto.Missing`, shared
+by agent, server and console), and a save this machine made or already has is never held; a launch whose pull is held answers
+`ProceedSyncPaused` with the reason (Decky#5 and Playnite#8 show it); the sending agent only zips packs it lists itself and
+skips links, and the receiver refuses duplicate names and oversized zips before writing; Xenia Manager's per-game config is
+matched on its own spelling of the title, inside `config/` only; Sync all counts held games (`SyncRunDto.HeldForDlc`); an
+unanswered hand-over for other packs is replaced; the console ignores machines that no longer keep the game. Decky: an `Ask`
+no longer reuses the conflict freeze (a raced launch runs on; a different choice applies next launch); `.gitattributes` keeps
+LF. Unit **539**.
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
 steps 1–5 of the profile and 1–11 of the DLC hand-over), then Forza Horizon for real between PC and Deck (Group H).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.
