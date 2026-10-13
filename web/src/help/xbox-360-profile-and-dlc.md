@@ -53,6 +53,8 @@ Every push records which DLC packs and title updates are installed, by name, ID 
 
 An automatic pull (before launch, from the console, or in the background) never asks. It holds the pull and sends a notification.
 
+You don't have to wait for a pull: whenever the game page's DLC list shows packs **Missing**, **Pull missing DLC from \<machine\>** asks for them straight away.
+
 **What happens to a hand-over:**
 
 1. **The other machine is asked.** It sees the request within about 20 seconds while its agent runs. In **Settings → Xbox 360**, each machine chooses to send automatically (default), ask first, or never send. Set to ask first, it shows a notification and the request on the game's page, with **Send** and **Decline**.
@@ -62,7 +64,7 @@ An automatic pull (before launch, from the console, or in the background) never 
 
 **Server limits** (console **Configuration → DLC hand-overs**):
 
-- `Storage:MaxHandoverMb`: the largest hand-over, 2048 MB by default. Separate from the save upload limit.
+- `Storage:MaxHandoverMb`: the largest hand-over, 8192 MB (8 GB) by default. Separate from the save upload limit.
 - `Storage:HandoverExpiryDays`: how long a request waits.
 
 The card also shows what the server holds right now, and lets you cancel any hand-over.

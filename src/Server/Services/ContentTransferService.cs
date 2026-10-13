@@ -18,7 +18,7 @@ public sealed class TransferRefusedException(string message) : Exception(message
 public sealed partial class ContentTransferService
 {
     public const string DirName = "_handover";
-    public const int DefaultMaxMb = 2048;
+    public const int DefaultMaxMb = 8192;
     public const int DefaultExpiryDays = 7;
     public const long MaxChunkBytes = 16L * 1024 * 1024;
 
@@ -38,7 +38,7 @@ public sealed partial class ContentTransferService
         _expiryDays = Math.Max(1, config.GetValue<int?>("Storage:HandoverExpiryDays") ?? DefaultExpiryDays);
     }
 
-    /// <summary>The largest hand-over, <c>Storage:MaxHandoverMb</c> (2 GB by default), separate from the save cap.</summary>
+    /// <summary>The largest hand-over, <c>Storage:MaxHandoverMb</c> (8 GB by default), separate from the save cap.</summary>
     public static long MaxBytes(IConfiguration config)
     {
         var mb = config.GetValue<int?>("Storage:MaxHandoverMb") ?? DefaultMaxMb;

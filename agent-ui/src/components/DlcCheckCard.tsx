@@ -71,7 +71,10 @@ export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled
   async function handOver() {
     await run(async () => {
       const t = await api.dlcHandover(gameId)
-      return `Asked ${t.fromMachineName} for ${t.parts.length} pack${t.parts.length === 1 ? '' : 's'}. They install here once sent, and the pull goes ahead.`
+      const n = `${t.parts.length} pack${t.parts.length === 1 ? '' : 's'}`
+      return check?.held
+        ? `Asked ${t.fromMachineName} for ${n}. They install here once sent, and the pull goes ahead.`
+        : `Asked ${t.fromMachineName} for ${n}. They install here once sent.`
     }, 'The request failed.')
     setAsking(false)
   }
@@ -148,6 +151,17 @@ export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled
               ))}
             </tbody>
           </table>
+          {canHandOver && !check.held && (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+              padding: '10px 18px', borderTop: '1px solid var(--color-line)', fontSize: 12.5, color: 'var(--color-dim)',
+            }}>
+              <span>{missing.length} missing here · {formatBytes(check.missingSize)}</span>
+              <Button variant="primary" disabled={busy} onClick={() => void handOver()}>
+                {busy ? 'Asking…' : `Pull missing DLC from ${check.headMachineName ?? 'the other machine'}`}
+              </Button>
+            </div>
+          )}
         </Card>
       )}
       {asking && missing.length > 0 && (
