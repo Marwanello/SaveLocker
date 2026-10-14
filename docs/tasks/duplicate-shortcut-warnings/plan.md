@@ -101,3 +101,40 @@ Each phase is commit-sized; one PR for 1–3 is reasonable, with 4 optional.
   the emulator `ReleaseChip` pattern; the chip itself stays short.
 - One duplicate usually resolves a save path while the other does not: the warning still matters
   (the resolvable prefix may be the dead one). No special-case.
+
+## Review fixes (2026-10-14, PR #75 review)
+
+No blockers; seven smaller findings, all fixed on the branch.
+
+- **Clicks inside the popover ticked the game.** An Add-games row is a `<label>`, and a click on the
+  popover (a non-interactive descendant) activates its checkbox — selecting the game while the user
+  only read it. The popover now swallows the click (`preventDefault`), the guard the row's other
+  controls already carry.
+- **The card clipped the popover.** `.sl-card` is `overflow: hidden`, so a duplicate row near the
+  bottom of the list had its popover cut off. `.sl-card:has(.sl-release__pop) { overflow: visible; }`
+  — the codebase's own `:has()` idiom, as `.sl-gamehead` already uses.
+- **`Tracked` could name a shortcut the scan does not follow.** Windows' `MergeDuplicates` backfilled
+  the list from a *loser* (only reachable when the winner is not a shortcut), and a MoonDeck shortcut
+  reclassified `SteamInstalled` marked its own synthetic AppID while the candidate carried the real
+  one. Both now mark no entry tracked, and the chip/note/Game Mode caption say so ("resolved its save
+  folder another way") instead of naming an id the tracked game does not carry.
+- **The popover interaction was a third copy** of ReleaseChip's hover/pin/outside/Esc logic; both now
+  share `usePopover`, which also closes on leave with a 150 ms grace period — the pointer crossing the
+  8 px gap between chip and popover used to close it before it could be read.
+- **Counts.** The chip said "N shortcuts" while `DuplicatesFor` counts distinct AppIDs; the copy now
+  says AppIDs, matching what the list shows. The redundant `length > 1` guards became `> 0`,
+  consistent with the API's own `Count: > 0`.
+- **"Hover the chip"** is wrong on touch; "Open the chip" now.
+- **Tests.** New `DuplicateShortcutTests` (7; flipping the tracked marker fails two of them), and the
+  suite's `/api/candidates` checks now assert the exact AppIDs, names and tracked flags instead of
+  field presence.
+
+**Verified:** `dotnet test` **559/559**; Agent.Core, Windows Agent and Agent.Linux build clean;
+`agent-ui` `tsc -b && vite build` + `oxlint` clean; `run-appearance-consistency-tests` **50/50**;
+`run-linux-tests` **282/2** as root in `unshare -n` (the 2 are the documented WSLg-session pair —
+"no session: graphical session / D-Bus session bus reported no" — and both duplicate-shortcut checks
+pass); both UI fixes proven in headless Chrome against the real CSS/DOM (the card clip and the
+label-tick each reproduced with their fix removed, including a real trusted click). **Not verified:**
+a live Deck/WebView2 pass of the chip. The 71-failure cascade the PR body's earlier numbers carried
+was this box's stray `~/SaveLocker` daemon holding :5187; the netns run is the workaround.
+Ready to move to `tasks/_done/` once the PR merges.
