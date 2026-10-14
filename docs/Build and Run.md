@@ -267,6 +267,7 @@ handoff section in [[CONTEXT]]), every SSH/`scp` call has a short connect timeou
 ### Testing emulator saves (a fake EmuDeck folder)
 
 ```powershell
+.\tests\testenv.ps1 sync                 # the Linux agent builds from the WSL clone (~/SaveLocker): bring it to this branch first
 .\tests\testenv.ps1 build -Only console; .\tests\testenv.ps1 build -Only windows; .\tests\testenv.ps1 build -Only linux
 .\tests\testenv.ps1 emu-fixture          # <StateRoot>\Emulation (Windows) + <StateRoot>\Emulation-wsl (WSL)
 .\tests\testenv.ps1 up -Only console; .\tests\testenv.ps1 up -Only windows; .\tests\testenv.ps1 up -Only linux
