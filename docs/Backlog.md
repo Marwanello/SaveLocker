@@ -15,7 +15,6 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 
 ## Medium priority
 
-- [Checkpoint UI Group 9: run the testenv checklist](tasks/checkpoint-ui-group-9-check/summary.md)
 - [Interactive setup guide](tasks/interactive-setup-guide/summary.md)
 - [Playnite plugin: prove the self-update against a real release](tasks/playnite-self-update-proof/summary.md)
 - [QAM left-stick scrolling](tasks/decky-qam-scrolling/summary.md)

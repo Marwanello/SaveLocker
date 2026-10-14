@@ -1686,7 +1686,12 @@ entry (added once by an agent that updates itself); `savelocker pull` exits non-
 put new plugin submissions on hold until Playnite 11's new add-on database. The listing, the self-update proof and four
 unchecked surfaces are now their own Backlog tasks (`tasks/playnite-*`).
 <br>**Checkpoint UI closed as done (2026-10-04)**, merging with PR #54; the Group 9 `testenv` checklist is its own
-Backlog task now (`tasks/checkpoint-ui-group-9-check/`).
+Backlog task now (`tasks/checkpoint-ui-group-9-check/`). **That checklist was run through `testenv` on
+2026-10-14 (branch `backlog-plans-testenv-mockup`) and the task is closed**: every step passed, including
+the maintainer's 4.6/1.8; eight findings (F1–F8) — keep-count can't return to 7 once changed, revoking an
+enrollment removes its row, `-test` builds classify as releases so the Dev-build/Running chips don't show,
+and *Fetch from GitHub* defaults to the upstream repo — are recorded in
+`tasks/_done/checkpoint-ui-group-9-check/run-2026-10-14.md`, each a maintainer decision, none a blocker.
 <br>**v0.6.0 prepared (2026-10-04, branch `release-0.6.0`) — not yet tagged.** PR #54 is merged. Release notes in
 `web/src/releases/0.6.0.md` (covering everything since v0.5.12: the whole Checkpoint redesign, Groups 1–10, plus backup
 restore and the encrypted SteamGridDB key; three migrations). A minor bump, not 0.5.13, because of the redesign's size and
