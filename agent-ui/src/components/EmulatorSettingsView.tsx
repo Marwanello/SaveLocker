@@ -24,6 +24,8 @@ interface Props {
   /** A pull from the game page was just held: the DLC section opens its choice. */
   askSignal: number
   onPulled: (message: string) => void
+  /** The game's folder or source changed here (a Switch game's synced copy moved): the shell re-reads the list. */
+  onChanged: () => void
 }
 
 /**
@@ -31,7 +33,7 @@ interface Props {
  * Xenia's are the Xbox 360 profile at launch, the DLC the latest save needs, and sharing this machine's DLC. A Switch game's
  * are its copies in the other Switch emulators here. Settings that cover every game of the emulator say so where they appear.
  */
-export function EmulatorSettingsView({ game, emulator, machineName, tab, onTab, onBack, dlc, refreshKey, askSignal, onPulled }: Props) {
+export function EmulatorSettingsView({ game, emulator, machineName, tab, onTab, onBack, dlc, refreshKey, askSignal, onPulled, onChanged }: Props) {
   const missing = dlc?.packages?.filter(p => !p.here).length ?? 0
   const requests = dlc?.asked?.filter(t => t.status === 'Requested').length ?? 0
 
@@ -45,7 +47,7 @@ export function EmulatorSettingsView({ game, emulator, machineName, tab, onTab, 
           sub={`${game.name} syncs from ${runs} on ${machineName}. These settings apply to this device.`}
           actions={<SourceChip source={game.source} />}
         />
-        <SwitchCopiesCard gameId={game.id} gameName={game.name} machineName={machineName} refreshKey={refreshKey} />
+        <SwitchCopiesCard gameId={game.id} gameName={game.name} machineName={machineName} refreshKey={refreshKey} onChanged={onChanged} />
       </div>
     )
   }
