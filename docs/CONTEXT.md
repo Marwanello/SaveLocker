@@ -2129,6 +2129,44 @@ gamescope on a real Deck — Phase 7's checklist still owns that.
 
 ---
 
+**Enrollment join links — option B implemented (2026-10-14, branch `enrollment-join-link`, worktree
+`.claude/worktrees/enrollment-mockups`; the three option mockups are committed on branch
+`enrollment-mockups` as `9ab48b7`, under `docs/tasks/enrollment-options/`).** Asked for directly: the
+enrollment file is disliked, replace it. Option B picked from the mockups — the console mints a short
+code (8 Crockford chars, `JoinCodes` in Shared) into `GET /join/{code}`, a self-contained pairing page:
+Windows tab starts the installer download and copies the link, Linux tab is a `curl …/install.sh | sh`
+one-liner, and an already-installed agent is reached by `127.0.0.1:5178/#enroll:<link>`. The agent
+side is `enroll --url` (CLI; `--code` + `--server` accepted as sugar) over `GET /join/{code}/policy` —
+the policy (games, effective excludes) is now built **at delivery**, not minted into a file — and
+`POST /api/join` on the local API, which the agent-UI Join card and the `#enroll:` deep link use
+(`AgentEnroller` is the one implementation both call). `enroll --file` and the JSON download are
+**removed**; the installer's enroll page now takes a pasted join link (`/ENROLL-URL` for silent), and
+`install.sh`/help/README/[[API Reference]]/[[Decisions]] were updated. Because 40 bits is short,
+`JoinThrottle` guards every lookup (15 failures / 15 min / client + a global backstop; only unknown
+codes count; a successful redeem resets) — that throttle is a security property, asserted end to end
+including 429 + `Retry-After`. Console card rewritten (code + link + QR via `uqr`, a new web dep).
+<br>**Verified:** `run-enrollment-tests` **25/25** (rewritten for links: pairing page, both enroll
+forms, single-use / revoked / forged, throttle against its own low-limit server), `run-local-api-tests`
+**128/128** (run with `SL_LOCALAPI_PORT=5197` — another worktree's tray held :5188; +3 `/api/join`
+checks), `run-server-bugbounty-tests` **216/216** (CS-06/CS-10 updated to the link shape; one
+transient CS-01 crash on the first attempt, not reproducible), `run-agent-tests` 47/47, `dotnet test`
+**552/552**, `run-appearance-consistency-tests` 50/50 (the QR's colours needed `currentColor` +
+keyword black — hex literals are banned in views), `web` and `agent-ui` build + lint clean, installer
+compiles (`installer/dist/SaveLocker-Agent-Setup-0.7.1.exe`). `openapi.json` + both `api-types.ts`
+regenerated against live scratch instances.
+<br>**Not verified (manual pass owed):** the real Windows wizard paste-round-trip against a real
+tray install, and a Steam Deck running the pairing page's one-liner — steps were given in the
+session's report (testenv walkthrough). `run-enrollment-tls-tests` is blocked on this box: the dev
+cert exists but is **untrusted** (`dotnet dev-certs https --trust` needs its dialog accepted).
+<br>**Session note:** for a while the headless tooling wrote edits into the **main checkout** instead
+of this worktree (opencode's default cwd); recovered with a stash move — builds/tests in a worktree
+must always be driven with the worktree's absolute paths. The implementation is **uncommitted** on
+`enrollment-join-link` pending the maintainer's review; release notes for the next tag must cover the
+enrollment-file removal (old agents/installers cannot enroll until updated — they can still
+`savelocker register`).
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three
