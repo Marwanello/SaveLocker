@@ -514,6 +514,19 @@ session can judge an edge case, not to reopen the choice.
   the real machine key; expires ~15 min. Deliberately unsigned — the threat is a forged file
   pointing at a malicious server, which signing can't fix (no trust anchor exists before the
   user's own download). Mitigated by HTTPS + hardened restore path + TOFU pin after enrollment.
+  <br>**Amended 2026-10-14: the file is gone — enrollment is a join link** (`tasks/enrollment-options`,
+  option B; picked over a typed short code and over device-asks-console-approves). The console mints
+  an 8-character Crockford code (40 bits) into `GET /join/{code}` — a server-hosted pairing page
+  whose Windows tab starts the installer download and copies the link for the wizard's paste box,
+  whose Linux tab is a `curl …/join/{code}/install.sh | sh` one-liner, and which hands off to an
+  already-installed agent via `127.0.0.1:5178/#enroll:…`. The agent's `enroll --url` (CLI) and
+  `POST /api/join` (local API — the Settings tab and that deep link) fetch
+  `GET /join/{code}/policy`, then redeem exactly as before; `enroll --file` is removed with the file.
+  Because 40 bits is short, guessing is throttled (`JoinThrottle`: 15 failures / 15 min / client
+  plus a global backstop; only *unknown* codes count; a successful redeem resets the client) — the
+  throttle is a security property of the short code, not tuning. The policy's game list is built at
+  delivery, so a link opened later still describes the server as it is now. The code is shown once
+  and the link list keeps the pre-existing Valid/Used/Expired/Revoked lifecycle.
 - **Linux install: `~/.local/share/SaveLocker` + `systemd --user`**, never `/usr` — SteamOS's
   rootfs is immutable and wiped on update. Self-contained publish (SteamOS ships no .NET runtime).
 - **Linux dev: WSL2 (Ubuntu 24.04 LTS) on ext4**, not a VM or Arch. Reproduces everything that

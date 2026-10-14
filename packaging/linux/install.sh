@@ -147,13 +147,16 @@ cat <<'EOF'
 Installed. Next:
 
   1. In the SaveLocker console: Configuration -> "Enroll a machine" -> Create
-     enrollment file. Copy the downloaded .json to this device, then:
+     join link. Open it on this device, or run the command it shows:
 
-         savelocker enroll --file savelocker-enroll-*.json
+         savelocker enroll --url http://your-server:5080/join/K7QM-4H2X
 
-     The file carries a single-use token that expires in ~15 minutes, so no API
-     key is ever copied by hand. It sets the server URL, registers this machine,
-     and picks up the games already defined on the server.
+     The code inside is single-use and expires in ~15 minutes, so no API key is
+     ever copied by hand. It sets the server URL, registers this machine, and
+     picks up the games already defined on the server.
+
+     (The pairing page at that link installs and enrolls in one line, too:
+      curl -fsSL <link>/install.sh | sh)
 
      (No console access? The manual path still works:
         savelocker set-server --url https://your-server

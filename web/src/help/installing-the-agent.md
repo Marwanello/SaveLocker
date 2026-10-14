@@ -11,20 +11,24 @@ Downloads are on the [GitHub Releases page](https://github.com/Marwanello/SaveLo
 | Windows | `SaveLocker-Agent-Setup-<version>.exe` |
 | Linux / Steam Deck | `savelocker-<version>-linux-x64.tar.gz` |
 
-## First: create an enrollment file
+## First: create a join link
 
 Do this **before** touching the other machine. It works the same for Windows and Linux, and it means
 **no API key is ever copied by hand**.
 
 1. In this console: **Configuration → Enroll a machine**.
-2. Optionally name the machine (e.g. `Steam Deck`). Naming it *binds* the file to that name, so it
+2. Optionally name the machine (e.g. `Steam Deck`). Naming it *binds* the link to that name, so it
    cannot be used to claim a different machine's identity.
-3. Click **Create enrollment file**. A `.json` file downloads.
-4. Copy that file to the new machine (USB stick, network share, `scp` — however you like).
+3. Click **Create join link**. A short code and a link appear — for example
+   `http://your-server:5080/join/K7QM-4H2X`.
+4. Get that link to the new machine: open it there (it is a web page), paste it into the agent's
+   Settings tab, or send it to yourself in a chat. On another device with a browser, the **QR code**
+   opens the same page.
 
-The file carries a **single-use token that expires in about 15 minutes**, not a permanent key. If you
-lose it, or it expires, just create another. It is downloaded **once and cannot be shown again** — the
-server only keeps a hash of it.
+The link carries a **single-use code that expires in about 15 minutes**, not a permanent key. It is
+shown **once** — the server only keeps a hash of it. Lost or expired? Create another; it is one click.
+The link itself is a small page served by your server: it knows which installer the device needs and
+hands it over already enrolled.
 
 ---
 
@@ -32,32 +36,38 @@ server only keeps a hash of it.
 
 ## Install and enroll — one flow
 
-1. Download and run `SaveLocker-Agent-Setup-<version>.exe`.
+The easiest route starts at the **pairing page**: open the join link in this machine's browser and
+the page walks you through it. Its **Download & enroll** button starts the installer download *and*
+copies the join link to the clipboard, so the installer has everything it needs.
+
+1. On the pairing page, click **Download & enroll** (or run the installer you already downloaded).
 2. **Windows will warn you that the publisher is unknown.** Click **More info → Run anyway**. The
    installer is not code-signed yet, so SmartScreen has no publisher to check against. This is
    expected, and worth knowing rather than being surprised by.
 3. The installer needs **administrator rights** (it installs to `C:\Program Files\SaveLocker Agent`
    and registers the auto-start entry, so the uninstaller can cleanly remove both).
-4. On the **Enroll this machine** page, leave **"Enroll this machine now"** selected and browse to
-   the enrollment file you downloaded. The installer shows **which server and machine name** the file
-   will join — check the server address is one you trust before continuing. The machine is enrolled as
-   the install finishes, so it is **online in this console before the installer window closes**.
+4. On the **Enroll this machine** page, leave **"Enroll this machine now"** selected and paste the
+   join link (**Ctrl+V** — the pairing page copied it for you; otherwise copy it from the console).
+   The page shows **which server and code** the link names — check the server address is one you
+   trust before continuing. The machine is enrolled as the install finishes, so it is **online in
+   this console before the installer window closes**.
 
 The agent then starts in the **system tray**. Double-click the icon to open its window, and confirm
 the machine appears under **Configuration → Machines** here, showing as **online**.
 
 > **Enrolling later instead.** Choose **"Skip — I'll enroll later"** on that page to install without
-> enrolling. When you have the file, enroll from the agent's **Settings** tab, or from a terminal:
+> enrolling. When you have the link, enroll from the agent's **Settings** tab (paste it into
+> *Join a server*), or from a terminal:
 >
 > ```
-> "C:\Program Files\SaveLocker Agent\SaveLocker.Agent.exe" enroll --file C:\Users\you\Downloads\savelocker-enroll-desktop.json
+> "C:\Program Files\SaveLocker Agent\SaveLocker.Agent.exe" enroll --url http://your-server:5080/join/K7QM-4H2X
 > ```
 >
-> Either way, if the file has **expired** (they last ~15 minutes) the installer says so on the page —
-> just create a new one from the console.
+> Either way, if the link has **expired or was already used** the installer says the enrollment did
+> not complete — just create a new link from the console.
 
-> **Deploying to many machines?** Pass the file on the command line for an unattended install:
-> `SaveLocker-Agent-Setup-<version>.exe /SILENT /ENROLL="C:\path\savelocker-enroll.json"`.
+> **Deploying to many machines?** Pass the link on the command line for an unattended install:
+> `SaveLocker-Agent-Setup-<version>.exe /SILENT /ENROLL-URL="http://your-server:5080/join/K7QM-4H2X"`.
 
 ## Notes
 
@@ -104,10 +114,17 @@ If `install.sh` warns that `~/.local/bin` is not on your `PATH`, add it (or use 
 
 ## Enroll it
 
+Open the join link in this device's browser: the pairing page's **one-line installer** downloads the
+agent, installs it and enrolls it in one go. Or do each half by hand:
+
 ```bash
-savelocker enroll --file ~/Downloads/savelocker-enroll-steamdeck.json
+tar -xzf savelocker-<version>-linux-x64.tar.gz && ./SaveLocker/install.sh
+savelocker enroll --url http://your-server:5080/join/K7QM-4H2X
 savelocker doctor
 ```
+
+(That is the same command the one-liner runs. The code inside the link is single-use and expires in
+~15 minutes; the agent fetches what it needs from your server itself.)
 
 Enrollment over HTTPS also records the server's TLS public key. If that identity later changes, the
 agent warns but does not stop syncing — a legitimate certificate renewal may rotate the key, and a

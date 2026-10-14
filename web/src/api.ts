@@ -418,13 +418,12 @@ export const api = {
   // token is single-use: finding out the URL was wrong afterwards costs the token too.
   effectiveServerUrl: () => request<EffectiveServerUrl>('/admin/enrollments/effective-url'),
 
-  // The raw token comes back exactly once, inside the policy — the server keeps only its hash.
-  // Whatever the caller does with this response is the only chance to hand it to the user.
+  // The join code comes back exactly once — the server keeps only its hash. Whatever the caller
+  // does with this response is the only chance to show the link to the user.
   createEnrollment: (body: {
     machineName: string | null;
     ttlMinutes: number;
     serverUrl: string | null;
-    gameIds: string[] | null;
   }) =>
     request<CreateEnrollmentResponse>('/admin/enrollments', {
       method: 'POST',

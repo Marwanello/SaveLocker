@@ -129,6 +129,19 @@ try {
     $good = Send "/api/state" $token $null $null
     Check "the real token is accepted (200)" ($good.Status -eq 200)
 
+    # The join route (tasks/enrollment-options, option B) fetches a URL and writes a whole machine
+    # identity — everything /api/register does, plus an outbound request — so it has to sit behind
+    # the same token guard, and a refusal must be a message the UI can show.
+    $joinNoToken = SendPost "/api/join" $null '{"url":"http://127.0.0.1:1/join/ZZZZ1ZZZ"}'
+    Check "/api/join with no token is refused (401)" ($joinNoToken.Status -eq 401)
+
+    $joinBadCode = SendPost "/api/join" $token '{"code":"nope","serverUrl":"http://127.0.0.1:1"}'
+    Check "/api/join refuses a malformed code (400)" ($joinBadCode.Status -eq 400 -and $joinBadCode.Body -match "join code")
+
+    $joinUnreachable = SendPost "/api/join" $token '{"code":"ZZZZ1ZZZ","serverUrl":"http://127.0.0.1:1"}'
+    Check "/api/join answers 400 with a message when the server is unreachable" `
+        ($joinUnreachable.Status -eq 400 -and $joinUnreachable.Body.Length -gt 10)
+
     # =================================================================================
     # 2. THE MACHINE API KEY IS NEVER SERVED
     # =================================================================================

@@ -909,9 +909,12 @@ $ag = @((Http GET "/api/games" $null $ck).Json | Where-Object { $_.id -eq $cg })
 Check "CFG-01: an agent's game list carries the new defaults plus the game's own pattern" `
     ((@($ag.excludeGlobs) | Sort-Object) -join "," -eq "*.log,mine/*.sav,shadercache/**")
 Check "CFG-01: ... and no longer the config defaults it replaced" (-not (@($ag.excludeGlobs) -contains "*.tmp"))
-$enr = (Http POST "/api/admin/enrollments" @{ machineName = $null; ttlMinutes = 5; serverUrl = "http://example.test"; gameIds = $null } $cf).Json
-$eg = @($enr.policy.games | Where-Object { $_.id -eq $cg -or $_.gameId -eq $cg })[0]
-Check "CFG-01: a new enrollment file carries them too" (@($eg.excludeGlobs) -contains "shadercache/**")
+$enr = (Http POST "/api/admin/enrollments" @{ machineName = $null; ttlMinutes = 5; serverUrl = "http://example.test" } $cf).Json
+# The policy is built at delivery (the link's /policy sibling), so fetch it here rather than reading
+# it out of the mint response — the excludes the check is about are computed at that moment.
+$enrPolicy = (Http GET "/join/$($enr.code)/policy").Json
+$eg = @($enrPolicy.games | Where-Object { $_.id -eq $cg -or $_.gameId -eq $cg })[0]
+Check "CFG-01: a new join link's policy carries them too" (@($eg.excludeGlobs) -contains "shadercache/**")
 $audit = @((Http GET "/api/audit?limit=500" $null $cf).Json | Where-Object { $_.action -eq "settings.default_excludes" })
 Check "CFG-01: the change is audited with what was added and removed" `
     ($audit.Count -eq 1 -and $audit[0].detail -match "added shadercache/\*\*" -and $audit[0].detail -match "removed .*\*\.tmp")

@@ -380,7 +380,7 @@ static class Program
         if (string.IsNullOrEmpty(config.ApiKey))
         {
             Console.Error.WriteLine(
-                "This machine is not registered, so there is no server to ask. Run: savelocker enroll --file <policy.json>");
+                "This machine is not registered, so there is no server to ask. Run: savelocker enroll --url <join link>");
             return 1;
         }
 
@@ -702,7 +702,7 @@ static class Program
         savelocker — SaveLocker agent for Linux (Proton / Steam Deck)
 
         Setup
-          enroll --file <policy.json> [--name <name>]      Set up from a console enrollment file (start here)
+          enroll --url <join link> [--name <name>]          Set up from a console join link (start here)
           register --name <name> [--admin-password <pw>]   Register this machine by hand instead
           set-server --url <url>                           Point the agent at a server
           trust [--accept]                                 Show the pinned server TLS key, or re-pin it

@@ -395,7 +395,7 @@ public static class Doctor
         {
             Problem(string.IsNullOrEmpty(config.ApiKey)
                 ? "the server is reachable, but this machine is not enrolled. " +
-                  "Run: savelocker enroll --file <token file>"
+                  "Run: savelocker enroll --url <join link>"
                 : "the server is reachable, but it rejected this machine's API key. " +
                   "Re-enroll this device, or check that its machine record still exists.");
             return;

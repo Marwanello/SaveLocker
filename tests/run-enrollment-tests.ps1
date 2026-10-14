@@ -1,14 +1,18 @@
-# Enrollment integration tests (Linux agent Phase 4) - 14 checks. Runs on BOTH Windows and Linux.
+# Enrollment integration tests (join links) - runs on BOTH Windows and Linux.
 #
 #   Windows: Windows PowerShell 5.1 or pwsh, drives src/Agent (net10.0-windows).
 #   Linux:   pwsh (PowerShell Core), drives src/Agent.Linux (net10.0).
 #
-# `enroll` lives in Agent.Core, so it is the SAME code on both hosts - which is the point: a Deck
-# and a Windows PC enroll through one implementation.
+# Enrollment is now a join link (tasks/enrollment-options, option B): the console mints an
+# 8-character code, GET /join/{code} is the pairing page, GET /join/{code}/policy is what the
+# agent's `enroll --url` fetches, and the code is spent once against POST /api/enroll. `enroll`
+# lives in Agent.Core, so it is the SAME code on both hosts - which is the point.
 #
-# What this does NOT cover: TLS pinning. The harness server is plain http, which has no identity to
-# pin, so the checks below assert only that the agent correctly records NO pin and says so. The
-# pin-and-warn path needs an https server - see tests/run-enrollment-tls-tests.ps1.
+# What this does NOT cover: TLS pinning (the harness server is plain http, which has no identity
+# to pin - the agent must record NO pin, which is asserted below). See
+# tests/run-enrollment-tls-tests.ps1 for the pin-and-warn path. Link expiry is not waited out
+# here either (a 1-minute minimum TTL would make the suite take minutes); that predicate is the
+# same one the used/revoked paths below exercise.
 #
 # Prerequisites: server running on http://localhost:5179 (no admin password), agent built in Debug.
 # Usage:  .\tests\run-enrollment-tests.ps1   /   pwsh tests/run-enrollment-tests.ps1
@@ -47,8 +51,8 @@ function Check($name, $cond) {
 function Agent { & $dotnet $dll @args 2>&1 }
 
 # Every mint states its server URL. This suite runs the agent on the same box as the server, so the
-# policy really does need to say localhost — and the server refuses to INFER a loopback address,
-# because a file minted from a console opened at localhost cannot work on the machine it is for
+# link really does need to say localhost — and the server refuses to INFER a loopback address,
+# because a link minted from a console opened at localhost cannot work on the machine it is for
 # (Console-BugBounty CS-06). Saying it explicitly is how a same-box setup declares itself.
 function Mint($body) {
     if (-not $body.ContainsKey("serverUrl")) { $body["serverUrl"] = $server }
@@ -72,98 +76,151 @@ $tmplName = "EnrollTemplate-$stamp"
 $tmplGame = Invoke-RestMethod -Uri "$server/api/games" -Method Post -ContentType "application/json" `
     -Body (@{ name = $tmplName; manifestKey = $null; customPathsJson = $null } | ConvertTo-Json)
 
-$onWin = if ($null -eq $IsWindows) { $true } else { $IsWindows }
-if ($onWin) {
+if ($onWindows) {
     $tmplExpected = Join-Path $env:APPDATA "$tmplName\Saves"
     New-Item -ItemType Directory -Force $tmplExpected | Out-Null
     Invoke-RestMethod ("$server/api/games/" + $tmplGame.id + "/save-dir?value=" +
         [uri]::EscapeDataString("<winAppData>/$tmplName/Saves")) -Method Post | Out-Null
 }
 
-# ---- 1. Mint: the policy carries a token, the server URL and the enabled games ----
+# ---- 1. Mint: a short code, a link, and a pairing page that renders ----
 $deckName = "phase4-deck-$stamp"
 $mint = Mint @{ machineName = $deckName; ttlMinutes = 15 }
-$policy = $mint.policy
 
-Check "mint returns a raw token"                 ($policy.token -and $policy.token.Length -gt 20)
-Check "policy carries the server URL"            ($policy.serverUrl -eq $server)
-Check "policy binds the machine name"            ($policy.machineName -eq $deckName)
-Check "policy carries the server's games"        ($policy.games.gameId -contains $game.id)
+Check "mint returns an 8-character join code"  ($mint.code -and $mint.code.Length -eq 8)
+Check "the code avoids the confusable letters" ($mint.code -notmatch "[ILOU]")
+Check "joinUrl points at /join/<code>"         ($mint.joinUrl -eq "$server/join/$($mint.code)")
 
-$policyFile = Join-Path $scratch "enroll-$stamp.json"
-$policy | ConvertTo-Json -Depth 6 | Set-Content -Path $policyFile -Encoding utf8
+$page = Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)"
+Check "the pairing page renders"               ($page.StatusCode -eq 200 -and
+                                                $page.Content -match "Pair this device" -and
+                                                $page.Content -match [regex]::Escape($mint.code))
 
-# ---- 2. Enroll: the agent trades the token for a real machine key ----
-# --name is deliberately WRONG here: the token was minted for $deckName, and a bound token must
-# win. Otherwise a leaked file could be spent to claim any machine's identity.
+# ---- 2. The policy behind the link describes the server right now ----
+$policy = Invoke-RestMethod -Uri "$server/join/$($mint.code)/policy"
+Check "policy carries the code"                ($policy.token -eq $mint.code)
+Check "policy carries the server URL"          ($policy.serverUrl -eq $server)
+Check "policy binds the machine name"          ($policy.machineName -eq $deckName)
+Check "policy carries the server's games"      ($policy.games.gameId -contains $game.id)
+
+# ---- 3. Enroll by link: the agent trades the code for a real machine key ----
+# --name is deliberately WRONG here: the link was minted for $deckName, and a bound code must win.
+# Otherwise a leaked link could be spent to claim any machine's identity.
 $cfg = Join-Path $scratch "enroll-cfg-$stamp.json"
-$out = Agent enroll --file $policyFile --name "an-imposter-name" --config $cfg
+$out = Agent enroll --url $mint.joinUrl --name "an-imposter-name" --config $cfg
 $enrollExit = $LASTEXITCODE
 $saved = Get-Content $cfg -Raw | ConvertFrom-Json
 
-Check "enroll succeeds"                          ($enrollExit -eq 0)
-Check "enroll stored a machine API key"          ($saved.ApiKey -and $saved.ApiKey.Length -gt 20)
-Check "enroll stored the machine id"             ($null -ne $saved.MachineId)
-Check "bound token wins over --name"             ($saved.MachineName -eq $deckName)
-Check "enroll pre-seeded the server's game"      ($saved.Games.GameId -contains $game.id)
+Check "enroll --url succeeds"                  ($enrollExit -eq 0)
+Check "enroll stored a machine API key"        ($saved.ApiKey -and $saved.ApiKey.Length -gt 20)
+Check "enroll stored the machine id"           ($null -ne $saved.MachineId)
+Check "the bound code wins over --name"        ($saved.MachineName -eq $deckName)
+Check "enroll pre-seeded the server's game"    ($saved.Games.GameId -contains $game.id)
 
-if ($onWin) {
+if ($onWindows) {
     $tmplTracked = $saved.Games | Where-Object { $_.GameId -eq $tmplGame.id }
     Check "enroll expanded a templated save path" ($tmplTracked.SaveDirectory -eq $tmplExpected)
     Check "the raw template was not stored"       ($tmplTracked.SaveDirectory -notlike "*<winAppData>*")
     Remove-Item $tmplExpected -Recurse -Force -ErrorAction SilentlyContinue
 }
-Check "plain http records no TLS pin"            ($null -eq $saved.ServerPin)
+Check "plain http records no TLS pin"          ($null -eq $saved.ServerPin)
 
-# ---- 3. The issued key is real: it authenticates an agent route ----
-# `status` hits /api/games/{id}/state with X-Api-Key. A bogus key would 401 and print an error.
-$status = Agent status --config $cfg
-Check "the issued key authenticates"             ($LASTEXITCODE -eq 0 -and $status -notmatch "401")
+# ---- 3b. The typable form: a bare code plus the server address ----
+# This is what a person does when they read the code off the console and type it on the Deck; the
+# CLI assembles the same link out of it (tasks/enrollment-options, option A's motion).
+$bare = Mint @{ ttlMinutes = 15 }
+$cfgBare = Join-Path $scratch "enroll-cfg-bare-$stamp.json"
+$outBare = Agent enroll --code $bare.code --server $server --name "bare-code-$stamp" --config $cfgBare
+$savedBare = Get-Content $cfgBare -Raw | ConvertFrom-Json
+Check "enroll --code + --server succeeds"      ($LASTEXITCODE -eq 0 -and $savedBare.MachineName -eq "bare-code-$stamp")
 
-# ---- 4. Single-use: the same file cannot be spent twice ----
+# ---- 4. Single-use: the same link cannot be spent twice ----
 $cfg2 = Join-Path $scratch "enroll-cfg2-$stamp.json"
-$replay = Agent enroll --file $policyFile --config $cfg2
-Check "replaying the file is refused"            ($LASTEXITCODE -ne 0 -and "$replay" -match "already been used")
+$replay = Agent enroll --url $mint.joinUrl --config $cfg2
+Check "replaying the link is refused"          ($LASTEXITCODE -ne 0 -and "$replay" -match "already been used")
 
-# ---- 5. Revoked token is refused ----
+$pageUsed = Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)"
+Check "the pairing page says it was used"      ($pageUsed.StatusCode -eq 200 -and
+                                                $pageUsed.Content -match "already been used")
+
+# ---- 5. Revoked link is refused ----
 $revokable = Mint @{ machineName = "phase4-revoked-$stamp"; ttlMinutes = 15 }
-$revFile = Join-Path $scratch "enroll-revoked-$stamp.json"
-$revokable.policy | ConvertTo-Json -Depth 6 | Set-Content -Path $revFile -Encoding utf8
 Invoke-RestMethod -Uri "$server/api/admin/enrollments/$($revokable.id)" -Method Delete | Out-Null
 
-$revOut = Agent enroll --file $revFile --config (Join-Path $scratch "enroll-cfg3-$stamp.json")
-Check "revoked token is refused"                 ($LASTEXITCODE -ne 0 -and "$revOut" -match "Unknown enrollment token")
+$revOut = Agent enroll --url $revokable.joinUrl --config (Join-Path $scratch "enroll-cfg3-$stamp.json")
+Check "revoked link is refused"                ($LASTEXITCODE -ne 0 -and "$revOut" -match "not valid")
 
-# ---- 6. A forged/expired file is refused ----
-$expiredFile = Join-Path $scratch "enroll-expired-$stamp.json"
-@{
-    version    = 1
-    serverUrl  = $server
-    token      = "totally-made-up-token"
-    expiresAt  = (Get-Date).ToUniversalTime().AddMinutes(-1).ToString("o")
-    machineName = "phase4-expired-$stamp"
-} | ConvertTo-Json | Set-Content -Path $expiredFile -Encoding utf8
+# ---- 6. A forged code is refused ----
+# Correct shape, never minted. Z is in the Crockford alphabet, so this passes local normalization
+# and must be refused by the SERVER - proving the check is not just the local clock or format.
+$forgedCode = "ZZZZ1ZZZ"
+$forgedOut = Agent enroll --url "$server/join/$forgedCode" --config (Join-Path $scratch "enroll-cfg4-$stamp.json")
+Check "forged code is refused by the server"   ($LASTEXITCODE -ne 0 -and "$forgedOut" -match "not valid")
 
-$expOut = Agent enroll --file $expiredFile --config (Join-Path $scratch "enroll-cfg4-$stamp.json")
-Check "expired file is refused"                  ($LASTEXITCODE -ne 0 -and "$expOut" -match "expired")
-
-# An unexpired file with a garbage token must be refused by the SERVER, not just the local clock.
-$forgedFile = Join-Path $scratch "enroll-forged-$stamp.json"
-@{
-    version    = 1
-    serverUrl  = $server
-    token      = "totally-made-up-token"
-    expiresAt  = (Get-Date).ToUniversalTime().AddMinutes(15).ToString("o")
-    machineName = "phase4-forged-$stamp"
-} | ConvertTo-Json | Set-Content -Path $forgedFile -Encoding utf8
-
-$forgedOut = Agent enroll --file $forgedFile --config (Join-Path $scratch "enroll-cfg5-$stamp.json")
-Check "forged token is refused by the server"    ($LASTEXITCODE -ne 0 -and "$forgedOut" -match "Unknown enrollment token")
-
-# ---- 7. The console can see the spent token, and who spent it ----
+# ---- 7. The console can see the spent code, and who spent it ----
 $list = Invoke-RestMethod -Uri "$server/api/admin/enrollments"
 $mine = $list | Where-Object { $_.id -eq $mint.id }
-Check "console shows the token as redeemed"      ($null -ne $mine.redeemedAt -and $mine.redeemedByMachineName -eq $deckName)
+Check "console shows the code as redeemed"     ($null -ne $mine.redeemedAt -and $mine.redeemedByMachineName -eq $deckName)
+
+# ---- 8. The short code is only safe because guessing is throttled ----
+# Its own server with a deliberately tiny limit, so this never locks the suite's main server (or a
+# later suite) out for the real 15-minute window. This is THE security property of an 8-character
+# code; without it the whole option would be guessable at wire speed.
+$throttleState = Join-Path $scratch "throttle-$stamp"
+New-Item -ItemType Directory -Force $throttleState | Out-Null
+$throttle = "http://localhost:5196"
+$serverDll = Join-Path $root "src/Server/bin/Debug/net10.0/SaveLocker.Server.dll"
+if (Test-Path $serverDll) {
+    $env:ASPNETCORE_URLS = $throttle
+    $env:Storage__DbPath = Join-Path $throttleState "savelocker.db"
+    $env:Storage__ArchiveRoot = Join-Path $throttleState "archives"
+    $env:Backup__Enabled = "false"
+    $env:Security__JoinMaxFailures = "3"
+    $env:Security__JoinFailureWindowSeconds = "120"
+    $env:Security__JoinLockoutSeconds = "60"
+
+    $proc = if ($onWindows) {
+        Start-Process -FilePath $dotnet -ArgumentList $serverDll -PassThru -WindowStyle Hidden
+    } else {
+        Start-Process -FilePath $dotnet -ArgumentList $serverDll -PassThru
+    }
+    try {
+        $up = $false
+        foreach ($i in 1..30) {
+            Start-Sleep -Milliseconds 700
+            try { Invoke-RestMethod -Uri "$throttle/api/admin/status" -TimeoutSec 3 | Out-Null; $up = $true; break } catch { }
+        }
+        if ($up) {
+            $unknown = Invoke-WebRequest -UseBasicParsing -Uri "$throttle/join/ZZZZ1ZZZ"
+            Check "an unknown code renders the invalid page" ($unknown.StatusCode -eq 200 -and
+                                                             $unknown.Content -match "not valid")
+
+            $statuses = @()
+            $retryAfter = $null
+            foreach ($i in 1..8) {
+                try {
+                    Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$throttle/api/enroll" `
+                        -ContentType "application/json" -Body '{"token":"ZZZZ1ZZZ"}' | Out-Null
+                    $statuses += 200
+                } catch {
+                    $statuses += [int]$_.Exception.Response.StatusCode
+                    if ($null -eq $retryAfter) { $retryAfter = $_.Exception.Response.Headers["Retry-After"] }
+                }
+            }
+            Check "hammering unknown codes is throttled (429)" ($statuses -contains 429)
+            Check "the 429 says how long to wait"              ($null -ne $retryAfter -and $retryAfter -match "^\d+$")
+        } else {
+            Check "throttle server came up" $false
+        }
+    } finally {
+        if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+        Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, `
+            Env:Backup__Enabled, Env:Security__JoinMaxFailures, Env:Security__JoinFailureWindowSeconds, `
+            Env:Security__JoinLockoutSeconds -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Host "SKIP: throttle checks - server not built at $serverDll"
+}
 
 Write-Host ""
 Write-Host "Enrollment: $pass passed, $fail failed."

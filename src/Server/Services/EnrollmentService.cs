@@ -5,21 +5,21 @@ using SaveLocker.Shared;
 namespace SaveLocker.Server.Services;
 
 /// <summary>
-/// Enrollment: the console mints a single-use, short-lived token wrapped in a policy file, and a
-/// new agent trades that token for its real machine API key (Decisions.md §4). A leaked policy
-/// file therefore expires on its own and is revocable — a long-lived API key sitting in
-/// <c>~/Downloads</c> is neither.
+/// Enrollment: the console mints a single-use, short-lived <b>join code</b> (tasks/enrollment-options,
+/// option B), the link <c>/join/{code}</c> opens a pairing page on the new machine, and the agent
+/// trades the code for its real machine API key (Decisions.md §4). A leaked link therefore expires on
+/// its own and is revocable — a long-lived API key sitting in a browser history is neither.
 /// </summary>
 public sealed class EnrollmentService
 {
-    /// <summary>Long enough to walk to the other machine, short enough that a stray file is dead on arrival.</summary>
+    /// <summary>Long enough to walk to the other machine, short enough that a stray link is dead on arrival.</summary>
     public const int DefaultTtlMinutes = 15;
     private const int MaxTtlMinutes = 24 * 60;
 
     /// <summary>
-    /// How long a token lingers in the console's enrollment list after its window closes, before it
+    /// How long a code lingers in the console's enrollment list after its window closes, before it
     /// is pruned. The audit log keeps the permanent record (create / redeem / revoke / expire); this
-    /// only controls how long dead files clutter the list.
+    /// only controls how long dead links clutter the list.
     /// </summary>
     public static readonly TimeSpan ListRetention = TimeSpan.FromHours(24);
 
@@ -37,63 +37,89 @@ public sealed class EnrollmentService
     }
 
     /// <summary>
-    /// Mint a token and build the policy file around it. The raw token is returned here and
-    /// nowhere else — only its hash is stored.
+    /// Mint a join code. The raw code is returned here and nowhere else — only its hash is stored —
+    /// so it is shown once on the console and the pairing page, and never again.
     /// </summary>
     public async Task<CreateEnrollmentResponse> CreateAsync(CreateEnrollmentRequest req, string requestServerUrl)
     {
         var ttl = Math.Clamp(req.TtlMinutes ?? DefaultTtlMinutes, 1, MaxTtlMinutes);
         var now = DateTime.UtcNow;
-        var rawToken = Tokens.NewApiKey();
+        var rawCode = JoinCodes.New();
 
         var token = new EnrollmentToken
         {
             Id = Guid.NewGuid(),
-            TokenHash = Tokens.Hash(rawToken),
+            TokenHash = Tokens.Hash(rawCode),
             MachineName = string.IsNullOrWhiteSpace(req.MachineName) ? null : req.MachineName.Trim(),
             CreatedAt = now,
             ExpiresAt = now.AddMinutes(ttl)
         };
         _db.EnrollmentTokens.Add(token);
 
+        var serverUrl = (string.IsNullOrWhiteSpace(req.ServerUrl) ? requestServerUrl : req.ServerUrl).TrimEnd('/');
+        _db.AuditLogs.Add(NewAudit("enrollment.create", MintDetail(token)));
+        await _db.SaveChangesAsync();
+
+        return new CreateEnrollmentResponse(token.Id, rawCode, $"{serverUrl}/join/{rawCode}", token.ExpiresAt);
+    }
+
+    /// <summary>
+    /// What an unknown code is told, everywhere. The route layer compares against it to decide
+    /// whether a failed redeem counts as a guess (unknown) or as a code the caller already had
+    /// (used/expired) — see <see cref="JoinThrottle"/>.
+    /// </summary>
+    public const string UnknownCodeMessage = "Unknown enrollment code. Create a new join link from the console.";
+
+    /// <summary>The state a join code is in right now, for the pairing page and the policy route.</summary>
+    public enum JoinCodeState { Valid, Used, Expired, Unknown }
+
+    /// <summary>Find a join code by its (normalized) raw value and say what state it is in.</summary>
+    public async Task<(JoinCodeState State, EnrollmentToken? Token)> LookupAsync(string? code)
+    {
+        var normalized = JoinCodes.NormalizeJoinCode(code);
+        if (normalized is null) return (JoinCodeState.Unknown, null);
+
+        var hash = Tokens.Hash(normalized);
+        var token = await _db.EnrollmentTokens.FirstOrDefaultAsync(t => t.TokenHash == hash);
+        if (token is null) return (JoinCodeState.Unknown, null);
+        if (token.RedeemedAt is not null) return (JoinCodeState.Used, token);
+        if (token.ExpiresAt <= DateTime.UtcNow) return (JoinCodeState.Expired, token);
+        return (JoinCodeState.Valid, token);
+    }
+
+    /// <summary>
+    /// Build the policy an agent fetches from <c>/join/{code}/policy</c>. Built at delivery rather
+    /// than at mint, so the games list and the default excludes are whatever the server holds at the
+    /// moment the link is opened — the same answer the agent's first reconcile would reach.
+    /// </summary>
+    public async Task<EnrollmentPolicy> BuildPolicyAsync(EnrollmentToken token, string rawCode, string serverUrl)
+    {
         var games = await _db.Games
             .Where(g => g.Enabled)
             .OrderBy(g => g.Name)
             .ToListAsync();
 
-        // A null GameIds means "every enabled game" — which is also what the agent's reconcile
-        // would adopt on its first poll. The list is a head start, not a different answer.
-        if (req.GameIds is { Length: > 0 })
-        {
-            var wanted = req.GameIds.ToHashSet();
-            games = games.Where(g => wanted.Contains(g.Id)).ToList();
-        }
-
         var (defaultExcludes, _) = await _settings.GetDefaultExcludesAsync();
-        var policy = new EnrollmentPolicy(
+
+        return new EnrollmentPolicy(
             Version: EnrollmentPolicy.CurrentVersion,
-            ServerUrl: (string.IsNullOrWhiteSpace(req.ServerUrl) ? requestServerUrl : req.ServerUrl).TrimEnd('/'),
-            Token: rawToken,
+            ServerUrl: serverUrl.TrimEnd('/'),
+            Token: rawCode,
             ExpiresAt: token.ExpiresAt,
             MachineName: token.MachineName,
-            SettleQuietSeconds: req.SettleQuietSeconds,
-            SettleMaxWaitSeconds: req.SettleMaxWaitSeconds,
+            SettleQuietSeconds: null,
+            SettleMaxWaitSeconds: null,
             Games: games.Select(g => new EnrollmentGame(
                 g.Id,
                 g.Name,
                 g.ManifestKey,
                 g.SuggestedSaveDir,
                 GlobConfig.Effective(defaultExcludes, g.ExcludeGlobs))).ToArray());
-
-        _db.AuditLogs.Add(NewAudit("enrollment.create", MintDetail(token)));
-        await _db.SaveChangesAsync();
-
-        return new CreateEnrollmentResponse(token.Id, policy);
     }
 
     /// <summary>
-    /// Every still-relevant token, newest first, with the machine that spent it (for the console's
-    /// list). Tokens whose window closed more than <see cref="ListRetention"/> ago are dropped —
+    /// Every still-relevant code, newest first, with the machine that spent it (for the console's
+    /// list). Codes whose window closed more than <see cref="ListRetention"/> ago are dropped —
     /// their history lives in the audit log, not this list. The sweeper deletes them for real
     /// shortly after; filtering here makes the 24-hour cutoff exact regardless of sweep timing.
     /// </summary>
@@ -117,7 +143,7 @@ public sealed class EnrollmentService
             t.RedeemedByMachineId is { } id ? machineNames.GetValueOrDefault(id) : null)).ToList();
     }
 
-    /// <summary>Revoke a token. Deleting a redeemed one only drops the record; it does not
+    /// <summary>Revoke a code. Deleting a redeemed one only drops the record; it does not
     /// un-issue the API key (delete the machine for that).</summary>
     public async Task<bool> RevokeAsync(Guid id)
     {
@@ -130,9 +156,9 @@ public sealed class EnrollmentService
     }
 
     /// <summary>
-    /// Delete tokens whose window closed more than <see cref="ListRetention"/> ago, so the console's
-    /// enrollment list does not accumulate dead files forever. The audit log is the durable record:
-    /// a token that was never redeemed is logged as <c>enrollment.expire</c> on the way out (a
+    /// Delete codes whose window closed more than <see cref="ListRetention"/> ago, so the console's
+    /// enrollment list does not accumulate dead links forever. The audit log is the durable record:
+    /// a code that was never redeemed is logged as <c>enrollment.expire</c> on the way out (a
     /// redeemed one already logged <c>enrollment.redeem</c>, a revoked one is deleted at revoke time).
     /// Called on the hourly maintenance sweep. Returns how many rows were removed.
     /// </summary>
@@ -155,40 +181,43 @@ public sealed class EnrollmentService
     }
 
     /// <summary>
-    /// Spend a token for a machine API key. Returns null with a reason when the token is unknown,
+    /// Spend a join code for a machine API key. Returns null with a reason when the code is unknown,
     /// expired or already spent — the caller must not distinguish those to the client beyond the
-    /// message, since all three mean the same thing: this file is no good.
+    /// message, since all three mean the same thing: this link is no good.
     /// </summary>
     public async Task<(RedeemEnrollmentResponse? Result, string? Error)> RedeemAsync(RedeemEnrollmentRequest req)
     {
-        if (string.IsNullOrWhiteSpace(req.Token))
-            return (null, "Enrollment token is required.");
+        // Normalized first, so the same code works typed with a dash, in lowercase, or with the
+        // confusable letters Crockford leaves out.
+        var normalized = JoinCodes.NormalizeJoinCode(req.Token);
+        if (normalized is null)
+            return (null, UnknownCodeMessage);
 
-        var hash = Tokens.Hash(req.Token.Trim());
+        var hash = Tokens.Hash(normalized);
         var token = await _db.EnrollmentTokens.FirstOrDefaultAsync(t => t.TokenHash == hash);
 
         if (token is null)
-            return (null, "Unknown enrollment token. Mint a new enrollment file from the console.");
+            return (null, UnknownCodeMessage);
         if (token.RedeemedAt is not null)
-            return (null, "This enrollment file has already been used. Mint a new one from the console.");
+            return (null, "This join link has already been used. Create a new one from the console.");
         if (token.ExpiresAt <= DateTime.UtcNow)
-            return (null, "This enrollment file has expired. Mint a new one from the console.");
+            return (null, "This join link has expired. Create a new one from the console.");
 
-        // The name on the token is binding when set: a token minted for the Deck cannot be spent to
-        // claim the desktop's identity. Only an unbound token lets the agent name itself.
+        // The name on the token is binding when set: a code minted for the Deck cannot be spent to
+        // claim the desktop's identity. Only an unbound code lets the agent name itself.
         var name = token.MachineName
                    ?? (string.IsNullOrWhiteSpace(req.MachineName) ? null : req.MachineName.Trim());
         if (string.IsNullOrWhiteSpace(name))
-            return (null, "No machine name: this token was not minted for a machine, so the agent must supply one.");
+            return (null, "No machine name: this link was not minted for a machine, so the agent must supply one.");
 
-        // Spending the token and issuing the key are ONE transaction. The burn used to stand on its
-        // own, so a failure in registration or in the writes below left the file spent and the agent
+        // Spending the code and issuing the key are ONE transaction. The burn used to stand on its
+        // own, so a failure in registration or in the writes below left the link spent and the agent
         // keyless — a single-use credential consumed for nothing, and the admin's only route back
         // was to mint another. Anything that throws before the commit rolls the burn back and the
-        // file stays usable.
+        // link stays usable.
         await using var tx = await _db.Database.BeginTransactionAsync();
 
-        // Conditional on the token still being unspent, so two agents racing the same file cannot
+        // Conditional on the token still being unspent, so two agents racing the same link cannot
         // both come away with a key: the second UPDATE re-evaluates the predicate against the row
         // the first one committed and matches nothing.
         var burnt = await _db.EnrollmentTokens
@@ -197,11 +226,11 @@ public sealed class EnrollmentService
         if (burnt == 0)
         {
             await tx.RollbackAsync();
-            return (null, "This enrollment file has already been used. Mint a new one from the console.");
+            return (null, "This join link has already been used. Create a new one from the console.");
         }
 
         // Registering an existing name ROTATES its key. That is the intended re-enrollment path (a
-        // wiped Deck gets a fresh file and comes back as itself) and it is authorised by the token,
+        // wiped Deck gets a fresh link and comes back as itself) and it is authorised by the code,
         // exactly as the admin password authorises re-registration on /api/machines/register.
         var reg = await _sync.RegisterMachineAsync(name);
 
@@ -227,8 +256,9 @@ public sealed class EnrollmentService
 
     private static string Who(EnrollmentToken t) => t.MachineName ?? "(any machine)";
 
-    // Record the expiry on the audit trail so troubleshooting can confirm when a file was valid,
-    // even after the token row itself is pruned from the list.
+    // Record the expiry on the audit trail so troubleshooting can confirm when a link was valid,
+    // even after the token row itself is pruned from the list. The raw code is not stored, so the
+    // audit detail says who it was for, never the code itself.
     private static string MintDetail(EnrollmentToken t) =>
         $"{Who(t)} (expires {t.ExpiresAt:yyyy-MM-dd HH:mm} UTC)";
 

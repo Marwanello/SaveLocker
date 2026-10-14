@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
+import { renderSVG } from 'uqr';
 import { api, signIn, clearSession, errorText } from '../api';
 import type { GameSummary, Machine, Settings, Enrollment, EffectiveServerUrl, AgentHealth, AdminSession, ServerBuildInfo, BackupStatus } from '../types';
 import { fleetSkew, isNewerThanConsole, isTestBuild, normalizeVersion } from '../versionSkew';
@@ -36,6 +37,26 @@ interface Props {
 
 const field = `px-3 py-2 bg-panel text-fg border border-line rounded-lg text-[12.5px] min-w-0
   focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1`;
+
+/**
+ * Copy to the clipboard on every deployment, not only the secure ones: `navigator.clipboard` is
+ * undefined on a plain-http LAN console (not a secure context), which is exactly the deployment
+ * this console usually is — so the old optional-chained call silently copied nothing.
+ */
+function copyText(text: string) {
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch { /* nothing left to try */ }
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(text).catch(fallback);
+  else fallback();
+}
 
 function Toggle({ label, hint, checked, onChange, disabled }: {
   label: string; hint: ReactNode; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean;
@@ -169,27 +190,30 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
     else toast(`Released ${plural(gameIds.length, 'lease')} held by ${name}.`);
   }
 
-  // ── Enrollment ──
+  // ── Enrollment (join links — tasks/enrollment-options, option B) ──
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [enrollName, setEnrollName] = useState('');
   const [enrollTtl, setEnrollTtl] = useState('15');
   const [enrollServerUrl, setEnrollServerUrl] = useState('');
   const [minting, setMinting] = useState(false);
+  // The code and link come back exactly once (the server keeps only the hash), so the card holds
+  // them until the admin hides the panel or navigates away.
+  const [joinLink, setJoinLink] = useState<{ code: string; url: string; expiresAt: string } | null>(null);
 
   const loadEnrollments = useCallback(async () => {
     try { setEnrollments(await api.enrollments()); } catch { /* non-fatal */ }
   }, []);
   useEffect(() => { void loadEnrollments(); }, [loadEnrollments]);
 
-  // The URL the policy file will actually carry. Worth showing unprompted: the failure it prevents is
-  // silent — a file that works for the admin at the server and sends the Deck looking for itself.
+  // The URL the join link will carry. Worth showing unprompted: the failure it prevents is silent —
+  // a link that works for the admin at the server and sends the Deck looking for itself.
   const [effectiveUrl, setEffectiveUrl] = useState<EffectiveServerUrl | null>(null);
   useEffect(() => { api.effectiveServerUrl().then(setEffectiveUrl).catch(() => setEffectiveUrl(null)); }, []);
   // Only an INFERRED loopback address blocks minting. A configured or typed one is a deliberate
   // same-box setup (agent and server on one machine).
   const blockedByLoopback = effectiveUrl?.isLoopback === true && !effectiveUrl.fromConfig;
 
-  async function handleMintEnrollment() {
+  async function handleCreateJoinLink() {
     const ttl = parseInt(enrollTtl, 10);
     if (!Number.isFinite(ttl) || ttl < 1) { toastError('Enter an expiry in minutes (at least 1).'); return; }
     setMinting(true);
@@ -198,25 +222,17 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
         machineName: enrollName.trim() || null,
         ttlMinutes: ttl,
         serverUrl: enrollServerUrl.trim() || null,
-        gameIds: null, // every enabled game — the agent's reconcile would adopt them all anyway
       });
-      // The raw token is in this response and nowhere else: the server stored only its hash.
-      const blob = new Blob([JSON.stringify(res.policy, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `savelocker-enroll-${res.policy.machineName || 'machine'}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      setJoinLink({ code: res.code, url: res.joinUrl, expiresAt: res.expiresAt });
       setEnrollName('');
-      toast('Downloaded the enrollment file. It cannot be shown again.', 4000);
+      toast('Join link created — open it on the new machine.', 4000);
       await loadEnrollments();
-    } catch (e) { toastError('Could not create the enrollment file: ' + errorText(e)); }
+    } catch (e) { toastError('Could not create the join link: ' + errorText(e)); }
     finally { setMinting(false); }
   }
 
   async function handleRevokeEnrollment(e: Enrollment) {
-    try { await api.revokeEnrollment(e.id); await loadEnrollments(); toast(e.redeemedAt ? 'Removed it from the list.' : 'Revoked the enrollment file.'); }
+    try { await api.revokeEnrollment(e.id); await loadEnrollments(); toast(e.redeemedAt ? 'Removed it from the list.' : 'Revoked the join link — an agent still holding it cannot use it.'); }
     catch (err) { toastError('Could not revoke it: ' + errorText(err)); }
   }
 
@@ -480,22 +496,22 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
         <Card title="Enroll a machine" flush>
           <div className="px-4 py-[15px]">
             <p className="text-[13px] text-dim mb-3">
-              Creates a single-use file the agent reads on first run: the server URL and a token that expires —
-              never an API key. Copy it to the new machine and run <code className="font-mono text-[11.5px] text-fg">savelocker enroll --file &lt;file&gt;</code>.
-              It downloads once and cannot be shown again.
+              Creates a one-time join link. Open it on the new machine — the page installs the agent and enrolls it
+              in one pass, or run <code className="font-mono text-[11.5px] text-fg">savelocker enroll --url &lt;link&gt;</code>.
+              The code inside is shown once and expires on its own.
             </p>
             {effectiveUrl && (
               <p className={`text-xs mb-3 ${effectiveUrl.isLoopback ? 'text-watch-ink' : 'text-dim'}`}>
                 {blockedByLoopback
                   ? <><strong>This console was reached at {effectiveUrl.url}</strong>, which no other machine can use. Reopen it at the
                       server's LAN address, set <code className="font-mono">Server:PublicBaseUrl</code>, or type the address below.</>
-                  : <>The file will tell the agent to sync with <code className="font-mono text-fg">{effectiveUrl.url}</code>
+                  : <>The link will tell the agent to sync with <code className="font-mono text-fg">{effectiveUrl.url}</code>
                       {effectiveUrl.fromConfig ? ' (from Server:PublicBaseUrl).' : '.'} Override it below if the machine reaches the server differently.</>}
               </p>
             )}
             <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_110px]">
               <label className="flex flex-col gap-1">
-                <span className="text-[10px] tracking-[0.1em] uppercase text-faint">For (optional, binds the file)</span>
+                <span className="text-[10px] tracking-[0.1em] uppercase text-faint">For (optional, binds the link)</span>
                 <input value={enrollName} onChange={e => setEnrollName(e.target.value)} placeholder="steamdeck" className={field} />
               </label>
               <label className="flex flex-col gap-1">
@@ -510,16 +526,51 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             {(() => {
               const blocked = minting || (blockedByLoopback && !enrollServerUrl.trim());
               return (
-                <Button variant="primary" className="mt-3.5" onClick={() => void handleMintEnrollment()} disabled={blocked}
-                  title={blockedByLoopback && !enrollServerUrl.trim() ? "Enter the address agents should use, or reopen the console at this server's LAN address." : undefined}>
-                  {minting ? 'Creating…' : 'Create enrollment file'}
-                </Button>
+                <div className="flex items-center gap-2 flex-wrap mt-3.5">
+                  <Button variant="primary" onClick={() => void handleCreateJoinLink()} disabled={blocked}
+                    title={blockedByLoopback && !enrollServerUrl.trim() ? "Enter the address agents should use, or reopen the console at this server's LAN address." : undefined}>
+                    {minting ? 'Creating…' : 'Create join link'}
+                  </Button>
+                  {joinLink && <Button size="sm" variant="quiet" onClick={() => setJoinLink(null)}>Hide the link</Button>}
+                </div>
               );
             })()}
+
+            {joinLink && (
+              <div className="mt-4 rounded-xl border border-accent-line bg-accent-soft p-4">
+                <div className="grid gap-4 sm:grid-cols-[132px_minmax(0,1fr)] items-start">
+                  <div>
+                    {/* A QR must be dark-on-light to scan, whatever theme the console is in — hence
+                        the forced white tile and black modules rather than theme tokens. */}
+                    <div className="rounded-lg bg-white p-1.5 w-[132px] h-[132px]" style={{ color: 'black' }}
+                      dangerouslySetInnerHTML={{ __html: renderSVG(joinLink.url, { pixelSize: 4, border: 2, ecc: 'M', blackColor: 'currentColor', whiteColor: 'transparent' }) }} />
+                    <div className="text-[10.5px] text-dim text-center mt-1.5">scan to open on a phone</div>
+                  </div>
+                  <div className="min-w-0 flex flex-col gap-2.5">
+                    <div className="font-mono text-[25px] font-semibold tracking-[0.16em] text-center text-fg bg-tile border border-line rounded-[10px] px-3 py-2.5 select-all">
+                      {joinLink.code.slice(0, 4)}-{joinLink.code.slice(4)}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span title={`Valid until ${when(joinLink.expiresAt)} UTC`}>
+                        <Chip tone="warn">Valid · {left(joinLink.expiresAt)} left</Chip>
+                      </span>
+                      <Button size="sm" onClick={() => { copyText(joinLink.url); toast('Copied the join link.'); }}>Copy link</Button>
+                      <Button size="sm" variant="quiet" onClick={() => { copyText(joinLink.code); toast('Copied the code.'); }}>Copy code</Button>
+                    </div>
+                    <p className="text-xs text-dim">
+                      Open the link on the new machine; the page installs the agent and enrolls it in one pass —
+                      on Windows the installer asks for a paste of the same link. On a Steam Deck the pairing
+                      page gives a one-liner that does both over SSH.
+                    </p>
+                    <p className="text-[11px] text-faint">Shown once — create another any time.</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div className="border-t border-line">
-            <DataTable caption="Enrollment files" columns={enrollmentColumns} rows={enrollments} rowKey={e => e.id}
-              empty={<div className="px-4 py-5 text-[12.5px] text-dim">No enrollment files created yet.</div>} />
+            <DataTable caption="Join links" columns={enrollmentColumns} rows={enrollments} rowKey={e => e.id}
+              empty={<div className="px-4 py-5 text-[12.5px] text-dim">No join links created yet.</div>} />
           </div>
         </Card>
 

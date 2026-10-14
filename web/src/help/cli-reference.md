@@ -41,7 +41,7 @@ If you must run the `.exe`, redirect its output to a file:
 | Command | Options | What it does |
 |---------|---------|-------------|
 | *(none)* | | Launch the system-tray app. |
-| `enroll` | `--file <policy.json>`<br>`[--name <machineName>]` | **The easy way to set up a machine.** Create the file in the console (**Configuration → Enroll a machine**), copy it over, and run this. It sets the server URL, trades the file's single-use token for this machine's API key, pins the server, and picks up the games already defined on the server — no API key ever gets copied by hand. The file expires (15 min by default) and works **once**. If it was created for a specific machine name, that name wins over `--name`. |
+| `enroll` | `--url <join link>`<br>`[--name <machineName>]`<br>or `--code <K7QM-4H2X> --server <url>` | **The easy way to set up a machine.** Create the join link in the console (**Configuration → Enroll a machine**) and open it on the new machine — or run this with the link. It sets the server URL, trades the link's single-use code for this machine's API key, pins the server, and picks up the games already defined on the server — no API key ever gets copied by hand. The code expires (15 min by default) and works **once**. If the link was created for a specific machine name, that name wins over `--name`. The two forms are the same thing: `--url` fetches the link's policy; a bare code plus `--server` assembles the same URL locally. |
 | `register` | `--name <machineName>`<br>`--admin-password <pw>` | Register this machine by hand instead. Prints the API key and saves it to config. Once an admin password is set on the server, registering a **new** name requires `--admin-password` (the server's `Security:RequireAdminPasswordToRegister` default), and re-registering an existing name **rotates** its key and always requires it. With no password set on the server it stays open. |
 | `set-server` | `--url <url>` | Point the agent at a server (e.g. your Cloudflare Tunnel hostname). |
 | `trust` | `[--accept]` | Show the server's pinned TLS key — recorded at `enroll`, and checked on every later connection. If the server's identity ever changes, the agent **warns** but keeps working. That is expected after a certificate renewal: confirm it was you, then `trust --accept` to pin the new key. If it wasn't you, stop — a `pull` writes files into your save folders. Servers reached over plain `http://` have no identity to pin. |
@@ -106,7 +106,7 @@ These commands exist only in the Linux agent, which has no tray or window to do 
 ## Examples
 
 ```sh
-dotnet SaveLocker.Agent.dll enroll --file savelocker-enroll-steamdeck.json
+dotnet SaveLocker.Agent.dll enroll --url http://your-server:5080/join/K7QM-4H2X
 dotnet SaveLocker.Agent.dll trust
 
 dotnet SaveLocker.Agent.dll register --name "ThunderHorse"
@@ -128,7 +128,7 @@ dotnet SaveLocker.Agent.dll log --n 100
 On Linux / Steam Deck the binary prints normally, so drop the `dotnet` wrapper:
 
 ```sh
-savelocker enroll --file ~/Downloads/savelocker-enroll-steamdeck.json
+savelocker enroll --url http://your-server:5080/join/K7QM-4H2X
 savelocker doctor
 savelocker add-game --name "Hollow Knight" --dir ~/.local/share/Steam/steamapps/compatdata/367520/pfx/... --appid 367520
 savelocker daemon                # agent UI at http://localhost:5178 (loopback only)

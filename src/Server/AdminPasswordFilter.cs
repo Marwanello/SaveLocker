@@ -55,6 +55,18 @@ public static class AuthResults
             statusCode: StatusCodes.Status429TooManyRequests);
     }
 
+    /// <summary>The same refusal for the join-code routes (tasks/enrollment-options, option B): a
+    /// short code is a credential, so guessing it is throttled by <see cref="Services.JoinThrottle"/>
+    /// the way password guessing is by <see cref="Services.AuthThrottle"/>, and says so.</summary>
+    public static IResult JoinTooManyAttempts(HttpContext http, TimeSpan? retryAfter)
+    {
+        var seconds = (int)Math.Ceiling(Math.Max(1, retryAfter?.TotalSeconds ?? 60));
+        http.Response.Headers.RetryAfter = seconds.ToString();
+        return Results.Json(
+            new { error = $"Too many invalid join codes. Try again in {FormatWait(seconds)}." },
+            statusCode: StatusCodes.Status429TooManyRequests);
+    }
+
     private static string FormatWait(int seconds) =>
         seconds < 90 ? $"{seconds} seconds" : $"{(seconds + 59) / 60} minutes";
 }

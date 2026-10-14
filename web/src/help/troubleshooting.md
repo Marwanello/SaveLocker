@@ -55,7 +55,7 @@ Click **↻ Refresh** in the nav bar to force an immediate reload. The dashboard
 ## Can't add a machine / API key rejected
 
 - API keys are per-machine and are generated when a machine first registers with the server.
-- If a machine's key is lost, the clean fix is to **re-enroll**: mint a fresh enrollment file in the console and run `enroll --file …` again (redeeming an existing machine name rotates its key and brings it back as itself). Alternatively, delete the agent config (`%PROGRAMDATA%\SaveLocker\config.json`, or `~/.local/share/SaveLocker/config.json` on Linux) and restart the agent to register anew — once an admin password is set on the server, that needs `savelocker register --name … --admin-password …` (Configuration → Admin password), which is also why enrolling with a file is the easier route.
+- If a machine's key is lost, the clean fix is to **re-enroll**: create a fresh join link in the console and run `enroll --url …` on the machine again (redeeming an existing machine name rotates its key and brings it back as itself). Alternatively, delete the agent config (`%PROGRAMDATA%\SaveLocker\config.json`, or `~/.local/share/SaveLocker/config.json` on Linux) and restart the agent to register anew — once an admin password is set on the server, that needs `savelocker register --name … --admin-password …` (Configuration → Admin password), which is also why enrolling with a join link is the easier route.
 - In the dashboard, you can revoke old machines under **Configuration → Machines**.
 
 ## Signing in to the dashboard

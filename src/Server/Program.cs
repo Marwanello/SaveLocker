@@ -72,6 +72,8 @@ builder.Services.AddScoped<HealthService>();
 // Admin sign-in: throttled password checks + revocable console sessions (see AuthThrottle/AdminAuth).
 // Singletons because the throttle's memory and the verified-password cache must outlive a request.
 builder.Services.AddSingleton<AuthThrottle>();
+// Guessing a short join code is throttled like guessing a password (tasks/enrollment-options, B).
+builder.Services.AddSingleton<JoinThrottle>();
 builder.Services.AddSingleton<VerifiedPasswordCache>();
 builder.Services.AddScoped<AdminAuth>();
 
@@ -341,16 +343,126 @@ app.MapGet("/api/admin/status", async (SettingsService settings, AgentInstallerS
     .Produces<AdminStatus>();
 
 // ---- Public: enrollment redeem ----
-// No auth filter, because the token IS the credential: a fresh agent has nothing else. It is
-// single-use and short-lived, so an intercepted policy file is worth far less than the API key
-// it replaces (Decisions.md §4). Every failure — unknown, expired, spent — answers 401.
-app.MapPost("/api/enroll", async (RedeemEnrollmentRequest req, EnrollmentService enrollment) =>
+// No auth filter, because the code IS the credential: a fresh agent has nothing else. It is
+// single-use and short-lived, so an intercepted link is worth far less than the API key it
+// replaces (Decisions.md §4). Every failure — unknown, expired, spent — answers 401.
+// A join code is 8 characters, not 256 bits, so unknown codes are also counted by JoinThrottle:
+// that throttle is the entire reason a short code is safe to use at all.
+app.MapPost("/api/enroll", async (RedeemEnrollmentRequest req, HttpContext http,
+    EnrollmentService enrollment, JoinThrottle throttle) =>
 {
+    var client = AuthThrottle.ClientKey(http);
+    if (throttle.RetryAfter(client) is { } wait) return AuthResults.JoinTooManyAttempts(http, wait);
+
     var (result, error) = await enrollment.RedeemAsync(req);
-    return result is null
-        ? Results.Json(new { error }, statusCode: StatusCodes.Status401Unauthorized)
-        : Results.Ok(result);
+    if (result is null)
+    {
+        // Only an unknown code is a guess. Used or expired means the caller already had the code —
+        // counting those would lock out the person who is one minute late with their own link.
+        if (error == EnrollmentService.UnknownCodeMessage) throttle.RecordFailure(client);
+        return Results.Json(new { error }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+    throttle.RecordSuccess(client);
+    return Results.Ok(result);
 }).Produces<RedeemEnrollmentResponse>();
+
+// ---- Public: join links (tasks/enrollment-options, option B) ----
+// GET /join/{code} is the pairing page the console's link opens on the new machine; the three
+// children underneath it are what its buttons and one-liner use. All four look a code up, so all
+// four count an unknown code against the client's JoinThrottle bucket.
+static string JoinNormalize(string code) => JoinCodes.NormalizeJoinCode(code) ?? code;
+
+var join = app.MapGroup("/join");
+
+join.MapGet("/{code}", async (string code, HttpContext http, EnrollmentService enrollment,
+    AgentInstallerService installer, IConfiguration cfg, JoinThrottle throttle) =>
+{
+    var client = AuthThrottle.ClientKey(http);
+    if (throttle.RetryAfter(client) is { } wait) return AuthResults.JoinTooManyAttempts(http, wait);
+
+    var (state, token) = await enrollment.LookupAsync(code);
+    if (state == EnrollmentService.JoinCodeState.Unknown) throttle.RecordFailure(client);
+
+    var serverUrl = PublicUrl.For(http, cfg);
+    var html = JoinPages.PairingPage(JoinNormalize(code), state, serverUrl, token?.ExpiresAt,
+        installer.GetInstallerPath(AgentPlatform.Windows) is not null);
+    return Results.Content(html, "text/html; charset=utf-8");
+});
+
+// The policy JSON the agent's `enroll --url` fetches — what the enrollment file used to carry,
+// built fresh at this moment so the games list and excludes describe the server as it is now.
+join.MapGet("/{code}/policy", async (string code, HttpContext http, EnrollmentService enrollment,
+    IConfiguration cfg, JoinThrottle throttle) =>
+{
+    var client = AuthThrottle.ClientKey(http);
+    if (throttle.RetryAfter(client) is { } wait) return AuthResults.JoinTooManyAttempts(http, wait);
+
+    var normalized = JoinCodes.NormalizeJoinCode(code);
+    var (state, token) = await enrollment.LookupAsync(normalized);
+    if (state == EnrollmentService.JoinCodeState.Unknown)
+    {
+        throttle.RecordFailure(client);
+        return Results.Json(
+            new { error = "This join link is not valid. Create a new one from the console." },
+            statusCode: StatusCodes.Status404NotFound);
+    }
+    if (state == EnrollmentService.JoinCodeState.Used)
+        return Results.Json(
+            new { error = "This join link has already been used. Create a new one from the console." },
+            statusCode: StatusCodes.Status404NotFound);
+    if (state == EnrollmentService.JoinCodeState.Expired)
+        return Results.Json(
+            new { error = "This join link has expired. Create a new one from the console." },
+            statusCode: StatusCodes.Status404NotFound);
+
+    var policy = await enrollment.BuildPolicyAsync(token!, normalized!, PublicUrl.For(http, cfg));
+    return Results.Ok(policy);
+}).Produces<EnrollmentPolicy>();
+
+// The pairing page's Linux one-liner: download the tarball, install, enroll — the same commands a
+// person would type, in one script. Text, not JSON: a shell is the audience.
+join.MapGet("/{code}/install.sh", async (string code, HttpContext http, EnrollmentService enrollment,
+    IConfiguration cfg, JoinThrottle throttle) =>
+{
+    var client = AuthThrottle.ClientKey(http);
+    if (throttle.RetryAfter(client) is { } wait) return AuthResults.JoinTooManyAttempts(http, wait);
+
+    var normalized = JoinCodes.NormalizeJoinCode(code);
+    var (state, _) = await enrollment.LookupAsync(normalized);
+    if (state != EnrollmentService.JoinCodeState.Valid)
+    {
+        if (state == EnrollmentService.JoinCodeState.Unknown) throttle.RecordFailure(client);
+        var why = state switch
+        {
+            EnrollmentService.JoinCodeState.Used => "this join link has already been used",
+            EnrollmentService.JoinCodeState.Expired => "this join link has expired",
+            _ => "this join link is not valid"
+        };
+        return Results.Text($"SaveLocker: {why}. Create a new one in the console: Configuration -> Enroll a machine.\n",
+            "text/plain; charset=utf-8", statusCode: StatusCodes.Status404NotFound);
+    }
+    return Results.Text(JoinPages.InstallScript(PublicUrl.For(http, cfg), normalized!),
+        JoinPages.ShellContentType + "; charset=utf-8");
+});
+
+// The pairing page's Windows button: the hosted installer, by the short link. A valid code only —
+// an invalid one lands on the pairing page, which explains itself.
+join.MapGet("/{code}/setup.exe", async (string code, HttpContext http, EnrollmentService enrollment,
+    AgentInstallerService installer, JoinThrottle throttle) =>
+{
+    var client = AuthThrottle.ClientKey(http);
+    if (throttle.RetryAfter(client) is { } wait) return AuthResults.JoinTooManyAttempts(http, wait);
+
+    var (state, _) = await enrollment.LookupAsync(code);
+    if (state != EnrollmentService.JoinCodeState.Valid)
+    {
+        if (state == EnrollmentService.JoinCodeState.Unknown) throttle.RecordFailure(client);
+        return Results.Redirect($"/join/{Uri.EscapeDataString(code)}");
+    }
+    if (installer.GetInstallerPath(AgentPlatform.Windows) is null)
+        return Results.Text("No Windows installer is hosted on this server yet.", statusCode: StatusCodes.Status404NotFound);
+    return Results.Redirect("/api/agent/installer/download?platform=win-x64");
+});
 
 // ---- Agent API (requires X-Api-Key: identifies the calling machine) ----
 var agent = app.MapGroup("/api").AddEndpointFilter<ApiKeyFilter>();
