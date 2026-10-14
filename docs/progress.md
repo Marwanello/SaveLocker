@@ -4012,3 +4012,63 @@ The testenv pass of Group E, and the real-game checks (Group H: Cemu, Azahar, Xe
 gamertag decrypted. Two consequences recorded in the plan and raised before building: one game's pull restores the profile as
 that game last pushed it (other games' newer achievements/settings lost on that machine, and `SaveFolderClaims` needs an
 exception); DLC in every version makes Forza Horizon ~1 GB per version (~7 GB kept, 1 GB per pull).
+
+---
+
+## 2026-10-14 — Duplicate-shortcut warnings shipped (PR #75); Group 9 checklist closed; setup-guide mockups
+
+**Branch:** `duplicate-shortcut-warnings` (worktree `backlog-plans-testenv-mockup`, rebased onto `main` `3150f05`). **PR:** [#75](https://github.com/Marwanello/SaveLocker/pull/75) — open, MERGEABLE.
+
+### Request sequence
+
+1. Backlog session: plan the next items and mock them up before building (interactive setup guide; duplicate-shortcut
+   warnings), and run the pending Group 9 checklist through `testenv`.
+2. Build the approved duplicate-shortcut warning — chip + popover naming the AppID the scan follows, plus a Game Mode caption.
+3. Open a PR on the fork; explain the `testenv sync` "Permission denied" warnings; drop the `decky-qam-scrolling` task
+   (not needed); write this entry + `session_summary.md`.
+
+### What happened
+
+- **Group 9 checklist closed.** Run end-to-end through `testenv` (maintainer did 4.6/1.8); findings F1–F8 in
+  `tasks/_done/checkpoint-ui-group-9-check/run-2026-10-14.md` — each a maintainer decision, none a blocker. Task moved to
+  `_done/`, Backlog line removed, rig cleaned.
+- **Duplicate-shortcut warnings (the PR).** One detector (`SteamShortcuts.DuplicateNameGroups`/`DuplicatesFor`) backs the
+  doctor note and both scanners; `ScanCandidate.DuplicateShortcuts` rides the agent wire (`CandidateDto`, additive;
+  `api-types.ts` regenerated); agent-ui gained `DuplicateChip` + a row note and Game Mode a warning tile + ASCII caption.
+  `Tracked` marks the AppID the scan actually follows; none is marked when it follows none. Same-day review round
+  (`14c856c`, `edd2190`): `usePopover` shared with `ReleaseChip` (hover/pin/outside/Esc, 150 ms leave grace; the popover
+  swallows clicks so an Add-games row `<label>` isn't ticked), `.sl-card:has(.sl-release__pop)` stops the card clipping the
+  popover, `DuplicateShortcutTests` (+7, tracked marker mutation-checked).
+- **Interactive setup guide mocked** (not built): `mockup.html` (option 1, full-page checklist) + `mockup-options.html`
+  (wizard / handoff / guided tour on one shared state machine, built from real console + agent-ui markup),
+  Playwright-verified 21/21. No option picked yet.
+- **`decky-qam-scrolling` dropped** (`c9a767b`): the plan's premise check had already shown `doctor` left the QAM; the
+  remaining steppy block is the sync result, in the plugin repo. Not needed (maintainer's call). Folder + Backlog entry removed.
+
+### `testenv sync` note (not a script bug)
+
+The checkout (testenv.sh:347) warned `unable to unlink ... Permission denied` for two files under
+`docs/tasks/_done/checkpoint-ui-group-9-check/` — the folder was root-owned (an earlier session ran git in the WSL clone as
+root; `sync` runs as the normal user — `Invoke-Wsl` passes no `-u root`, testenv.ps1:911). Git warns and continues, leaving
+them as untracked strays. Fixed: `chown -R maro:maro ~/SaveLocker` (also caught a root-owned `.git/index`) + removing the strays.
+
+### Verification
+
+- `dotnet test` **559/559** (+7; the tracked marker mutation-checked); `run-linux-tests` **282/2** as root in `unshare -n`
+  (the 2 = documented WSLg pair; the duplicate-shortcut checks assert exact AppIDs/names/tracked flags — the 71-failure
+  cascade was this box's stray `~/SaveLocker` daemon holding :5187, the netns run being the workaround);
+  `run-appearance-consistency-tests` **50/50**; Agent.Core/Windows Agent/Agent.Linux build clean; `agent-ui` build + lint
+  clean (two pre-existing warnings).
+- Both agent-ui fixes reproduced without their fix in headless Chrome against the real CSS/DOM (card clip; label tick, incl.
+  a real trusted click). **Not verified:** a live Deck/WebView2 pass of the chip.
+- PR body refreshed at session end (QAM line dropped, stale numbers replaced) after the box's flaky router DNS — pushes
+  needed `-c http.curloptResolve=github.com:443:<ip>` at times.
+
+### Files
+
+`src/Agent.Core/{SteamShortcuts,ScanCandidate,AgentApiServer}.cs`, `src/Agent/GameScanner.cs`,
+`src/Agent.Linux/{Doctor,LinuxGameScanner}.cs`, `src/Agent.Linux/Ui/UiApp.cs`,
+`agent-ui/src/components/{DuplicateChip,AddGamesView,ReleaseChip}.tsx`, `agent-ui/src/{usePopover.ts,ui.css,api-types.ts}`,
+`tests/SaveLocker.Agent.Tests/DuplicateShortcutTests.cs`, `tests/linux/{run-linux-tests.sh,make-fixtures.py}`,
+`docs/tasks/duplicate-shortcut-warnings/`, `docs/tasks/interactive-setup-guide/`, `docs/tasks/_done/checkpoint-ui-group-9-check/`,
+`docs/tasks/decky-qam-scrolling/` (removed), `docs/{Backlog,CONTEXT}.md`, this entry, `session_summary.md`.
