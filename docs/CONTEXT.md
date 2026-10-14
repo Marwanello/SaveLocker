@@ -2160,10 +2160,15 @@ session's report (testenv walkthrough). `run-enrollment-tls-tests` is blocked on
 cert exists but is **untrusted** (`dotnet dev-certs https --trust` needs its dialog accepted).
 <br>**Session note:** for a while the headless tooling wrote edits into the **main checkout** instead
 of this worktree (opencode's default cwd); recovered with a stash move — builds/tests in a worktree
-must always be driven with the worktree's absolute paths. The implementation is **uncommitted** on
-`enrollment-join-link` pending the maintainer's review; release notes for the next tag must cover the
-enrollment-file removal (old agents/installers cannot enroll until updated — they can still
-`savelocker register`).
+must always be driven with the worktree's absolute paths. The implementation is committed on
+`enrollment-join-link` and in review as PR #76. A review pass then fixed the pairing page's script —
+inline under the dashboard's `script-src 'self'` it was silently blocked, so the page lost its Copy
+buttons and the Linux tab; it is now served same-origin as `/join.js` — plus `Cache-Control:
+no-store` on every `/join/*` response, a pwsh-only `Retry-After` read in the suite (the one Linux CI
+failure), a missed `--file` banner in `UiApp.cs`, two stale "file" strings, an empty `#enroll`
+banner, and the pre-seed's game-list writes now going through `MutateGames`. Release notes for the
+next tag must cover the enrollment-file removal (old agents/installers cannot enroll until updated —
+they can still `savelocker register`).
 
 ---
 

@@ -14,6 +14,51 @@ public static class JoinPages
     public const string ShellContentType = "text/x-shellscript";
 
     /// <summary>
+    /// The pairing page's script, served from <c>/join.js</c> rather than inlined: the dashboard's
+    /// CSP is <c>script-src 'self'</c> and silently blocks an inline script, so inlined the page
+    /// rendered but lost its Copy buttons and the Linux tab (found in review). A same-origin
+    /// external script is exactly what that policy was built to allow.
+    /// </summary>
+    public const string Script = """
+        (function () {
+          function fallback(text, done) {
+            var ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); done(); } catch (e) {}
+            document.body.removeChild(ta);
+          }
+          function copy(text, el, done) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
+            } else { fallback(text, done); }
+          }
+          document.querySelectorAll('[data-copy]').forEach(function (el) {
+            el.addEventListener('click', function () {
+              copy(el.getAttribute('data-copy'), el, function () {
+                var label = el.querySelector('.lbl') || el;
+                if (label.dataset.was === undefined) label.dataset.was = label.textContent;
+                label.textContent = 'Copied';
+                label.classList.add('copied');
+                setTimeout(function () {
+                  label.textContent = label.dataset.was; label.classList.remove('copied');
+                }, 1600);
+              });
+            });
+          });
+          var tabs = document.querySelectorAll('#tabs button');
+          function show(which) {
+            tabs.forEach(function (t) { t.classList.toggle('on', t.dataset.tab === which); });
+            document.querySelectorAll('[data-panel]').forEach(function (p) {
+              p.classList.toggle('hidden', p.dataset.panel !== which);
+            });
+          }
+          tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.tab); }); });
+          if (!/Windows/i.test(navigator.userAgent)) show('linux');
+        })();
+        """;
+
+    /// <summary>
     /// The pairing page. <paramref name="state"/> decides which card is shown; only a valid code
     /// gets the install-and-enroll actions.
     /// </summary>
@@ -196,44 +241,7 @@ public static class JoinPages
         <div class="card">
         @BODY@
         </div>
-        <script>
-        (function () {
-          function fallback(text, done) {
-            var ta = document.createElement('textarea');
-            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-            document.body.appendChild(ta); ta.select();
-            try { document.execCommand('copy'); done(); } catch (e) {}
-            document.body.removeChild(ta);
-          }
-          function copy(text, el, done) {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
-            } else { fallback(text, done); }
-          }
-          document.querySelectorAll('[data-copy]').forEach(function (el) {
-            el.addEventListener('click', function () {
-              copy(el.getAttribute('data-copy'), el, function () {
-                var label = el.querySelector('.lbl') || el;
-                if (label.dataset.was === undefined) label.dataset.was = label.textContent;
-                label.textContent = 'Copied';
-                label.classList.add('copied');
-                setTimeout(function () {
-                  label.textContent = label.dataset.was; label.classList.remove('copied');
-                }, 1600);
-              });
-            });
-          });
-          var tabs = document.querySelectorAll('#tabs button');
-          function show(which) {
-            tabs.forEach(function (t) { t.classList.toggle('on', t.dataset.tab === which); });
-            document.querySelectorAll('[data-panel]').forEach(function (p) {
-              p.classList.toggle('hidden', p.dataset.panel !== which);
-            });
-          }
-          tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.tab); }); });
-          if (!/Windows/i.test(navigator.userAgent)) show('linux');
-        })();
-        </script>
+        <script src="/join.js"></script>
         </body>
         </html>
         """;
