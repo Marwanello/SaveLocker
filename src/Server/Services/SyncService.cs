@@ -628,6 +628,18 @@ public sealed class SyncService
                 existing.EmulatorKey = key;
                 changed = true;
             }
+            // A Switch game the first machine could only call "Switch <title ID>" takes the first real name another
+            // machine brings, unless another game already has it.
+            if (existing == keyed && SwitchTitles.TitleIdOf(key) is { } titleId &&
+                string.Equals(existing.Name, SwitchTitles.Placeholder(titleId), StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(name, existing.Name, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(name, SwitchTitles.Placeholder(titleId), StringComparison.OrdinalIgnoreCase) &&
+                named.Count == 0)
+            {
+                await Audit(null, existing.Id, "game.rename", $"{existing.Name} → {name}");
+                existing.Name = name;
+                changed = true;
+            }
             if (changed) await _db.SaveChangesAsync();
             return existing;
         }

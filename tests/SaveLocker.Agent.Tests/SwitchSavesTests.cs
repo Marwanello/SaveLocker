@@ -173,7 +173,8 @@ public sealed class SwitchSavesTests : IDisposable
 
         var found = SwitchEmulators.Scan([eden, ryu], [P("Emulation")]);
 
-        Assert.Equal(["Metroid Dread", "Metroid Prime 4: Beyond", $"Switch {Acnh}"], found.Select(c => c.Name));
+        // Animal Crossing has no ROM or Ryujinx record here: the eShop's name, from the bundled table.
+        Assert.Equal(["Animal Crossing: New Horizons", "Metroid Dread", "Metroid Prime 4: Beyond"], found.Select(c => c.Name));
         var mp4 = found.Single(c => c.EmulatorRom == Mp4);
         Assert.Equal("Ryujinx", mp4.EmulatorName);
         Assert.Equal(SwitchFixtures.RyujinxSave(P("ryu"), 3), mp4.SuggestedSaveDir);

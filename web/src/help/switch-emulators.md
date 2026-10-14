@@ -6,7 +6,9 @@ SaveLocker reads Switch saves from **Eden**, **Citron**, **Yuzu**, **Suyu**, **S
 
 A Switch save is the title's own folder of files, the same in every emulator. So SaveLocker keeps **one server game per title** (its title ID, like `0100F2C0115B6000`), whichever emulator each machine uses. Eden on a Steam Deck and Ryujinx on a PC sync the same save.
 
-The game is named after the first machine that adds it: Ryujinx's own name for the title, else the ROM's file name in `Emulation/roms/switch`, else *Switch &lt;title ID&gt;*. Every other machine joins it by the title, whatever it calls it.
+The game is named after the first machine that adds it: Ryujinx's own name for the title, else the ROM's file name in `Emulation/roms/switch`, else the eShop's name for it (SaveLocker carries a list of Switch games, from [titledb](https://github.com/blawar/titledb)), and only for a game that list doesn't know, *Switch &lt;title ID&gt;*. A game added under its title ID takes the first real name another machine brings. Every other machine joins it by the title, whatever it calls it, and its icon is the eShop's.
+
+On **Add games**, a Switch row says which server game it joins. **Change** shows why: a title already on the server is always that game. A new title can instead join a game of the same name that was added by hand, which then becomes this title's game.
 
 **Where each emulator keeps it:**
 

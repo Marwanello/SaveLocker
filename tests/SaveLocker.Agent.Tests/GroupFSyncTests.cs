@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using SaveLocker.Shared;
 using Xunit;
 using S = SaveLocker.Agent.Tests.SwitchFixtures;
@@ -98,6 +100,145 @@ public sealed class GroupFSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.NotNull(await engineWin.PushAsync(winGame, force: true));
         await engineDeck.PullAsync(deckGame, force: true);
         Assert.Equal("win-newer", File.ReadAllText(Path.Combine(S.EdenSave(P("deck/Emulation"), EdenUser, Title), "save.bin")));
+    }
+
+    /// <summary>One reconcile of <paramref name="config"/>'s game list against the server, as the poller's tick does.</summary>
+    private static async Task Reconcile(AgentConfig config)
+    {
+        config.ManifestCachePath = Path.Combine(Path.GetDirectoryName(config.ConfigPath)!, "manifest.yaml");
+        if (!File.Exists(config.ManifestCachePath)) File.WriteAllText(config.ManifestCachePath, "{}\n");
+        await using var engine = new SyncEngine(config, ApiClient.For(config));
+        await new CommandPoller(config, () => ApiClient.For(config), () => engine, new Detection(config), new NoScan(),
+            _ => { }, () => { }).ReconcileGamesAsync();
+    }
+
+    private sealed class NoScan : IGameScanner
+    {
+        public Task<IReadOnlyList<ScanCandidate>> ScanAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<ScanCandidate>>(Array.Empty<ScanCandidate>());
+    }
+
+    [Fact]
+    public async Task A_game_first_enrolled_under_its_title_id_takes_the_name_the_next_machine_knows()
+    {
+        // WSL first: Ryujinx with no record of the game's name, no ROM, and a title the eShop table has no game of.
+        var title = SwitchNamesAndLinksTests.UnknownTitle();
+        var ryu = S.Ryujinx(P("wsl/ryu"), RyuUser, (title, RyuUser, RyujinxSaveIndex.SaveType.Account, 5));
+        S.Write(Path.Combine(S.RyujinxSave(P("wsl/ryu"), 5), "save.bin"), "wsl");
+        var eden = S.Eden(P("pc/Emulation"), EdenUser);
+        S.Write(P($"pc/Emulation/roms/switch/Named Later {_id} [{title}][v0].nsp"), "rom");
+        S.Write(Path.Combine(S.EdenSave(P("pc/Emulation"), EdenUser, title), "save.bin"), "pc");
+        var wsl = await Machine("wsl");
+        var pc = await Machine("pc");
+
+        var first = await Enroll(wsl, SwitchEmulators.Scan([ryu], []), title);
+        Assert.Equal($"Switch {title}", first.Name);
+        var second = await Enroll(pc, SwitchEmulators.Scan([eden], [P("pc/Emulation")]), title);
+
+        Assert.Equal(first.GameId, second.GameId);
+        Assert.Equal($"Named Later {_id}", second.Name);
+        Assert.Equal($"Named Later {_id}", (await ApiClient.For(pc).ListGamesAsync()).Single(g => g.Id == first.GameId).Name);
+        // And the first machine follows on its next tick.
+        await Reconcile(AgentConfig.Load(wsl.ConfigPath));
+        Assert.Equal($"Named Later {_id}", AgentConfig.Load(wsl.ConfigPath).Games.Single(g => g.GameId == first.GameId).Name);
+
+        // A real name is never replaced: a third machine with only the title ID leaves it alone.
+        var deck = await Machine("deck");
+        var ryuDeck = S.Ryujinx(P("deck/ryu"), RyuUser, (title, RyuUser, RyujinxSaveIndex.SaveType.Account, 5));
+        S.Write(Path.Combine(S.RyujinxSave(P("deck/ryu"), 5), "save.bin"), "deck");
+        Assert.Equal($"Named Later {_id}", (await Enroll(deck, SwitchEmulators.Scan([ryuDeck], []), title)).Name);
+    }
+
+    [Fact]
+    public async Task A_same_named_game_with_no_title_can_be_picked_and_takes_the_title()
+    {
+        var eden = S.Eden(P("a/Emulation"), EdenUser);
+        S.Write(P($"a/Emulation/roms/switch/Picked {_id} [{Title}][v0].nsp"), "rom");
+        S.Write(Path.Combine(S.EdenSave(P("a/Emulation"), EdenUser, Title), "save.bin"), "save");
+        var a = await Machine("a");
+        var byHand = await ApiClient.For(a).CreateGameAsync(new CreateGameRequest($"Picked {_id}", null, null));
+        var found = SwitchEmulators.Scan([eden], [P("a/Emulation")]);
+        var id = found.ToList().FindIndex(c => c.EmulatorRom == Title);
+
+        var options = EnrollLinks.For(await ApiClient.For(a).ListGamesAsync(), found[id]);
+        Assert.Equal((LinkKind.New, $"Picked {_id} (Switch)"), (options[0].Kind, options[0].Name));
+        Assert.Contains(options, o => o.GameId == byHand.Id && o.Kind == LinkKind.Join);
+
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(a, found, [id],
+            links: new Dictionary<int, LinkChoice> { [id] = new(EnrollLinks.Game, byHand.Id) }));
+
+        var tracked = Enroller.TrackedFor(AgentConfig.Load(a.ConfigPath), found[id])!;
+        Assert.Equal(byHand.Id, tracked.GameId);
+        Assert.Equal($"switch:{Title}", (await ApiClient.For(a).ListGamesAsync()).Single(g => g.Id == byHand.Id).EmulatorKey);
+    }
+
+    [Fact]
+    public async Task A_switch_game_takes_its_eshop_icon_with_no_steamgriddb_key()
+    {
+        using var images = new ImageHost();
+        var hash = SwitchTitles.For("0100F2C0115B6000")!.IconHash!;
+        images.Images[$"/i/{hash}.jpg"] = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+        using var server = new ServerProcess(new Dictionary<string, string>
+        {
+            ["Art__AllowedImageHosts"] = "127.0.0.1",
+            ["Art__AllowInsecureImageUrls"] = "true",
+            ["Art__EshopImageBase"] = images.Url + "/i/",
+            ["Storage__ArtRoot"] = P("art"),
+        });
+        var eden = S.Eden(P("e/Emulation"), EdenUser);
+        S.Write(Path.Combine(S.EdenSave(P("e/Emulation"), EdenUser, "0100F2C0115B6000"), "save.bin"), "totk");
+        var config = AgentConfig.Load(P("e/state/config.json"));
+        config.ServerUrl = server.Url;
+        var reg = await new ApiClient(config.ServerUrl, null).RegisterAsync("eshop" + _id);
+        (config.ApiKey, config.MachineId, config.MachineName) = (reg.ApiKey, reg.MachineId, "eshop");
+        config.Save();
+
+        var game = await Enroll(config, SwitchEmulators.Scan([eden], [P("e/Emulation")]), "0100F2C0115B6000");
+
+        Assert.Equal("The Legend of Zelda: Tears of the Kingdom", game.Name);
+        var icon = (await ApiClient.For(config).ListGamesAsync()).Single(g => g.Id == game.GameId).IconUrl;
+        Assert.StartsWith($"/art/{game.GameId:N}/icon.png", icon);
+        lock (images.Requested) Assert.Contains($"/i/{hash}.jpg", images.Requested);
+    }
+
+    /// <summary>Serves <see cref="Images"/> by path and records what was asked for.</summary>
+    private sealed class ImageHost : IDisposable
+    {
+        private readonly HttpListener _listener = new();
+        public Dictionary<string, byte[]> Images { get; } = new();
+        public List<string> Requested { get; } = new();
+        public string Url { get; }
+
+        public ImageHost()
+        {
+            var probe = new TcpListener(IPAddress.Loopback, 0);
+            probe.Start();
+            var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            probe.Stop();
+            Url = $"http://127.0.0.1:{port}";
+            _listener.Prefixes.Add(Url + "/");
+            _listener.Start();
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    HttpListenerContext ctx;
+                    try { ctx = await _listener.GetContextAsync(); }
+                    catch (Exception) { return; }
+                    lock (Requested) Requested.Add(ctx.Request.Url!.AbsolutePath);
+                    if (Images.TryGetValue(ctx.Request.Url.AbsolutePath, out var bytes))
+                        await ctx.Response.OutputStream.WriteAsync(bytes);
+                    else ctx.Response.StatusCode = 404;
+                    ctx.Response.Close();
+                }
+            });
+        }
+
+        public void Dispose()
+        {
+            try { _listener.Stop(); _listener.Close(); } catch (ObjectDisposedException) { }
+        }
     }
 
     [Fact]

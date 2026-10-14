@@ -785,6 +785,11 @@ function New-EmuDeckFixture {
     Get-ChildItem -Recurse -File (Join-Path $target 'saves\ryujinx\saves') | ForEach-Object { $_.LastWriteTime = (Get-Date).AddDays(-2) }
     Write-FixtureFile (Join-Path $target "storage\ryujinx\games\$($totk.ToLower())\gui\metadata.json") '{"title":"The Legend of Zelda: Tears of the Kingdom"}'
     Write-FixtureFile (Join-Path $target 'roms\switch\Metroid Dread [010093801237C000][v0].nsp') ''
+    # A title the bundled eShop table doesn't know (homebrew), named here by its ROM only: enrolled from WSL first it is
+    # "Switch 01005A7E57E57000" on the server, and enrolling it here renames it.
+    $homebrew = '01005A7E57E57000'
+    Write-FixtureFile (Join-Path $target "saves\eden\saves\0000000000000000\$edenUser\$homebrew\save.dat") "homebrew on eden $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $target "roms\switch\SaveLocker Homebrew Test [$homebrew][v0].nsp") ''
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
@@ -899,7 +904,9 @@ function New-EmuDeckFixture {
         # Windows' Eden game by its title (D2), and Undertale, which must survive every Zelda pull.
         Write-RyujinxFixture $wsl 'c1038d0cd5fa44a587d4d8488e902efb' @(
             @{ Title = '0100F2C0115B6000'; User = 'c1038d0cd5fa44a587d4d8488e902efb'; Type = 1; Id = 5; Files = @{ 'progress.sav' = 'old totk on the WSL machine' } },
-            @{ Title = '010080B00AD66000'; User = 'c1038d0cd5fa44a587d4d8488e902efb'; Type = 1; Id = 2; Files = @{ 'Undertale\undertale.sav' = 'wsl undertale - must survive every Zelda pull' } })
+            @{ Title = '010080B00AD66000'; User = 'c1038d0cd5fa44a587d4d8488e902efb'; Type = 1; Id = 2; Files = @{ 'Undertale\undertale.sav' = 'wsl undertale - must survive every Zelda pull' } },
+            # The homebrew title, with no ROM and no name here: "Switch 01005A7E57E57000" until Windows names it.
+            @{ Title = '01005A7E57E57000'; User = 'c1038d0cd5fa44a587d4d8488e902efb'; Type = 1; Id = 3; Files = @{ 'save.dat' = 'homebrew on the WSL machine' } })
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }

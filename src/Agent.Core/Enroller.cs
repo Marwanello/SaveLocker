@@ -121,7 +121,7 @@ public static class Enroller
                     // D2: the server's game of this title, whatever it is called and whichever emulator made it.
                     var keyed = c.EmulatorKey is { } key
                         ? serverGames.FirstOrDefault(g => string.Equals(g.EmulatorKey, key, StringComparison.OrdinalIgnoreCase)) : null;
-                    var (named, refusal) = keyed is not null ? (keyed.Name, null) : EnrollLinks.Resolve(serverGames, c, extras, link);
+                    var (named, refusal) = keyed is not null ? (KeyedName(serverGames, keyed, c), null) : EnrollLinks.Resolve(serverGames, c, extras, link);
                     if (named is null)
                     {
                         Refuse(c.Name, refusal!);
@@ -580,6 +580,17 @@ public static class Enroller
     /// except another region's release of a console game (<see cref="OtherRegion(GameDto, ScanCandidate)"/>): the European Warrior Within
     /// is "Prince of Persia - Warrior Within" as much as the USA one, and the server tells the two apart by region.
     /// </summary>
+    /// <summary>
+    /// The name a save joining its title's game asks for: the game's own, unless the first machine could only call it
+    /// <c>Switch &lt;title ID&gt;</c> and this one knows better — then this one's, which the server takes in its place.
+    /// </summary>
+    internal static string KeyedName(IReadOnlyList<GameDto> server, GameDto keyed, ScanCandidate c) =>
+        SwitchTitles.TitleIdOf(keyed.EmulatorKey) is { } titleId &&
+        string.Equals(keyed.Name, SwitchTitles.Placeholder(titleId), StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(c.Name, keyed.Name, StringComparison.OrdinalIgnoreCase) && !NameTaken(server, c.Name, c)
+            ? c.Name
+            : keyed.Name;
+
     internal static bool NameTaken(IEnumerable<GameDto> server, string name, ScanCandidate c) =>
         server.Any(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase) && !OtherRegion(g, c));
 

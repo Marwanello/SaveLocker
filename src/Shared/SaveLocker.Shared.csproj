@@ -12,6 +12,7 @@
          themselves, so this adds nothing new to their published output. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="YamlDotNet" Version="18.0.0" />
+    <EmbeddedResource Include="SwitchTitles\switch-titles.tsv.gz" LogicalName="SaveLocker.Shared.switch-titles.tsv.gz" />
   </ItemGroup>
 
 </Project>

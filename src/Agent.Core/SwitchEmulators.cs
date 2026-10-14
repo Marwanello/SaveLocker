@@ -337,7 +337,7 @@ public static partial class SwitchEmulators
     }
 
     private static ScanCandidate Candidate(TitleSave t, IReadOnlyDictionary<string, string> titles, bool noSaveYet) =>
-        new(Name: titles.GetValueOrDefault(t.TitleId) ?? $"Switch {t.TitleId}",
+        new(Name: NameFor(t.TitleId, titles),
             SuggestedSaveDir: t.Dir,
             Source: ScanSource.Emulator,
             HasSteamCloud: false,
@@ -351,6 +351,13 @@ public static partial class SwitchEmulators
             NoSaveYet: noSaveYet);
 
     // ---------------------------------------------------------------- names
+
+    /// <summary>A title's name: this machine's own (<see cref="Titles"/> — Ryujinx's record, then a ROM's file name), else the
+    /// eShop's from the bundled table (<see cref="SwitchTitles"/>), else <c>Switch &lt;title ID&gt;</c>, which the server
+    /// replaces as soon as any machine knows a name (D2).</summary>
+    public static string NameFor(string titleId, IReadOnlyDictionary<string, string> titles) =>
+        titles.GetValueOrDefault(titleId)
+        ?? (SwitchTitles.For(titleId) is { } known ? CleanTitle(known.Name) : SwitchTitles.Placeholder(titleId));
 
     /// <summary>A Switch ROM in <c>Emulation/roms/switch</c> (or a folder in it, as EmuDeck's <c>switch/yuzu</c>) whose name
     /// carries its title ID in brackets: title ID → (its name, the folder it is in).</summary>

@@ -201,6 +201,12 @@ public sealed class CommandPoller : IDisposable
                     local.EmulatorKey = key;
                     changed = true;
                 }
+                // The server renames a Switch game first enrolled as "Switch <title ID>" once a machine knows its name.
+                if (!string.IsNullOrWhiteSpace(sg.Name) && local.Name != sg.Name)
+                {
+                    local.Name = sg.Name;
+                    changed = true;
+                }
 
                 // Server now has a stored path for this machine → apply it (highest authority).
                 // "Highest authority" is not "unconditionally trusted": this is the one path source

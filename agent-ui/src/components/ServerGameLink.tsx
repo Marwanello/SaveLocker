@@ -91,7 +91,9 @@ export function ServerGameLink({ title, options, pick, open, onToggle, onPick }:
           })}
           {alone && (
             <span className="sl-link__none">
-              No other server game has this title or keeps these files, so there’s nothing else to link it to.
+              {current.kind === 'join'
+                ? 'Every save of this game joins it, whichever emulator made it, so there’s nothing else to link it to.'
+                : 'No other server game has this title or keeps these files, so there’s nothing else to link it to.'}
             </span>
           )}
         </div>
