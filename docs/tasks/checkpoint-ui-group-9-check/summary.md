@@ -1,10 +1,14 @@
 # Checkpoint UI Group 9: run the testenv checklist
 
-In progress. Split out of `tasks/checkpoint-ui/` on 2026-10-04, when the Checkpoint UI task was closed as done.
+Done in code terms; one step left. Split out of `tasks/checkpoint-ui/` on 2026-10-04, when the Checkpoint UI task was closed as done.
 
-**Run 1 (2026-10-14, `backlog-plans-testenv-mockup` worktree):** sections 0–3 + 3b + 3c run against
-current `main` and passed, with two findings — see `run-2026-10-14.md`. Sections 4–9 (and 1.8, which
-needs 4.6's password) remain. The rig is left running for the continuation.
+**Run (2026-10-14, `backlog-plans-testenv-mockup` worktree):** the whole checklist was run against
+current `main` — here: sections 0–3, 3b, 3c, 4 (except 4.6), 5, 6, 7, 8; by the maintainer: 4.6 and
+1.8. All passed, with eight findings (F1–F8) — see `run-2026-10-14.md`. **Only section 9
+(`testenv clean`) is left**, deliberately not run so the rig stays up for a last look; run
+`.\tests\testenv.ps1 clean` when done. The findings worth a maintainer call: F1 (keep-count can't
+return to 7), F5 (revoking an enrollment removes its row), F6 (`-test` builds classify as releases),
+F8 (`Fetch from GitHub` defaults to the upstream repo).
 
 Group 9 (the console's Backups tab, Configuration, Audit log, Help, What's new and sign-in) was checked in a browser
 against a scratch server and has its security tests (BK-01, CFG-01). The pass through `tests/testenv.ps1` — a real
