@@ -1966,8 +1966,15 @@ sync (the one played last wins; asks when both changed; nothing copied while an 
 `<state>/emulator-copies`), or makes it the synced copy. Captured read-only: the PC's Eden (*Metroid Prime 4*) and
 Ryujinx index; the Deck's Yuzu and Ryujinx, with *Undertale* saved in both. Also marked Groups C and E (with 5c) shipped.
 Unit **551**. Details: `tasks/emulator-saves/plan.md` → *Group F — as built*.
-<br>**Next action for this item:** the testenv pass for Group F (`Build and Run` → *Testing emulator saves*, Group F
-steps 1–5), then the Switch row of Group H on the Deck (Yuzu ↔ Ryujinx) and the PC (Eden).
+<br>**2026-10-14, Group F follow-ups (same PR):** Switch games are named from a bundled eShop table
+(`src/Shared/SwitchTitles`, blawar/titledb, MIT) when the machine has no Ryujinx record or ROM name; a game first
+added as `Switch <title ID>` is renamed by the server when a machine knows its name; Switch rows have **Change**; the
+server takes a Switch game's eShop icon (no SteamGridDB key needed). Checked live on the rig (WSL first, then Windows;
+the real TotK icon fetched). Unit **558**. The emulator/console icon work is planned as Group J (Phase 21), not built.
+**Rig gotcha:** another session's tray held :5188, so `testenv up` reported *its* build — this branch's Windows tray ran
+with `-WinPort 5198`.
+<br>**Next action for this item:** the rest of the testenv pass for Group F (`Build and Run` → *Testing emulator saves*,
+Group F steps 1–7), then the Switch row of Group H on the Deck (Yuzu ↔ Ryujinx) and the PC (Eden).
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
 steps 1–5 of the profile and 1–11 of the DLC hand-over), then Forza Horizon for real between PC and Deck (Group H).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.

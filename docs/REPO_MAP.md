@@ -18,6 +18,9 @@ SaveLocker/
 │   │   ├── ManifestLoader.cs            # Ludusavi manifest downloader + cloud/tag parsing
 │   │   ├── Appearance.cs                # The look (theme/accent/mark) as three closed id lists + the DTOs,
 │   │   │                               #   and `Appearances.Normalize` — every reader normalises, none rejects
+│   │   ├── SwitchTitles.cs              # Switch title ID → eShop name + icon hash (agent names, server icon);
+│   │   │                               #   SwitchTitles/switch-titles.tsv.gz from blawar/titledb, MIT (NOTICE.md);
+│   │   │                               #   Update-SwitchTitles.ps1 rebuilds it
 │   │   ├── PathResolver.cs              # Expands manifest placeholders (<winAppData>, <base>) to real
 │   │   │                               #   dirs, trimmed at the first wildcard so there is a dir to watch
 │   │   └── WinePrefix.cs                # drive_c + which Wine user the game runs as — needed before any
