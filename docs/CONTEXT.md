@@ -2155,7 +2155,7 @@ handled request timestamp. (3) Server: audited admin routes `POST /api/settings/
 pattern); Configuration → Defaults & maintenance has the **Manifest refresh** row (window select +
 **Refresh now**, "Last requested … ago"). `openapi.json` + `web/src/api-types.ts` regenerated,
 additions only.
-<br>**Verified:** xunit **563** (`ManifestPathConstraintTests` 11, `ManifestRefreshTests` 8 — an
+<br>**Verified:** xunit **571** (`ManifestPathConstraintTests` 11, `ManifestRefreshTests` 8 — an
 `HttpListener` stub; guards removed flip 4 + 3 of them); `run-hardening-tests` **37/37 Windows** (+4,
 section 5: a real traversal entry and a real junction escape in a fake prefix, clean-sibling control —
 **both new checks FAIL against the pre-fix resolver** via a live mutation pass); `run-agent-tests`
