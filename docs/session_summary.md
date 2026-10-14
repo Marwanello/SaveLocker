@@ -1,3 +1,70 @@
+# Session summary — 2026-10-14 — Enrollment join links replace the file (option B, PR #76)
+
+Standalone: the facts below do not need the rest of the vault.
+
+**PR:** [#76 on `Marwanello/SaveLocker`](https://github.com/Marwanello/SaveLocker/pull/76), *Enrollment: join links replace the enrollment file (option B)*. Head branch `enrollment-join-link` (worktree `.claude/worktrees/enrollment-mockups`), base `main`. Commits: `9ab48b7` (the mockups, on `enrollment-mockups`), `3239b1c` (the feature), `728538f` (CONTEXT handoff). Open at the time of writing.
+
+## What was asked
+
+1. "I don't like the enrollment file process" — suggest three ways to enroll a device, focused on ease of use.
+2. Create three clickable walkthrough mockups using real console and agent-UI elements.
+3. Start implementing option B (picked by the maintainer, who also answered five clarifying questions).
+4. A step-by-step `testenv` verification plan for the things that need manual checking, plus a detailed technical and plain-terms explanation.
+5. Open a PR.
+6. Append this summary to `progress.md` and save a standalone copy here.
+
+## Decisions taken with the maintainer
+
+- **Replace the file entirely** — no coexistence; `savelocker enroll --file` and the JSON download are removed.
+- **Short typable codes** (8 Crockford base32 characters) rather than the old 256-bit token, because the point is ease — which makes a server-side throttle mandatory, not optional.
+- **Windows: paste once.** The pairing page's download button copies the link; the installer's Enroll page accepts a pasted link; `/SILENT /ENROLL-URL=<link>` for scripts; the agent CLI gets `enroll --url`.
+- **QR rendered client-side** with `uqr` (zero transitive dependencies).
+- Mockups committed first on `enrollment-mockups`; implementation on a new `enrollment-join-link` branch.
+
+## What was built
+
+Console → Configuration → Enroll a machine → **Create join link**: the code (shown once), the link, a QR, copy buttons, and the pre-existing Valid/Used/Expired lifecycle table. Opening the link on the new machine gives the pairing page:
+
+| Tab | What it does |
+|---|---|
+| Windows | Downloads the hosted installer *and* copies the link; the wizard's Enroll page is Ctrl+V |
+| Linux / Steam Deck | `curl -fsSL <link>/install.sh \| sh` — downloads, installs, enrolls |
+| Already installed | `127.0.0.1:5178/#enroll:<link>` hand-off; the agent's Settings Join card arrives pre-filled |
+
+- **Server:** `Shared/JoinCodes` (mint/normalise/format); `EnrollmentService` mints codes, `LookupAsync` (Valid/Used/Expired/Unknown), and `BuildPolicyAsync` — the policy is now built **at delivery**, so its game list describes the server at the moment the link is opened; new public routes `GET /join/{code}` (self-contained pairing page, inline CSS, HTML-encoded), `/policy`, `/install.sh`, `/setup.exe` (302 to the hosted installer); `JoinThrottle` (15 failures / 15 min / client + a global backstop, only *unknown* codes counted, a successful redeem resets) answering 429 + `Retry-After`; admin mint now returns `{ id, code, joinUrl, expiresAt }`.
+- **Agent:** `AgentEnroller` (fetch policy → apply: redeem, TOFU pin, game pre-seeding) is the one implementation shared by the CLI (`enroll --url`, or `--code` + `--server`) and the daemon (`POST /api/join`, token-guarded, identity rolled back on failure, 400 with the server's own sentence); `agent-ui` gained the `#enroll:<link>` route and the `JoinCard`.
+- **Console:** the enroll card rewritten; a clipboard helper that works on a plain-http LAN (`navigator.clipboard` is undefined there — the old call silently copied nothing).
+- **Installer:** the Enroll page takes a pasted join link (validated, server + code preview, trust note); `/SILENT /ENROLL-URL`.
+- **Docs/tests:** README, `installing-the-agent`, `cli-reference`, `troubleshooting`, `docs/API Reference`, a `Decisions.md` amendment; `run-enrollment-tests.ps1` rewritten (25 checks), TLS test updated, local-api +3 checks, bug-bounty CS-06/CS-10 updated, console-security CFG-01 updated; `openapi.json` and both `api-types.ts` regenerated from live scratch instances.
+
+## Verification
+
+- `run-enrollment-tests` **25/25** (pairing-page states, both enroll forms, single-use / revoked / forged, throttle against its own low-limit server)
+- `run-local-api-tests` **128/128** (run on `SL_LOCALAPI_PORT=5197` — another worktree's tray held :5188; +3 `/api/join` checks)
+- `run-server-bugbounty-tests` **216/216**; `run-agent-tests` 47/47; `dotnet test` **552/552**; `run-appearance-consistency-tests` 50/50
+- `web` and `agent-ui` build + lint clean; installer compiles (`SaveLocker-Agent-Setup-0.7.1.exe`); the pairing page inspected in headless Edge (valid + invalid states)
+
+## Not verified (manual pass owed)
+
+- The Windows wizard paste round-trip and `/SILENT /ENROLL-URL` on a real install.
+- A Steam Deck running the pairing page's one-liner (upload the new linux-x64 package first — the released agent predates `enroll --url`).
+- The `#enroll:` hand-off clicked inside a real WebView2 window.
+- `run-enrollment-tls-tests` — blocked on this box: the dev cert exists but is untrusted.
+- Scanning the QR with an actual phone.
+
+## Process notes worth keeping
+
+- For a while the headless tooling's file edits landed in the **main checkout** instead of the worktree (the default cwd). Recovered with a stash-move; the standing rule: drive a worktree's builds and tests with that worktree's absolute paths.
+- C# raw string literals (`"""..."""`) do not process `\u` escapes — the pairing page briefly shipped `Configuration \u2192 …` as literal text until a screenshot caught it. The same class of bug already existed once in a plain-HTML mockup file; check both.
+- The QR's colours tripped `run-appearance-consistency-tests` (hex literals are banned in views); fixed with `currentColor` + keyword `black` on a forced-white tile.
+- Another worktree's test tray held `:5188`; `SL_LOCALAPI_PORT` moves the suite. The `testenv` rig is shared — don't `clean`/`up` while another session uses it.
+
+## Files
+
+`src/Shared/{Contracts,JoinCodes}.cs`, `src/Server/{Program,AdminPasswordFilter}.cs`, `src/Server/Services/{EnrollmentService,JoinThrottle,JoinPages,Tokens}.cs`, `src/Agent.Core/{AgentEnroller,AgentCli,ApiClient,AgentApiServer}.cs`, `src/Agent.Linux/{Program,Doctor,Ui/UiApp}.cs`, `agent-ui/src/{route.ts,App.tsx,api.ts,components/{JoinCard,SettingsView}.tsx}`, `web/src/{api.ts,components/ConfigView.tsx,help/*.md}`, `installer/SaveLocker.iss`, `packaging/linux/install.sh`, `README.md`, `docs/{API Reference,Decisions,CONTEXT}.md`, `tests/{run-enrollment-tests,run-enrollment-tls-tests,run-local-api-tests,run-server-bugbounty-tests,run-console-security-tests}.ps1`, `docs/tasks/enrollment-options/` (the mockups), this entry.
+
+---
+
 # Session summary — 2026-10-12 — Emulator saves Group E and the Xenia profile/DLC design (PR #68)
 
 Standalone: the facts below do not need the rest of the vault.
