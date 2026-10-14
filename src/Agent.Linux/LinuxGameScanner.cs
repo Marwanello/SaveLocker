@@ -135,8 +135,11 @@ public sealed class LinuxGameScanner : IGameScanner
                     // reclassified as SteamInstalled: that is exactly when the row stops looking
                     // like a shortcut at all.
                     MoonDeckAppId: s.MoonDeckAppId,
+                    // The marker follows the id this candidate actually carries: a confirmed install
+                    // follows the real AppID, which is not one of the shortcut ids, so no duplicate
+                    // is marked tracked then — claiming one would name an id Steam never launches.
                     DuplicateShortcuts: duplicateShortcuts.TryGetValue(ManifestLoader.NormalizeName(s.AppName), out var sameName)
-                        ? SteamShortcuts.DuplicatesFor(sameName, s.AppId)
+                        ? SteamShortcuts.DuplicatesFor(sameName, confirmedInstalled ? realAppId : s.AppId)
                         : null,
                     AlternateSaveDirs: also),
                     // Still tracked even once reclassified: if the real ACF ever becomes reachable

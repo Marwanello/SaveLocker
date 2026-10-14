@@ -1,54 +1,43 @@
-import { useEffect, useRef, useState } from 'react'
 import type { Candidate } from '../types'
+import { usePopover } from '../usePopover'
 import { Chip } from './ui/Chip'
 
 type Shortcut = NonNullable<Candidate['duplicateShortcuts']>[number]
 
-const canHover = () => typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover)').matches
-
 /**
  * Steam has this game under several AppIDs — a launcher re-created the shortcut instead of updating
- * the original, and Steam only ever launches one. The chip says how many; hovering (or a click,
- * which pins it) names each shortcut and which one the scan will track. Esc or a click elsewhere
- * closes it. Same pattern as the emulator release chip.
+ * the original, and Steam only ever launches one. The chip says how many AppIDs; hovering (or a
+ * click, which pins it) names each shortcut and which one the scan will track. Esc or a click
+ * elsewhere closes it. Same popover as the emulator release chip (usePopover).
  */
 export function DuplicateChip({ shortcuts }: { shortcuts: Shortcut[] }) {
-  const [open, setOpen] = useState<'hover' | 'pinned' | null>(null)
-  const rootRef = useRef<HTMLSpanElement>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    if (open !== 'pinned') return
-    const onPointer = (e: MouseEvent) => { if (!rootRef.current?.contains(e.target as Node)) setOpen(null) }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(null); buttonRef.current?.focus() } }
-    document.addEventListener('mousedown', onPointer)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onPointer); document.removeEventListener('keydown', onKey) }
-  }, [open])
-
+  const pop = usePopover()
   const tracked = shortcuts.find(s => s.tracked)
+  const count = shortcuts.length
   return (
-    <span
-      className="sl-release"
-      ref={rootRef}
-      onMouseEnter={() => { if (canHover()) setOpen(o => o ?? 'hover') }}
-      onMouseLeave={() => setOpen(o => (o === 'hover' ? null : o))}
-    >
+    <span className="sl-release" ref={pop.rootRef} onMouseEnter={pop.enter} onMouseLeave={pop.leave}>
       <button
-        ref={buttonRef}
+        ref={pop.buttonRef}
         type="button"
         className="sl-release__chip sl-release__chip--warn"
         aria-haspopup="dialog"
-        aria-expanded={open !== null}
-        aria-label={`${shortcuts.length} shortcuts with different AppIDs — which one will be tracked`}
-        onClick={() => setOpen(o => (o === 'pinned' ? null : 'pinned'))}
+        aria-expanded={pop.expanded}
+        aria-label={`${count} duplicate AppIDs ${tracked ? '— which one will be tracked' : '— none of them is followed'}`}
+        onClick={pop.toggle}
       >
-        {shortcuts.length} shortcuts · different AppIDs
+        {count} duplicate AppIDs
         <span className="sl-release__dot sl-release__dot--warn" aria-hidden="true" />
       </button>
-      {open && (
-        <span className="sl-release__pop" role="dialog" aria-label="Shortcuts with different AppIDs">
-          <span className="sl-release__title">{shortcuts.length} shortcuts with different AppIDs</span>
+      {pop.open && (
+        // preventDefault: an Add games row is a <label>, and a click on the popover (not interactive
+        // content) would otherwise activate its checkbox — selecting the game while the user read it.
+        <span
+          className="sl-release__pop"
+          role="dialog"
+          aria-label="Duplicate AppIDs for this game"
+          onClick={e => e.preventDefault()}
+        >
+          <span className="sl-release__title">{count} AppIDs for this game</span>
           {shortcuts.map(s => (
             <span key={s.appId ?? 'none'} className={s.tracked ? 'sl-dup sl-dup--tracked' : 'sl-dup'}>
               <span className="sl-dup__head">
@@ -59,8 +48,11 @@ export function DuplicateChip({ shortcuts }: { shortcuts: Shortcut[] }) {
             </span>
           ))}
           <span className="sl-release__note">
-            Steam launches only one of them. SaveLocker follows the one its scan resolved
-            {tracked ? ` (AppID ${tracked.appId ?? 'none'})` : ''}; map another with <code>--dir</code> to switch.
+            {tracked
+              ? <>Steam launches only one of them. SaveLocker follows the one its scan resolved
+                  {' '}(AppID {tracked.appId ?? 'none'}); map another with <code>--dir</code> to switch.</>
+              : <>Steam launches only one of them, but this scan resolved the game&apos;s save folder
+                  another way, so none of these shortcuts is followed. Map one with <code>--dir</code> to switch.</>}
           </span>
         </span>
       )}
@@ -73,9 +65,15 @@ export function DuplicateNote({ shortcuts }: { shortcuts: Shortcut[] }) {
   const tracked = shortcuts.find(s => s.tracked)
   return (
     <span className="sl-check-row__why">
-      Steam launches only one of them. SaveLocker will track AppID {tracked?.appId ?? 'none'}
-      {' '}— if that is the stale shortcut, its saves are never backed up. Hover the chip for both;
-      map the other with <code>--dir</code> to switch.
+      {tracked ? (
+        <>Steam launches only one of them. SaveLocker will track AppID {tracked.appId ?? 'none'}
+          {' '}— if that is the stale shortcut, its saves are never backed up. Open the chip to see
+          each; map another with <code>--dir</code> to switch.</>
+      ) : (
+        <>Steam launches only one of them, but SaveLocker found this game&apos;s saves another way,
+          so none of these shortcuts is followed. Open the chip to see each; map one with
+          {' '}<code>--dir</code> to switch.</>
+      )}
     </span>
   )
 }

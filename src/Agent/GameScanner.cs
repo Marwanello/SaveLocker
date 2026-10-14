@@ -89,9 +89,14 @@ public sealed class GameScanner : IGameScanner
         var processName = winner.SuggestedProcessName
             ?? ordered.Select(c => c.SuggestedProcessName).FirstOrDefault(p => p is not null);
         // Same backfill for the duplicate-shortcut warning: a common-save-root candidate with the
-        // same name can win the merge, and the shortcut is the only source that knows the ids.
+        // same name can win the merge, and the shortcut is the only source that knows the ids. No
+        // entry is tracked then — the winner is never itself one of the duplicates (any shortcut
+        // candidate in the group would carry its own list), so the scan follows the winner's save
+        // folder, not either shortcut, and a marker on a loser would name an AppID the tracked game
+        // does not carry.
         var duplicateShortcuts = winner.DuplicateShortcuts
-            ?? ordered.Select(c => c.DuplicateShortcuts).FirstOrDefault(d => d is not null);
+            ?? ordered.Select(c => c.DuplicateShortcuts).FirstOrDefault(d => d is not null)
+                ?.Select(d => d with { Tracked = false }).ToList();
         return winner with { SuggestedProcessName = processName, DuplicateShortcuts = duplicateShortcuts };
     }
 

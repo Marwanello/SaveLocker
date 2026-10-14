@@ -1904,7 +1904,7 @@ sealed partial class UiApp
         bool blocked = c.NotSyncable is not null;
         // Steam has this game under more than one AppID: the tile warns, the caption names the one
         // this scan follows (the note's Add-games shape, trimmed for a controller screen).
-        var duplicates = c.DuplicateShortcuts is { Count: > 1 } d ? d : null;
+        var duplicates = c.DuplicateShortcuts is { Count: > 0 } d ? d : null;
 
         ImGui.PushID(i);
         bool ticked = alreadyTracked || _selected.Contains(i);
@@ -1961,8 +1961,10 @@ sealed partial class UiApp
             {
                 var tracked = duplicates.FirstOrDefault(x => x.Tracked);
                 Widgets.TextWrapped(
-                    $"Steam has {duplicates.Count} shortcuts with different AppIDs; this scan follows AppID {tracked?.AppId ?? "none"}. " +
-                    "Its saves sync only if that is the one Steam launches.",
+                    tracked is null
+                        ? $"Steam has {duplicates.Count} AppIDs for this game, but this scan resolved its save folder another way; none of them is followed."
+                        : $"Steam has {duplicates.Count} AppIDs for this game; this scan follows AppID {tracked.AppId ?? "none"}. " +
+                          "Its saves sync only if that is the one Steam launches.",
                     Theme.WatchInk, Theme.Caption);
             }
             DrawCandidateAlsoFound(i, c);

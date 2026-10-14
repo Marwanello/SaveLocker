@@ -545,7 +545,7 @@ export function AddGamesView({ onEnrolled }: Props) {
                 )}
                 {c.hasSteamCloud && <Chip>Steam Cloud</Chip>}
                 {/* Steam has this game under several AppIDs: the chip names each and which one the scan tracks. */}
-                {c.duplicateShortcuts && c.duplicateShortcuts.length > 1 && <DuplicateChip shortcuts={c.duplicateShortcuts} />}
+                {c.duplicateShortcuts && c.duplicateShortcuts.length > 0 && <DuplicateChip shortcuts={c.duplicateShortcuts} />}
               </div>
               {c.enrolled ? (
                 <div className="sl-inline" style={{ marginTop: 4 }}>
@@ -600,7 +600,7 @@ export function AddGamesView({ onEnrolled }: Props) {
                 </span>
               )}
               {/* The duplicate-shortcut consequence, naming the tracked AppID — the same shape doctor notes. */}
-              {!c.enrolled && c.duplicateShortcuts && c.duplicateShortcuts.length > 1 && (
+              {!c.enrolled && c.duplicateShortcuts && c.duplicateShortcuts.length > 0 && (
                 <DuplicateNote shortcuts={c.duplicateShortcuts} />
               )}
               {!c.enrolled && c.source === 'Emulator' && !c.notSyncable && !linksReachable && (
