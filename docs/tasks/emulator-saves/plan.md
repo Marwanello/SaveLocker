@@ -49,6 +49,7 @@ point unless explicitly instructed to.
 | 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4; Group E added Cemu, Azahar (the Deck has three 3DS saves) and Xenia (the PC and the Deck both have *Forza Horizon*); Group F added the Switch emulators (the Deck has Undertale in Yuzu and Ryujinx, the PC Metroid Prime 4 in Eden). Rows are added as later phases ship untested; see *Phase 18* |
 | 20 — Steam ROM Manager shortcuts are the emulator's game, not a game of their own | ⏳ Not started — Group G (added 2026-10-13, maintainer: the Deck lists Forza Horizon twice). Needs a captured `shortcuts.vdf` and SRM's own records from the Deck first; open questions below |
 | 19 — Games found by their save states alone (every emulator but PPSSPP) | ⏳ Not started — Group I (added 2026-10-12, maintainer: "PPSSPP now, others as a new phase"). PPSSPP's shipped with Group D; see *Phase 19* |
+| 21 — Emulator and console icons | ⏳ Not started — Group J (added 2026-10-14). Sources picked and mocked up in both UIs (`phase-21-icons-mockup.html`); see *Phase 21* |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
 
@@ -1386,6 +1387,50 @@ cleaned name.
 and PCSX2 shortcuts each matched to their emulator candidate, a hand-made Steam shortcut to a PC game left alone, a
 shortcut whose ROM has no save; Add games on the Deck lists *Forza Horizon* once; the app ID drives pull-before-launch
 for the emulator game (testenv WSL with a fixture shortcut, then the real Deck under Group H).
+
+### Phase 21 — emulator and console icons (Group J, not started)
+
+**Why.** Emulator games are told apart by small text today ("Ryujinx", "Nintendo Switch"). A flat icon per emulator and
+per console makes the Add games chips, the platform groups and the game page readable at a glance. Researched and mocked
+up 2026-10-14 with the maintainer (`phase-21-icons-mockup.html` in this folder: the console's games list grouped by
+platform, Add games, the game page with the Switch copies card, the agent's grid and Emulator settings).
+
+**Sources (settled with the maintainer):**
+
+| What | From | Licence |
+|---|---|---|
+| Emulators | [Arcticons](https://github.com/Arcticons-Team/Arcticons) line icons (48 grid, `currentColor`): RetroArch, Dolphin, PPSSPP, DuckStation, Azahar, Eden, Citron, Yuzu, Suyu, Sudachi, Ryujinx, melonDS, Vita3K, Xenia | CC BY-SA 4.0 |
+| Consoles | RetroArch's Monochrome theme glyphs (`libretro/retroarch-assets`, `src/xmb/monochrome`) | CC BY 4.0 |
+| RPCS3 | its own logo, `rpcs3/rpcs3.svg` in the RPCS3 repo (rpcs3.net/branding is behind a bot check), one colour | the project's — check its terms |
+| ScummVM | `scummvm-media` → `derivate/scummvm_ios7_tinted_logo.svg`, flattened: the shape filled, the S cut out | the project's — check its terms |
+| PCSX2, shadPS4 | the PS2 and PS4 console glyphs (maintainer's call) | as consoles |
+| Model 2 Emulator, Supermodel | the MAME glyph (maintainer's call) — a wordmark about 3.6 : 1, so it gets a wider box than the square icons | as consoles |
+| Cemu | **none yet** — no Arcticons icon and no logo given; the mockup's amber stand-in is a placeholder to replace | — |
+
+Simple Icons was ruled out: it dropped every Nintendo logo in v14 and has no Xbox.
+
+**Where they go** (numbered in the mockup): the console's platform group headings (console glyph) and emulator
+sub-headings (emulator icon); cover tiles of games with no art (console glyph); the release chip (console) and source
+chip (emulator) on both game pages; each machine's row on the console's game page; the agent's Add games emulator chips
+and candidate rows; the Switch copies panels; the agent's grid covers (a console badge); the Emulator settings list; the
+Deck's emulator pills.
+
+**Build notes:**
+- One generated SVG sprite (`<symbol>` per icon) shared by agent-ui and web, from a script that downloads the sources
+  and writes the sprite, so a refresh is one command. Read each source file's own `viewBox` — several RetroArch glyphs
+  are drawn at `0 128 64 64` and MAME on a 256 canvas, and assuming 64 × 64 left them blank in the first mockup.
+- Arcticons' default stroke of 1 is too faint at 15–20 px; draw them at about 2.6.
+- Icons are decoration (`aria-hidden`); labels and controller A-button labels don't change; anything new still follows the gamepad
+  navigation rules (PR #72: `data-pad-label`, `data-pad-action`).
+- Deck Game Mode: `SvgPath.cs` reads only M/L/H/V/A/Z, and these icons use curves. Either teach it C/S/Q/T (about 40
+  lines) or flatten the curves when the sprite is generated.
+- Credits in `NOTICE.md`: Arcticons (CC BY-SA 4.0 — share-alike covers the icon files, not our code), RetroArch assets
+  (CC BY 4.0), and the RPCS3 and ScummVM logos once their terms are checked.
+- **Optional, decide when starting:** a Switch game's eShop icon as its cover. titledb (the table Group F's names come
+  from) carries `iconUrl` / `bannerUrl` per title ID.
+
+**Verify:** the sprite has no missing ids and every icon has a non-empty bounding box (a script check); screenshots of
+each placement in both themes in testenv (Windows + WSL agents, the console); the Deck pills on hardware.
 
 ## Deferred, not built in this task
 

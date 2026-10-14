@@ -21,6 +21,7 @@ save file only, *Keep it as its own game* kept apart, untouched seeds can join).
 | G — Each machine's own file names | Phase 17 (link a save to a server game whose files are named differently: another dump, another emulator), Phase 20 (a Steam ROM Manager shortcut is the emulator's game, not a second one) | ⏳ Not started — added 2026-10-07; Phase 20 added 2026-10-13 (the Deck lists Forza Horizon twice); open questions in plan.md → *Phase 17* and *Phase 20* |
 | H — Real-game checks (no code) | Phase 18: every emulator that shipped without a test against a real game, on the Deck and on Windows. Now: melonDS, ScummVM, Supermodel, Model 2, PCSX2, DuckStation, Dolphin, PrimeHack, PPSSPP (PSP), RPCS3 (PS3), Vita3K (PS Vita), shadPS4 (PS4), Cemu (Wii U), Azahar (3DS), Xenia (Xbox 360), the Switch emulators (Eden/Yuzu ↔ Ryujinx) | ⏳ Waiting for games — added 2026-10-07; the list grows as phases ship untested |
 | I — Games found by their save states alone | Phase 19 (RetroArch, melonDS, PCSX2, DuckStation, Dolphin, PrimeHack, Azahar) | ⏳ Not started — added 2026-10-12; PPSSPP's shipped with Group D |
+| J — Emulator and console icons | Phase 21: a flat icon for every emulator and console, in the console and the agent UI (and the Deck once its path reader draws curves) | ⏳ Not started — added 2026-10-14 (maintainer: "add the icon implementation to a different group so it can be implemented later"). Sources, placements and the mockup are settled; see plan.md → *Phase 21* |
 
 \* Bonus. If a group grows too big, a bonus emulator is the first thing to move to a later PR.
 
@@ -86,6 +87,10 @@ stays the last group so new rows can keep joining it.
 
 **I — Games found by their save states alone.** Added 2026-10-12 when PPSSPP learnt it in Group D. It touches the
 readers of Groups A–C, so it is its own PR once those are merged; it needs no server change and does not block E–G.
+
+**J — Emulator and console icons.** Added 2026-10-14 after the icon research for Group F. No sync change at all: one
+shared icon sprite and a `PlatformIcon` component for agent-ui and the console, then the Deck's `SvgPath` taught to
+draw curves. It can ship any time after F and blocks nothing; every emulator a later group adds also gets its icon.
 
 **Every group's checks:**
 - fixtures and unit tests per reader;
