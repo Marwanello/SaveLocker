@@ -602,10 +602,17 @@ public sealed class SyncService
         // D2: a title keyed by the emulators is the same game on every machine, whatever each one calls it.
         var keyed = key is null ? null : await _db.Games.FirstOrDefaultAsync(g => g.EmulatorKey == key);
         var named = await _db.Games.Where(g => g.Name.ToLower() == lowered).ToListAsync();
+        // A game keyed to another title is never this one, whatever it is called.
+        bool OtherTitle(Game g) => key is not null && g.EmulatorKey is not null && g.EmulatorKey != key;
+        var joinable = named.Where(g => !OtherTitle(g)).ToList();
         var existing = keyed ?? (region.Length == 0
-            ? named.OrderBy(g => g.Region.Length == 0 ? 0 : 1).FirstOrDefault()
-            : named.FirstOrDefault(g => string.Equals(g.Region, region, StringComparison.OrdinalIgnoreCase)) ??
-              named.FirstOrDefault(g => g.Region.Length == 0));
+            ? joinable.OrderBy(g => g.Region.Length == 0 ? 0 : 1).FirstOrDefault()
+            : joinable.FirstOrDefault(g => string.Equals(g.Region, region, StringComparison.OrdinalIgnoreCase)) ??
+              joinable.FirstOrDefault(g => g.Region.Length == 0));
+        // Only another title has the name here, and one name per region means no new game can take it: that game is
+        // handed back untouched, and the agent, which checks the key, refuses it.
+        if (existing is null && named.FirstOrDefault(g => OtherTitle(g) && string.Equals(g.Region, region, StringComparison.OrdinalIgnoreCase)) is { } taken)
+            return taken;
         var profile = EmulatorProfiles.Clean(req.EmulatorProfile);
         if (existing is not null)
         {

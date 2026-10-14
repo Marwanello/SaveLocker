@@ -85,7 +85,7 @@ public sealed class CommandPoller : IDisposable
         if (Interlocked.Exchange(ref _busy, 1) == 1) return;
         try
         {
-            KeepSwitchCopies();
+            await KeepSwitchCopiesAsync();
             await ReconcileGamesAsync();
             // The first call of the tick is what tells us the server is there. A push that fails
             // reports nothing of the kind on its own — it is queued and retried — so this is the one
@@ -126,8 +126,9 @@ public sealed class CommandPoller : IDisposable
     /// <summary>
     /// A Switch game's copies kept in step on this machine (<see cref="SwitchCopies"/>): one played in another emulator is
     /// taken into the synced folder, whose watcher then pushes it. Before the server is asked, so it works offline too.
+    /// Under the game's sync lock, and skipped for a game a sync holds: the next tick takes it.
     /// </summary>
-    private void KeepSwitchCopies()
+    private async Task KeepSwitchCopiesAsync()
     {
         IReadOnlyList<SwitchEmulators.Setup>? setups = null;
         foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && g.EmulatorCopies.Any(c => c.KeepInSync)).ToList())
@@ -135,7 +136,10 @@ public sealed class CommandPoller : IDisposable
             try
             {
                 setups ??= SwitchEmulators.Find();
-                foreach (var line in SwitchCopies.Reconcile(_config, game, AgentLogger.Log, setups)) _notify(line);
+                var found = setups;
+                var (ran, lines) = await _engine().WithGameLockAsync(game,
+                    () => Task.FromResult(SwitchCopies.Reconcile(_config, game, AgentLogger.Log, found)), TimeSpan.Zero);
+                if (ran) foreach (var line in lines) _notify(line);
             }
             catch (Exception ex) { AgentLogger.LogException($"CommandPoller.KeepSwitchCopies '{game.Name}'", ex); }
         }
@@ -201,8 +205,11 @@ public sealed class CommandPoller : IDisposable
                     local.EmulatorKey = key;
                     changed = true;
                 }
-                // The server renames a Switch game first enrolled as "Switch <title ID>" once a machine knows its name.
-                if (!string.IsNullOrWhiteSpace(sg.Name) && local.Name != sg.Name)
+                // The server renames a Switch game first enrolled as "Switch <title ID>" once a machine knows its name. Only
+                // that name follows the server's: no other game's is renamed under it.
+                if (!string.IsNullOrWhiteSpace(sg.Name) && local.Name != sg.Name &&
+                    SwitchTitles.TitleIdOf(sg.EmulatorKey) is { } titleId &&
+                    string.Equals(local.Name, SwitchTitles.Placeholder(titleId), StringComparison.OrdinalIgnoreCase))
                 {
                     local.Name = sg.Name;
                     changed = true;

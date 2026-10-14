@@ -1263,6 +1263,31 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// which a pull may be restoring into at that moment. False when the folder was not there, or the
     /// lock was not free — the caller tries again on its next pass.
     /// </summary>
+    /// <summary>
+    /// Run <paramref name="work"/> under this game's sync lock, both layers as a push or a pull takes them — for what writes
+    /// a game's save folder outside a sync (a Switch game's copies, <see cref="SwitchCopies"/>), which must never land in
+    /// the middle of a pull's restore or a push's archive, in this process or the launch wrapper's. Waits at most
+    /// <paramref name="wait"/> for a sync in progress; <c>Ran</c> is false when one still holds it.
+    /// </summary>
+    public async Task<(bool Ran, T Result)> WithGameLockAsync<T>(TrackedGame game, Func<Task<T>> work, TimeSpan wait,
+        CancellationToken ct = default)
+    {
+        var gate = _pushLocks.GetOrAdd(game.GameId, _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(wait, ct)) return (false, default!);
+        try
+        {
+            using var crossProcess = AgentStateLock.TryForGame(game.GameId, _config.StateDir, wait, ct);
+            if (crossProcess is null) return (false, default!);
+            return (true, await work());
+        }
+        catch (AgentStateLockException ex)
+        {
+            _log($"[{game.Name}] {ex.Message}");
+            return (false, default!);
+        }
+        finally { gate.Release(); }
+    }
+
     public async Task<bool> ForgetSavePathAsync(TrackedGame game, string key, CancellationToken ct = default)
     {
         var gate = _pushLocks.GetOrAdd(game.GameId, _ => new SemaphoreSlim(1, 1));

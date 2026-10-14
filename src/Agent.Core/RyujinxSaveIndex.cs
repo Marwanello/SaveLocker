@@ -39,10 +39,12 @@ public static class RyujinxSaveIndex
         for (var i = 0; i < count && at + 12 <= data.Length; i++)
         {
             if (!data.Slice(at, 4).SequenceEqual("IMEN"u8)) break;
-            var keySize = (int)BinaryPrimitives.ReadUInt32LittleEndian(data[(at + 4)..]);
-            var valueSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(data[(at + 8)..]);
+            var rawKeySize = BinaryPrimitives.ReadUInt32LittleEndian(data[(at + 4)..]);
+            var rawValueSize = BinaryPrimitives.ReadUInt32LittleEndian(data[(at + 8)..]);
             at += 12;
-            if (keySize < 0x21 || valueSize < 8 || at + keySize + valueSize > data.Length) break;
+            // In long: two sizes near 2^31 would wrap in int and pass the bound.
+            if (rawKeySize < 0x21 || rawValueSize < 8 || (long)at + rawKeySize + rawValueSize > data.Length) break;
+            var (keySize, valueSize) = ((int)rawKeySize, (int)rawValueSize);
             var key = data.Slice(at, keySize);
             var programId = BinaryPrimitives.ReadUInt64LittleEndian(key);
             var userHigh = BinaryPrimitives.ReadUInt64LittleEndian(key[8..]);

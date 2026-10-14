@@ -44,6 +44,7 @@ export function SwitchCopiesCard({ gameId, gameName, machineName, refreshKey, on
   if (!rows) return null
 
   const synced = rows.find(r => r.synced)
+  const syncedName = synced?.emulator ?? 'the synced copy'
 
   async function act(emulator: string, action: string, done: string) {
     setBusy(true)
@@ -91,8 +92,8 @@ export function SwitchCopiesCard({ gameId, gameName, machineName, refreshKey, on
                     <div className="sl-emucopy__ask">
                       Both saves changed since they were last the same. Keep:
                       <Button size="sm" data-pad-label="Keep this one" disabled={busy}
-                        onClick={() => void act(r.emulator, 'keep-synced', `Kept ${synced?.emulator}'s save and copied it to ${r.emulator}.`)}>
-                        {synced?.emulator}’s
+                        onClick={() => void act(r.emulator, 'keep-synced', `Kept ${syncedName}'s save and copied it to ${r.emulator}.`)}>
+                        {synced ? `${synced.emulator}’s` : 'The synced one'}
                       </Button>
                       <Button size="sm" data-pad-label="Keep this one" disabled={busy}
                         onClick={() => void act(r.emulator, 'keep-copy', `Kept ${r.emulator}'s save. It syncs with the next push.`)}>
@@ -110,7 +111,7 @@ export function SwitchCopiesCard({ gameId, gameName, machineName, refreshKey, on
                         checked={r.keepInSync}
                         disabled={busy}
                         onChange={next => void act(r.emulator, next ? 'keep-in-sync' : 'stop-keeping',
-                          next ? `${r.emulator}'s copy is kept in step with ${synced?.emulator}'s.` : `${r.emulator}'s copy is no longer kept in step.`)}
+                          next ? `${r.emulator}'s copy is kept in step with ${syncedName}'s.` : `${r.emulator}'s copy is no longer kept in step.`)}
                       />
                     </label>
                     {r.canCopyHere && r.state !== 'conflict' && (
