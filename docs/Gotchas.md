@@ -108,6 +108,23 @@ here.
   58 of 52,973. If a count derived from the manifest is short by a few dozen, that is this, not a
   parse failure — confirm before hunting.
 - **PCGamingWiki 403s automated fetches.** Read a page through the browser tools, not `curl`/WebFetch.
+- **The manifest is a live feed, refreshed on a window — do not pin it.** Upstream `master` is rewritten
+  several times a day; an agent re-downloads when its cached copy passes the refresh window (default
+  3 days, console-editable under Configuration, `0` = never) or when the console's "Refresh now" rides a
+  heartbeat. `Detection.RefreshManifestIfDueAsync` never throws and never blocks a scan (the poller
+  starts it fire-and-forget; the attempt gap is 1 h automatic / 30 s forced), and a bad download keeps
+  the old cache. **Every test fixture that points `ManifestCachePath` at a file must also set
+  `"ManifestRefreshDays": 0`**, or a daemon under test will try to refresh over it — all suites do.
+  The download is validated before it replaces the cache: it must parse and carry at least
+  `ManifestLoader.MinPlausibleGames` (a proxy error page parses to nothing), bounded by
+  `ManifestLoader.MaxManifestBytes`; the cache is replaced by a temp-file move.
+- **A manifest template may never climb with `..`, and its link-resolved path must stay inside the
+  resolver's own roots** (`PathResolver.ResolveConcrete` + `Shared/RealPath.cs`). Malformed real
+  entries exist (the detection harness records them), and a link inside a Wine prefix can redirect an
+  otherwise-contained path out of it; both now refuse to "no existing save directory", so the user is
+  asked to pick. `PathResolver` deliberately stays pure (no logging) — the detection harness scores it
+  offline — and the refusals are pinned by `ManifestPathConstraintTests` (11, mutation-checked) and
+  `run-hardening-tests.ps1`'s manifest section (real junction/symlink, both OSes).
 
 ## Test-only environment variables
 These exist because the production values are far too slow to observe in a suite. They are read by
