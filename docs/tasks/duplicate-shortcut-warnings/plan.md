@@ -1,6 +1,17 @@
 # Duplicate-shortcut warnings outside doctor — plan
 
-Planned 2026-10-14. Not started. Research below is against `main` (`4290a2a`).
+Planned 2026-10-14. **Built 2026-10-14** (branch `duplicate-shortcut-warnings`, rebased onto
+`main@3150f05`): the shared detector (`SteamShortcuts.DuplicateNameGroups`/`DuplicatesFor`) now backs
+the doctor note and both scanners; `ScanCandidate.DuplicateShortcuts` / `DuplicateShortcut` ride the
+agent's wire (`CandidateDto`); agent-ui gained the `DuplicateChip` (ReleaseChip pattern) + the row
+note, and Game Mode the warning tile + caption; `run-linux-tests.sh` gained the three
+`/api/candidates` checks. Deviations from this plan as first written: the popover shows each
+shortcut's own name, AppID and tracked marker only — the mockup's per-entry save-folder line is not
+on the wire; the Game Mode caption shows on addable rows only. Suites: `run-linux-tests` **214/71**
+vs untouched `main`'s **208/74** on this box — **zero new failures**, the 3 new checks pass, and the
+71 are a pre-existing registration/startup cascade on this machine (identical leading failures on
+`main`). Server, Agent.Linux, Windows Agent and `agent-ui` build clean; `api-types.ts` regenerated
+from a scratch daemon (`--port 5190`). Research below was against `main` (`4290a2a`).
 
 ## Goal
 
