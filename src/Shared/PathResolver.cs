@@ -499,10 +499,30 @@ public sealed class PathResolver
     /// The half of resolution that operates on an already-expanded path: trim at the first wildcard,
     /// reduce a filename to its directory, and refuse anything not rooted in one of our tokens.
     /// Shared so a &lt;storeUserId&gt; fan-out gets identical treatment to a straight expansion.
+    /// <para>
+    /// A template is refused outright unless it is an absolute path with no <c>..</c> segment, and
+    /// the path it yields must survive <see cref="WithinRealRoots"/> — its link-resolved form has to
+    /// sit under the link-resolved form of one of this resolver's own roots. The manifest is a
+    /// downloaded document, so its templates are treated as input to be constrained, not trusted:
+    /// this is the resolver-side counterpart of "a pulled archive is hostile input" (Decisions).
+    /// </para>
     /// </summary>
     private string? ResolveConcrete(string expanded)
     {
         expanded = expanded.Replace('/', Path.DirectorySeparatorChar);
+
+        // Not an absolute path, or one that walks UP with "..": refused before anything else.
+        //
+        // Manifest templates are token-anchored absolute paths — "<winAppData>/Foo" — and a ".."
+        // section in one is exactly what the old root check could not see: the check compared the
+        // RAW string, so "<winAppData>/../../../x" began with a token's value and passed, then
+        // Path.GetFullPath collapsed the traversal downstream and returned a confident path
+        // anywhere on the machine. Rejection is strict — even a ".." that would stay inside a root
+        // — because no well-formed entry needs one, and "no such directory" (the caller asks the
+        // user to pick) is strictly better than trusting arithmetic on attacker-shaped input.
+        if (!Path.IsPathRooted(expanded)) return null;
+        foreach (var seg in expanded.Split(Path.DirectorySeparatorChar))
+            if (seg == "..") return null;
 
         // Trim at the first wildcard segment so we return a concrete directory.
         var segments = expanded.Split(Path.DirectorySeparatorChar);
@@ -515,7 +535,9 @@ public sealed class PathResolver
         }
 
         if (kept.Count == 0) return null;
-        var path = string.Join(Path.DirectorySeparatorChar, kept);
+        string path;
+        try { path = Path.GetFullPath(string.Join(Path.DirectorySeparatorChar, kept)); }
+        catch { return null; } // invalid characters, or a too-long path
 
         // A template that expands to something not rooted in one of OUR tokens is refused.
         //
@@ -536,13 +558,61 @@ public sealed class PathResolver
         // false there, and NTFS would have resolved a mis-cased Directory.Exists above anyway.
         if (_caseInsensitiveFilesystem && !Directory.Exists(path) &&
             ResolveCaseInsensitive(kept, path, trailingIsFile) is { } corrected)
-            return corrected;
+            return WithinRealRoots(corrected) ? corrected : null;
 
         // If the template pointed at a specific file (last kept segment has an
         // extension and there were no wildcards after it), use its directory.
         if (trailingIsFile && !Directory.Exists(path))
             path = Path.GetDirectoryName(path) ?? path;
 
-        return path;
+        return WithinRealRoots(path) ? path : null;
     }
+
+    /// <summary>
+    /// True when the link-resolved form of <paramref name="path"/> still sits under the
+    /// link-resolved form of one of this resolver's own roots.
+    /// <para>
+    /// A save folder reached through a symlink or junction that points outside the root is not ours
+    /// to return: everything downstream follows links for real, so a path that only LOOKS contained
+    /// is exactly the shape a malformed entry, or a link a game (or anything else) planted inside a
+    /// prefix, produces. Roots are resolved the same way, so a root that is itself legitimately a
+    /// link (a symlinked Steam library, a relocated Documents folder) does not read as an escape.
+    /// </para>
+    /// </summary>
+    private bool WithinRealRoots(string path)
+    {
+        if (RealPath.Resolve(path) is not { } real) return false;
+        return RealRoots().Any(root => IsUnder(real, root));
+    }
+
+    /// <summary>This resolver's roots, link-resolved once for its lifetime (like the child-listing
+    /// cache: a root is a fact about the filesystem a single game's resolution relies on).</summary>
+    private List<string>? _realRoots;
+
+    private List<string> RealRoots()
+    {
+        if (_realRoots is not null) return _realRoots;
+
+        var roots = new List<string>();
+        foreach (var (token, value) in _tokens)
+        {
+            if (NonPathTokens.Contains(token) || string.IsNullOrEmpty(value)) continue;
+            if (RealPath.Resolve(value) is { } real) roots.Add(TrimSeparators(real));
+        }
+        return _realRoots = roots;
+    }
+
+    /// <summary>Equals or sits strictly underneath <paramref name="root"/> (already separator-trimmed).</summary>
+    private static bool IsUnder(string path, string root)
+    {
+        var p = TrimSeparators(path);
+        var cmp = PathComparison;
+        if (p.Equals(root, cmp)) return true;
+        return p.Length > root.Length && p.StartsWith(root, cmp) &&
+               (p[root.Length] == Path.DirectorySeparatorChar ||
+                p[root.Length] == Path.AltDirectorySeparatorChar);
+    }
+
+    private static string TrimSeparators(string p) =>
+        p.Length > 1 ? p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) : p;
 }
