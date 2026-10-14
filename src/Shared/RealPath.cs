@@ -32,7 +32,6 @@ public static class RealPath
         try
         {
             full = Path.GetFullPath(path);
-            if (!Path.IsPathRooted(full)) return null;
         }
         catch { return null; } // invalid characters, or a too-long path
 

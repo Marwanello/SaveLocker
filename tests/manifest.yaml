@@ -16,13 +16,14 @@ LGS Public Game:
       tags:
         - save
 
-# A hostile-shaped entry: the path climbs out of <winAppData> with "..", landing in the user
-# profile — a folder the suite can create without elevation, so the check distinguishes a REFUSAL
-# from "nothing happens to be there". The destination is created by the suite before the check.
-# The sibling entry below proves the guard blocks nothing real.
+# A hostile-shaped entry: the path climbs out of <winAppData> with ".." to C:\Users — a folder that
+# EXISTS on every Windows box but sits under no token root. The old raw-string prefix check passed
+# it (the raw path still began with <winAppData>'s value) and the collapsed answer was handed back;
+# canonicalise-then-contain must refuse it. The sibling entry below proves the guard blocks
+# nothing real.
 LGS Traversal Game:
   files:
-    <winAppData>/../../LGSTraversalEscape:
+    <winAppData>/../../..:
       tags:
         - save
 

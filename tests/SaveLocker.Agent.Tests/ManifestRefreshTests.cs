@@ -70,11 +70,82 @@ public sealed class ManifestRefreshTests : IDisposable
     {
         var cache = Cache();
         File.WriteAllText(cache, "Cached Game:\n  files:\n    <winAppData>/Cached:\n      tags:\n        - save\n");
-        _stub.Body = "{}"; // an error page or a truncated body parses to nothing
+        _stub.Body = "{}"; // a document that parses but carries nothing — the floor's job
 
         await Assert.ThrowsAsync<InvalidDataException>(() => ManifestLoader.DownloadAsync(cache, _stub.Url));
 
         Assert.Contains("Cached Game", File.ReadAllText(cache));
+    }
+
+    [Fact]
+    public async Task An_error_page_is_refused_by_a_refresh_and_the_cache_is_kept()
+    {
+        var cache = Cache();
+        File.WriteAllText(cache, "Old Game:\n  files: {}\n");
+        File.SetLastWriteTimeUtc(cache, DateTime.UtcNow.AddDays(-10));
+        // What a proxy or a captive portal actually serves with a 200: not YAML at all. This used
+        // to fault the fire-and-forget refresh task unobserved — YamlException escaped the filter.
+        _stub.Body = "<html><body>502 Bad Gateway</body></html>";
+
+        var detection = Detection();
+        Assert.False(await detection.RefreshManifestIfDueAsync());
+
+        Assert.Contains("Old Game", File.ReadAllText(cache));
+        Assert.Equal(1, _stub.Requests);
+    }
+
+    [Fact]
+    public async Task A_refresh_the_attempt_gap_refuses_never_reports_itself_as_started()
+    {
+        var detection = Detection();
+        var started = 0;
+
+        Assert.True(await detection.RefreshManifestIfDueAsync(force: true, onStarted: () => started++));
+        Assert.Equal(1, started);
+
+        // A second press inside the gap is declined before anything begins. The host marks a
+        // request handled through `onStarted`, so a refusal leaves it pending for the next beat
+        // instead of consuming it with no download.
+        Assert.False(await detection.RefreshManifestIfDueAsync(force: true, onStarted: () => started++));
+        Assert.Equal(1, started);
+        Assert.Equal(1, _stub.Requests);
+    }
+
+    [Fact]
+    public async Task A_304_refresh_keeps_the_cache_and_restarts_the_window()
+    {
+        var cache = Cache();
+        await ManifestLoader.DownloadAsync(cache, _stub.Url);
+        Assert.True(File.Exists(cache + ".etag"));
+
+        File.SetLastWriteTimeUtc(cache, DateTime.UtcNow.AddDays(-10));
+        _stub.NotModified = true; // upstream answers the same ETag with a 304
+
+        var detection = Detection();
+        Assert.True(await detection.RefreshManifestIfDueAsync());
+
+        Assert.Equal(2, _stub.Requests);
+        Assert.Equal(_stub.Etag, _stub.LastIfNoneMatch);
+        // The check itself answered "this machine is current", so the window restarted without a
+        // re-download: the very next check has nothing to do.
+        Assert.False(await detection.RefreshManifestIfDueAsync());
+        Assert.Equal(2, _stub.Requests);
+    }
+
+    [Fact]
+    public void A_hand_edited_window_is_clamped_on_read()
+    {
+        var config = Config();
+        config.ManifestRefreshDays = int.MaxValue;
+        config.Save();
+        Assert.Equal(365, config.EffectiveManifestRefreshDays);
+
+        config.ManifestRefreshDays = -5;
+        config.Save();
+        Assert.Equal(0, config.EffectiveManifestRefreshDays);
+
+        config.ApplyManifestSettings(int.MaxValue);
+        Assert.Equal(365, config.EffectiveManifestRefreshDays);
     }
 
     [Fact]
@@ -164,16 +235,17 @@ public sealed class ManifestRefreshTests : IDisposable
         Assert.Equal(7, config.EffectiveManifestRefreshDays);
         Assert.Equal(7, AgentConfig.Load(config.ConfigPath).ConsoleManifestRefreshDays);
 
-        config.ApplyManifestSettings(null); // no value pushed (an unregistered machine / old server)
-        Assert.Equal(3, config.EffectiveManifestRefreshDays);
+        config.ApplyManifestSettings(null); // the server has no opinion (old server): keep the last one
+        Assert.Equal(7, config.EffectiveManifestRefreshDays);
 
         var request = DateTime.UtcNow;
         Assert.True(config.IsManifestRefreshDue(request));
         config.MarkManifestRefreshHandled(request);
 
-        Assert.False(config.IsManifestRefreshDue(request));                    // the one acted on
-        Assert.False(config.IsManifestRefreshDue(request.AddSeconds(-1)));     // older beats stay old
-        Assert.True(config.IsManifestRefreshDue(request.AddSeconds(1)));       // a NEW press is due again
+        Assert.False(config.IsManifestRefreshDue(request));                // the one acted on
+        Assert.True(config.IsManifestRefreshDue(request.AddSeconds(-1)));  // ANY different press is due —
+                                                                           // a server clock step-back included
+        Assert.True(config.IsManifestRefreshDue(request.AddSeconds(1)));   // a NEW press is due again
         Assert.Equal(request, AgentConfig.Load(config.ConfigPath).ManifestRefreshHandledAt);
     }
 
@@ -187,6 +259,11 @@ public sealed class ManifestRefreshTests : IDisposable
         public int Status { get; set; } = 200;
         /// <summary>When set, answers with only this Content-Length header — for the cap check.</summary>
         public long? DeclaredLength { get; set; }
+        /// <summary>The ETag a 200 carries; a conditional request that matches it gets a 304 when
+        /// <see cref="NotModified"/> is set.</summary>
+        public string? Etag { get; set; } = "\"v1\"";
+        public bool NotModified { get; set; }
+        public string? LastIfNoneMatch { get; private set; }
         public int Requests { get; private set; }
         public string Url { get; }
 
@@ -219,6 +296,14 @@ public sealed class ManifestRefreshTests : IDisposable
                 try
                 {
                     Requests++;
+                    LastIfNoneMatch = ctx.Request.Headers["If-None-Match"];
+                    if (NotModified && LastIfNoneMatch is { } match && match == Etag)
+                    {
+                        ctx.Response.StatusCode = 304;
+                        ctx.Response.Close();
+                        continue;
+                    }
+
                     if (DeclaredLength is { } length)
                     {
                         // One byte flushes the headers (the client refuses on the Content-Length
@@ -234,6 +319,7 @@ public sealed class ManifestRefreshTests : IDisposable
                     var bytes = Encoding.UTF8.GetBytes(Body);
                     ctx.Response.StatusCode = Status;
                     ctx.Response.ContentType = "text/yaml";
+                    if (Etag is not null) ctx.Response.Headers["ETag"] = Etag;
                     ctx.Response.ContentLength64 = bytes.Length;
                     ctx.Response.OutputStream.Write(bytes);
                     ctx.Response.Close();

@@ -53,6 +53,18 @@ function Toggle({ label, hint, checked, onChange, disabled }: {
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+/** The inline dropdown the Defaults & maintenance hints use for a value stored on the server. */
+function InlineSelect({ label, value, onChange, children }: {
+  label: string; value: string | number; onChange: (value: string) => void; children: ReactNode;
+}) {
+  return (
+    <select aria-label={label} value={value} onChange={e => onChange(e.target.value)}
+      className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+      {children}
+    </select>
+  );
+}
+
 const left = (t: string) => {
   const m = Math.max(0, Math.round((toMs(t) - Date.now()) / 60000));
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
@@ -280,7 +292,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   }
 
   // ── Manifest refresh (save-detection data) ──
-  const manifestDays = settings.manifestRefreshDays ?? 3;
+  const manifestDays = settings.manifestRefreshDays;
   const [savingManifest, setSavingManifest] = useState(false);
   async function setManifestDays(days: number) {
     setSavingManifest(true);
@@ -558,16 +570,15 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
               <div className="text-xs text-dim mt-0.5">
                 The save-detection data used to find new games.
                 {savingManifest ? ' Saving…' : <> Each machine refreshes{' '}
-                  <select aria-label="Manifest refresh window" value={manifestDays}
-                    onChange={e => void setManifestDays(Number(e.target.value))}
-                    className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-                    <option value={1}>every day</option>
-                    <option value={3}>every 3 days</option>
-                    <option value={7}>weekly</option>
-                    <option value={14}>every 14 days</option>
-                    <option value={30}>monthly</option>
-                    <option value={0}>never automatically</option>
-                  </select>.</>}
+                  <InlineSelect label="Manifest refresh window" value={manifestDays}
+                    onChange={v => void setManifestDays(Number(v))}>
+                    {/* The stored value is anywhere from 0-365 (a config default included), so it is
+                        unioned in — a controlled select with no matching option renders blank. */}
+                    {[...new Set([1, 3, 7, 14, 30, 0, manifestDays])].map(d =>
+                      <option key={d} value={d}>
+                        {{ 0: 'never automatically', 1: 'every day', 3: 'every 3 days', 7: 'weekly', 14: 'every 14 days', 30: 'monthly' }[d] ?? `every ${d} days`}
+                      </option>)}
+                  </InlineSelect>.</>}
                 {settings.manifestRefreshRequestedAt && <> Last requested {ago(settings.manifestRefreshRequestedAt)}.</>}
               </div>
             </div>
@@ -581,21 +592,25 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             hint={backup
               ? <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-1">
                   The database and every game's latest save, zipped,
-                  <select aria-label="Backup frequency" value={backup.frequency ?? 'weekly'} onChange={e => void setBackupSchedule({ frequency: e.target.value })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                  <InlineSelect label="Backup frequency" value={backup.frequency ?? 'weekly'}
+                    onChange={v => void setBackupSchedule({ frequency: v })}>
                     <option value="daily">daily</option>
                     <option value="weekly">weekly</option>
-                  </select>
+                  </InlineSelect>
                   {(backup.frequency ?? 'weekly') === 'weekly' && <>on
-                    <select aria-label="Backup day" value={backup.dayOfWeek ?? 0} onChange={e => void setBackupSchedule({ dayOfWeek: Number(e.target.value) })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                    <InlineSelect label="Backup day" value={backup.dayOfWeek ?? 0}
+                      onChange={v => void setBackupSchedule({ dayOfWeek: Number(v) })}>
                       {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                    </select></>}
+                    </InlineSelect></>}
                   at
-                  <select aria-label="Backup hour (UTC)" value={backup.hourOfDay} onChange={e => void setBackupSchedule({ hourOfDay: Number(e.target.value) })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                  <InlineSelect label="Backup hour (UTC)" value={backup.hourOfDay}
+                    onChange={v => void setBackupSchedule({ hourOfDay: Number(v) })}>
                     {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00 UTC</option>)}
-                  </select>, keep
-                  <select aria-label="Backups to keep" value={backup.retentionCount} onChange={e => void setBackupSchedule({ retentionCount: Number(e.target.value) })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                  </InlineSelect>, keep
+                  <InlineSelect label="Backups to keep" value={backup.retentionCount}
+                    onChange={v => void setBackupSchedule({ retentionCount: Number(v) })}>
                     {[...new Set([2, 4, 8, 12, 26, 52, backup.retentionCount])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>. <a href="#backups" className="underline underline-offset-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Backups</a>
+                  </InlineSelect>. <a href="#backups" className="underline underline-offset-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Backups</a>
                 </span>
               : 'Reading the backup schedule…'} />
 

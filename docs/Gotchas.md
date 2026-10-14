@@ -111,19 +111,28 @@ here.
 - **The manifest is a live feed, refreshed on a window — do not pin it.** Upstream `master` is rewritten
   several times a day; an agent re-downloads when its cached copy passes the refresh window (default
   3 days, console-editable under Configuration, `0` = never) or when the console's "Refresh now" rides a
-  heartbeat. `Detection.RefreshManifestIfDueAsync` never throws and never blocks a scan (the poller
-  starts it fire-and-forget; the attempt gap is 1 h automatic / 30 s forced), and a bad download keeps
-  the old cache. **Every test fixture that points `ManifestCachePath` at a file must also set
-  `"ManifestRefreshDays": 0`**, or a daemon under test will try to refresh over it — all suites do.
-  The download is validated before it replaces the cache: it must parse and carry at least
-  `ManifestLoader.MinPlausibleGames` (a proxy error page parses to nothing), bounded by
-  `ManifestLoader.MaxManifestBytes`; the cache is replaced by a temp-file move.
-- **A manifest template may never climb with `..`, and its link-resolved path must stay inside the
-  resolver's own roots** (`PathResolver.ResolveConcrete` + `Shared/RealPath.cs`). Malformed real
-  entries exist (the detection harness records them), and a link inside a Wine prefix can redirect an
+  heartbeat. `Detection.RefreshManifestIfDueAsync` never throws (a non-YAML body is wrapped as
+  `InvalidDataException` and logged; the console's request is only stamped "handled" once an attempt
+  actually starts) and never blocks a read — the download runs outside the manifest lock, so a first
+  load serves the cached file while a refresh is in flight. The attempt gap is 1 h automatic / 30 s
+  forced, and a bad download keeps the old cache. **Pinning the fixture's agent-side
+  `"ManifestRefreshDays": 0` is NOT enough**: the server's heartbeat pushes its own window and the
+  console's value overrides the local one, so every suite that starts a server also pins
+  `Manifest__RefreshDays=0` on it (`run-linux-tests`, `run-linux-regression-tests`, `run-winagent-tests`,
+  `run-concurrency-tests`) — otherwise a registered daemon replaces a >3-day-old fixture
+  (`tests/linux/manifest.yaml`) with the live ~17 MB feed. The download is validated before it replaces
+  the cache: it must parse and carry at least `ManifestLoader.MinPlausibleGames`, bounded by
+  `ManifestLoader.MaxManifestBytes`, the declared length must match the bytes delivered, and the cache is
+  replaced by a temp-file move. A cache with an ETag beside it (`.etag`) makes the request conditional;
+  a 304 restarts the window without re-downloading.
+- **A manifest template must be absolute, and its link-resolved path must stay inside the resolver's own
+  roots** (`PathResolver.ResolveConcrete` + `Shared/RealPath.cs`). A `..` segment is not refused by
+  itself (real entries contain one — the detection harness records them); `Path.GetFullPath` canonicalises
+  it away and containment decides, so a traversal that leaves the roots still refuses. Malformed real
+  entries exist, and a link inside a Wine prefix can redirect an
   otherwise-contained path out of it; both now refuse to "no existing save directory", so the user is
   asked to pick. `PathResolver` deliberately stays pure (no logging) — the detection harness scores it
-  offline — and the refusals are pinned by `ManifestPathConstraintTests` (11, mutation-checked) and
+  offline — and the refusals are pinned by `ManifestPathConstraintTests` (12, mutation-checked) and
   `run-hardening-tests.ps1`'s manifest section (real junction/symlink, both OSes).
 
 ## Test-only environment variables

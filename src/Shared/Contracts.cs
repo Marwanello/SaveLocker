@@ -234,8 +234,9 @@ public record ServerSettingsDto(
     int ManifestRefreshDays = 3,
     DateTime? ManifestRefreshRequestedAt = null);
 
-/// <summary>How the console asks for a manifest refresh window (days; 0 = never auto-refresh).</summary>
-public record SetManifestRefreshRequest(int RefreshDays);
+/// <summary>How the console asks for a manifest refresh window (days; 0 = never auto-refresh).
+/// Nullable so a body that omits the field is refused rather than silently read as "never".</summary>
+public record SetManifestRefreshRequest(int? RefreshDays);
 
 /// <summary>What both manifest settings routes answer: the stored window and the last on-demand request.</summary>
 public record ManifestRefreshSettingsDto(int RefreshDays, DateTime? RequestedAt);

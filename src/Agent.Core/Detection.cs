@@ -14,33 +14,49 @@ public sealed class Detection
 {
     private readonly AgentConfig _config;
     private ManifestLoader? _manifest;
-    // Guards the check-then-load/download below. Detection is a single shared instance now reached
+    // Guards loading and the swap below. Detection is a single shared instance now reached
     // by two new HTTP-triggerable routes (/api/candidates/lookup, /api/manifest/search) alongside
     // the agent's own background scan/poll, so two first-ever callers racing past the null check
     // could otherwise both kick off a redundant manifest download.
     private readonly SemaphoreSlim _manifestLock = new(1, 1);
+
+    /// <summary>The cache file's mtime when <see cref="_manifest"/> was loaded or swapped. A newer
+    /// file means another process replaced it (the CLI's refresh-manifest, a second agent), and the
+    /// in-memory copy is stale even though this instance is long-lived — `savelocker ui` never
+    /// restarts, and the daemon serves scans for weeks.</summary>
+    private DateTime _manifestLoadedAtUtc;
+
+    /// <summary>The host's own resolver — machine constants, so it is built once instead of per
+    /// resolution call (a scan resolves one game at a time).</summary>
+    private PathResolver? _hostResolver;
 
     public Detection(AgentConfig config) => _config = config;
 
     /// <summary>Load the manifest from cache, downloading it if missing or if forced.</summary>
     public async Task<ManifestLoader> GetManifestAsync(bool forceRefresh = false, CancellationToken ct = default)
     {
-        if (_manifest is not null && !forceRefresh) return _manifest;
+        if (_manifest is not null && !forceRefresh && !CacheFileNewer()) return _manifest;
 
         await _manifestLock.WaitAsync(ct);
         try
         {
-            if (_manifest is not null && !forceRefresh) return _manifest;
+            if (_manifest is not null && !forceRefresh && !CacheFileNewer()) return _manifest;
 
-            if (!forceRefresh && File.Exists(_config.ManifestCachePath))
-                _manifest = ManifestLoader.LoadFromFile(_config.ManifestCachePath);
-            else
-                _manifest = await ManifestLoader.DownloadAsync(_config.ManifestCachePath, ct: ct);
+            _manifest = !forceRefresh && File.Exists(_config.ManifestCachePath)
+                ? ManifestLoader.LoadFromFile(_config.ManifestCachePath)
+                : await ManifestLoader.DownloadAsync(_config.ManifestCachePath, ct: ct);
+            _manifestLoadedAtUtc = File.GetLastWriteTimeUtc(_config.ManifestCachePath);
 
             return _manifest;
         }
         finally { _manifestLock.Release(); }
     }
+
+    /// <summary>Whether the cache file was replaced since the in-memory copy was loaded — how a
+    /// refresh by another process reaches this instance without a restart.</summary>
+    private bool CacheFileNewer() =>
+        File.Exists(_config.ManifestCachePath) &&
+        File.GetLastWriteTimeUtc(_config.ManifestCachePath) > _manifestLoadedAtUtc;
 
     private DateTime? _lastRefreshAttemptUtc;
 
@@ -51,12 +67,19 @@ public sealed class Detection
 
     /// <summary>
     /// Download a newer manifest when the cached one is past its refresh window — or when
-    /// <paramref name="force"/> (the console's "Refresh now"). Never throws, and never blocks a scan:
-    /// the caller keeps serving the cached copy, and a failure (network, an error page, a truncated
-    /// download) just leaves it in place. The attempt gap keeps a stale cache from re-downloading
-    /// 17 MB on every 20 s tick, and a failing server from being asked again and again.
+    /// <paramref name="force"/> (the console's "Refresh now"). Never throws, and never blocks a
+    /// scan: the download runs OUTSIDE the manifest lock, so a reader whose in-memory copy is still
+    /// empty loads the cached file immediately instead of waiting out a 17 MB transfer, and a
+    /// failure (network, an error page, a truncated download) just leaves the cache in place. The
+    /// attempt gap keeps a stale cache from re-downloading on every 20 s tick, and a failing server
+    /// from being asked again and again.
     /// </summary>
-    public async Task<bool> RefreshManifestIfDueAsync(bool force = false, CancellationToken ct = default)
+    /// <param name="onStarted">Invoked once this call is genuinely about to attempt a download —
+    /// not when the gap or the window declines it. The console's "Refresh now" is marked handled
+    /// through this, so a press the throttle refuses stays pending for the next heartbeat instead
+    /// of being consumed with nothing happening.</param>
+    public async Task<bool> RefreshManifestIfDueAsync(
+        bool force = false, CancellationToken ct = default, Action? onStarted = null)
     {
         var windowDays = _config.EffectiveManifestRefreshDays;
         if (!force && windowDays <= 0) return false;
@@ -64,42 +87,44 @@ public sealed class Detection
         var minGap = force ? TimeSpan.FromSeconds(30) : TimeSpan.FromHours(1);
         if (_lastRefreshAttemptUtc is { } last && DateTime.UtcNow - last < minGap) return false;
 
-        if (!force)
-        {
-            // No cache at all is first-run's normal load, not a refresh; and a fresh enough copy
-            // means nothing to do — the common case, one mtime read.
-            if (!File.Exists(_config.ManifestCachePath)) return false;
-            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(_config.ManifestCachePath) < TimeSpan.FromDays(windowDays))
-                return false;
-        }
+        // No cache at all is first-run's normal load, not a refresh; and a fresh enough copy means
+        // nothing to do — the common case, one mtime read.
+        if (!force && !CacheIsStale(windowDays)) return false;
 
         _lastRefreshAttemptUtc = DateTime.UtcNow;
+        try { onStarted?.Invoke(); }
+        catch (Exception ex) { AgentLogger.LogException("Detection.ManifestRefreshStart", ex); }
 
-        await _manifestLock.WaitAsync(ct);
         try
         {
-            // Re-check under the lock: another caller (or the CLI's own refresh) may have just
-            // written a fresh copy while this one waited.
-            if (!force && File.Exists(_config.ManifestCachePath) &&
-                DateTime.UtcNow - File.GetLastWriteTimeUtc(_config.ManifestCachePath) < TimeSpan.FromDays(windowDays))
-                return false;
+            var refreshed = await ManifestLoader.DownloadAsync(
+                _config.ManifestCachePath, ManifestUrlOverride, ct: ct);
 
+            await _manifestLock.WaitAsync(ct);
             try
             {
-                _manifest = await ManifestLoader.DownloadAsync(
-                    _config.ManifestCachePath, ManifestUrlOverride, ct: ct);
-                AgentLogger.Log($"Manifest refreshed: {_manifest.GameCount} games.");
-                return true;
+                _manifest = refreshed;
+                _manifestLoadedAtUtc = File.GetLastWriteTimeUtc(_config.ManifestCachePath);
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException
-                                          or UnauthorizedAccessException or InvalidDataException)
-            {
-                AgentLogger.Log($"Manifest refresh failed; keeping the cached copy: {ex.Message}");
-                return false;
-            }
+            finally { _manifestLock.Release(); }
+
+            AgentLogger.Log($"Manifest refreshed: {refreshed.GameCount} games.");
+            return true;
         }
-        finally { _manifestLock.Release(); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException
+                                      or UnauthorizedAccessException or InvalidDataException)
+        {
+            // InvalidDataException covers an unparseable body: DownloadAsync wraps YamlException
+            // (an HTML proxy page, a captive portal) into it, because a body from the network is
+            // failed input to report, not a parser bug to surface as an unobserved fault.
+            AgentLogger.Log($"Manifest refresh failed; keeping the cached copy: {ex.Message}");
+            return false;
+        }
     }
+
+    private bool CacheIsStale(int windowDays) =>
+        File.Exists(_config.ManifestCachePath) &&
+        DateTime.UtcNow - File.GetLastWriteTimeUtc(_config.ManifestCachePath) >= TimeSpan.FromDays(windowDays);
 
     /// <summary>
     /// Find candidate save directories for a manifest game name. Empty if the game isn't in the
@@ -116,7 +141,7 @@ public sealed class Detection
     public async Task<IReadOnlyList<ResolvedSaveLocation>> ResolveSaveLocationsAsync(
         string gameName, PathResolver? resolver = null, CancellationToken ct = default)
     {
-        resolver ??= HostResolver();
+        resolver ??= _hostResolver ??= HostResolver();
         if (resolver is null) return Array.Empty<ResolvedSaveLocation>();
 
         var manifest = await GetManifestAsync(ct: ct);

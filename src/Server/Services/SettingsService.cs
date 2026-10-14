@@ -308,14 +308,10 @@ public sealed class SettingsService
     public Task SetManifestRefreshDaysAsync(int days, CancellationToken ct = default) =>
         SetAsync(ManifestRefreshDays, days.ToString(), ct);
 
-    /// <summary>Record the console's on-demand refresh. Returns the timestamp every heartbeat will
-    /// carry: an agent that has not yet acted on it downloads once and remembers it.</summary>
-    public async Task<DateTime> RequestManifestRefreshAsync(CancellationToken ct = default)
-    {
-        var at = DateTime.UtcNow;
-        await SetAsync(ManifestRefreshRequestedAt, at.ToString("o"), ct);
-        return at;
-    }
+    /// <summary>Record the console's on-demand refresh; every heartbeat from now on carries the
+    /// timestamp until each agent has acted on it once and remembers it.</summary>
+    public Task RequestManifestRefreshAsync(CancellationToken ct = default) =>
+        SetAsync(ManifestRefreshRequestedAt, DateTime.UtcNow.ToString("o"), ct);
 
     /// <summary>The exclude patterns every game inherits, and whether they were saved from the console.</summary>
     public async Task<(string[] Globs, bool FromConsole)> GetDefaultExcludesAsync(CancellationToken ct = default)

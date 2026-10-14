@@ -5473,7 +5473,7 @@ export interface components {
         };
         SetManifestRefreshRequest: {
             /** Format: int32 */
-            refreshDays: number;
+            refreshDays: null | number;
         };
         SetSteamGridDbKeyRequest: {
             apiKey: null | string;

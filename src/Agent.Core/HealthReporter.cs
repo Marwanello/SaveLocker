@@ -150,7 +150,7 @@ public sealed class HealthReporter
         Action<string>? notify = null,
         CancellationToken ct = default,
         Action<ConflictEscalationDto>? onEscalation = null,
-        Action? onManifestRefresh = null)
+        Action<DateTime>? onManifestRefresh = null)
     {
         Pending[] events;
         Guid[] resolved;
@@ -232,14 +232,13 @@ public sealed class HealthReporter
         // stored here; the on-demand refresh is handed to the host through `onManifestRefresh` —
         // only a host with a Detection can act, so a one-shot CLI (no callback) leaves the request
         // pending for the daemon's next beat instead of marking something handled it never did.
+        // The HOST marks it handled, and only once the attempt actually starts: marking it here,
+        // before the throttle has had its say, consumed presses that downloaded nothing.
         try
         {
             config.ApplyManifestSettings(response.ManifestRefreshDays);
             if (onManifestRefresh is not null && config.IsManifestRefreshDue(response.ManifestRefreshRequestedAt))
-            {
-                config.MarkManifestRefreshHandled(response.ManifestRefreshRequestedAt!.Value);
-                onManifestRefresh();
-            }
+                onManifestRefresh(response.ManifestRefreshRequestedAt!.Value);
         }
         catch (Exception ex) { AgentLogger.LogException("HealthReporter.Manifest", ex); }
 

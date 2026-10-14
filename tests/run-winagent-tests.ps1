@@ -132,6 +132,11 @@ $env:ASPNETCORE_URLS      = $server
 $env:Storage__DbPath      = Join-Path $state "savelocker.db"
 $env:Storage__ArchiveRoot = Join-Path $state "archives"
 $env:Backup__Enabled      = "false"
+# The agent configs' own ManifestRefreshDays: 0 does NOT win against the server's heartbeat — the
+# console's value overrides the local one — and these agents share the machine's real state root
+# (no SAVELOCKER_STATE_ROOT here), so an unpinned server window 3 could refresh the installed
+# agent's manifest cache from under it mid-suite. Pin it at the source.
+$env:Manifest__RefreshDays = "0"
 $env:Logging__EventLog__LogLevel__Default = "None"
 # Pinned so the WA-05 tampering check knows exactly which file the server is serving. Left to its
 # default it lands beside the server binary, which is shared with every other run.
@@ -1433,7 +1438,8 @@ finally {
     Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue
     Get-Process -Name $fakeName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, `
-                Env:Backup__Enabled, Env:Logging__EventLog__LogLevel__Default -ErrorAction SilentlyContinue
+                Env:Backup__Enabled, Env:Logging__EventLog__LogLevel__Default, `
+                Env:Manifest__RefreshDays -ErrorAction SilentlyContinue
 }
 
 Write-Host ""

@@ -1010,13 +1010,15 @@ admin.MapPost("/settings/appearance", async (
 admin.MapPost("/settings/manifest", async (
     SetManifestRefreshRequest req, SettingsService settings, SyncService sync, CancellationToken ct) =>
 {
-    if (req.RefreshDays is < 0 or > 365)
+    if (req.RefreshDays is not { } days)
+        return Results.BadRequest("RefreshDays is required (0 = never, up to 365).");
+    if (days is < 0 or > 365)
         return Results.BadRequest("RefreshDays must be 0 (never) to 365.");
 
-    await settings.SetManifestRefreshDaysAsync(req.RefreshDays, ct);
+    await settings.SetManifestRefreshDaysAsync(days, ct);
     var stored = await settings.GetManifestRefreshAsync(ct);
     await sync.LogAuditAsync("settings.manifest_refresh_days",
-        req.RefreshDays == 0 ? "automatic refresh off" : $"every {req.RefreshDays} day(s)");
+        days == 0 ? "automatic refresh off" : $"every {days} day(s)");
     return Results.Ok(stored);
 }).Produces<ManifestRefreshSettingsDto>();
 

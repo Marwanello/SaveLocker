@@ -5,10 +5,11 @@ using Xunit;
 namespace SaveLocker.Agent.Tests;
 
 /// <summary>
-/// Manifest-expanded paths are constrained, not trusted. A template that is not absolute, that
-/// climbs with "..", or whose real (link-resolved) location leaves the resolver's own roots is
-/// refused — the same outcome as any other unresolvable entry: nothing, so the user is asked to
-/// pick a folder instead of being handed a confident path that is wrong.
+/// Manifest-expanded paths are constrained, not trusted. A template that is not absolute, or whose
+/// real (link-resolved) location leaves the resolver's own roots, is refused — the same outcome as
+/// any other unresolvable entry: nothing, so the user is asked to pick a folder instead of being
+/// handed a confident path that is wrong. A ".." segment is canonicalised away rather than banned:
+/// real manifest entries contain one, and the containment checks are what decide.
 /// </summary>
 public sealed class ManifestPathConstraintTests : IDisposable
 {
@@ -65,13 +66,25 @@ public sealed class ManifestPathConstraintTests : IDisposable
     }
 
     [Fact]
-    public void A_traversal_that_would_stay_inside_a_root_is_still_refused()
+    public void A_traversal_that_stays_inside_a_root_collapses_and_resolves()
     {
-        Folder("root", "AppData", "Roaming", "Inside");
+        var inside = Folder("root", "AppData", "Roaming", "Inside");
 
-        // Roaming/../Roaming/Inside collapses back under the token, but no well-formed entry
-        // needs the detour — strict rejection is what makes the rule auditable.
-        Assert.Null(Resolver().ResolveToDirectory("<winAppData>/../Roaming/Inside"));
+        // The community manifest really contains entries whose wildcard trim leaves a ".."
+        // ("<base>/cfg/../*.json", the shape tests/detection's harness collapses on both sides),
+        // so ".." is not refused by itself: it is canonicalised away and the result must still sit
+        // inside a root. Roaming/../Roaming/Inside collapses to exactly that.
+        Assert.Equal(inside, Resolver().ResolveToDirectory("<winAppData>/../Roaming/Inside"));
+    }
+
+    [Fact]
+    public void A_real_entry_shape_with_a_dotdot_still_resolves()
+    {
+        Folder("game", "cfg");
+        var gameDir = Path.GetFullPath(Path.Combine(_dir, "game"));
+
+        // The known real shape: the wildcard trims at "cfg", leaving "cfg/.." in the kept path.
+        Assert.Equal(gameDir, Resolver().ResolveToDirectory("<base>/cfg/../*.json"));
     }
 
     [Theory]

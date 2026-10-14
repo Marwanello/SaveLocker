@@ -101,10 +101,14 @@ mkdir -p "${server_state}/archives"
 # looked like a healthy boot right up to an unhandled UnauthorizedAccessException, and all 16
 # server-dependent checks below failed as though the agent were broken. Windows never saw it: there
 # the same default happily creates E:\data\.
+# Manifest__RefreshDays=0 matters: the fixtures pin the AGENT's own ManifestRefreshDays at 0, but
+# the server's heartbeat pushes its window and the console's value wins, so a daemon would replace
+# tests/linux/manifest.yaml with the live ~17 MB feed once that fixture is older than 3 days.
 ASPNETCORE_URLS="${server_url}" \
 Storage__DbPath="${server_state}/savelocker.db" \
 Storage__ArchiveRoot="${server_state}/archives" \
 Storage__AgentInstallerRoot="${server_state}/agent-installer" \
+Manifest__RefreshDays="0" \
   dotnet run --project "${repo_root}/src/Server/SaveLocker.Server.csproj" \
     --no-launch-profile >"${scratch}/server.log" 2>&1 &
 server_pid=$!
@@ -1387,6 +1391,7 @@ ASPNETCORE_URLS="${alt_url}" \
 Storage__DbPath="${alt_state}/savelocker.db" \
 Storage__ArchiveRoot="${alt_state}/archives" \
 Storage__AgentInstallerRoot="${alt_state}/agent-installer" \
+Manifest__RefreshDays="0" \
 AgentUpdate__Linux__LatestVersion="9.9.9" \
 AgentUpdate__Linux__DownloadUrl="http://127.0.0.1:${foreign_port}/savelocker-9.9.9-linux-x64.tar.gz" \
   dotnet run --project "${repo_root}/src/Server/SaveLocker.Server.csproj" \

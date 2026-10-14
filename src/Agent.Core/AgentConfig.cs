@@ -120,9 +120,11 @@ public sealed class AgentConfig
     /// the same timestamp the console sent). Persisted so an agent restart does not re-run it.</summary>
     public DateTime? ManifestRefreshHandledAt { get; set; }
 
-    /// <summary>The refresh window in force here: the console's value once pushed, else this machine's.</summary>
+    /// <summary>The refresh window in force here: the console's value once pushed, else this machine's.
+    /// Clamped on read so a hand-edited config.json cannot overflow the due check's
+    /// <c>TimeSpan.FromDays</c>; a negative value reads as "never", an absurd one as the 365-day max.</summary>
     [JsonIgnore]
-    public int EffectiveManifestRefreshDays => ConsoleManifestRefreshDays ?? ManifestRefreshDays;
+    public int EffectiveManifestRefreshDays => Math.Clamp(ConsoleManifestRefreshDays ?? ManifestRefreshDays, 0, 365);
 
     /// <summary>
     /// The look this machine actually draws: the console's when following it, this machine's own
@@ -329,6 +331,11 @@ public sealed class AgentConfig
             ApiKey = null;
             MachineId = null;
             ServerPin = null;
+            // The console's manifest guidance is also the previous server's: a window it pushed
+            // and a request it may have issued mean nothing here, and a stale handled stamp would
+            // silently swallow the first press on the new server.
+            ConsoleManifestRefreshDays = null;
+            ManifestRefreshHandledAt = null;
             identityCleared = true;
         }
 
@@ -453,32 +460,38 @@ public sealed class AgentConfig
     }
 
     /// <summary>
-    /// The console's manifest refresh window, applied from a heartbeat. Null means no value has ever
-    /// been pushed (an unregistered machine, or a server older than the setting), when this machine's
-    /// own <see cref="ManifestRefreshDays"/> stays in force. Runs on every ~20 s heartbeat, so the
-    /// unchanged case answers from memory and writes nothing.
+    /// The console's manifest refresh window, applied from a heartbeat. Runs on every ~20 s
+    /// heartbeat, so the unchanged case answers from memory and writes nothing.
+    /// <para>
+    /// Null means the server has no opinion — an older server without the field — and, like the
+    /// appearance it rides beside, it keeps the value last applied rather than clearing it: a fleet
+    /// rolled back to an older console would otherwise silently revert every machine's window to
+    /// the local default.
+    /// </para>
     /// </summary>
     public void ApplyManifestSettings(int? refreshDays)
     {
-        var days = refreshDays is { } d ? Math.Clamp(d, 0, 365) : (int?)null;
+        if (refreshDays is not { } pushed) return;
+
+        var days = Math.Clamp(pushed, 0, 365);
         if (ConsoleManifestRefreshDays == days) return;
         UpdateSettings(c => c.ConsoleManifestRefreshDays = days);
     }
 
-    /// <summary>Is this on-demand refresh one this machine has not acted on yet? Both timestamps are
-    /// the SERVER's, so the two machines' clocks never mix.</summary>
+    /// <summary>
+    /// Is this on-demand refresh one this machine has not acted on yet? "Not equal", not "newer
+    /// than": both timestamps are the SERVER's, so the two machines' clocks never mix, and an
+    /// inequality cannot be defeated by a server whose clock stepped backwards (a VM restore, an
+    /// NTP correction) leaving a handled stamp no future press would ever exceed.
+    /// </summary>
     public bool IsManifestRefreshDue(DateTime? requestedAt) =>
-        requestedAt is { } at && (ManifestRefreshHandledAt is null || at > ManifestRefreshHandledAt);
+        requestedAt is { } at && at != ManifestRefreshHandledAt;
 
     /// <summary>Record that the console's outstanding on-demand refresh was acted on — attempted,
     /// not necessarily succeeded: a failed download is not retried forever, and pressing the button
     /// again is what retries it.</summary>
     public void MarkManifestRefreshHandled(DateTime requestedAt) =>
-        UpdateSettings(c =>
-        {
-            if (c.ManifestRefreshHandledAt is null || requestedAt > c.ManifestRefreshHandledAt)
-                c.ManifestRefreshHandledAt = requestedAt;
-        });
+        UpdateSettings(c => c.ManifestRefreshHandledAt = requestedAt);
 
     /// <summary>Is this server game one this machine has opted out of tracking?</summary>
     public bool IsUntracked(Guid gameId) => UntrackedGameIds.Contains(gameId);

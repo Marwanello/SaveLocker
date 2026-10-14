@@ -1,4 +1,6 @@
-﻿namespace SaveLocker.Shared;
+﻿using System.Collections.Concurrent;
+
+namespace SaveLocker.Shared;
 
 /// <summary>
 /// Expands Ludusavi manifest path placeholders (e.g. &lt;winAppData&gt;) into
@@ -295,18 +297,11 @@ public sealed class PathResolver
     /// True when an expanded path actually sits under one of this resolver's own roots. Anything
     /// else came from a template we did not fully expand, and is not ours to return.
     /// </summary>
-    private bool StartsWithKnownRoot(string path)
-    {
-        var cmp = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-
-        return _tokens
+    private bool StartsWithKnownRoot(string path) =>
+        _tokens
             .Where(t => !NonPathTokens.Contains(t.Key) && !string.IsNullOrEmpty(t.Value))
-            .Select(t => t.Value.TrimEnd(Path.DirectorySeparatorChar))
-            .Any(root => path.Equals(root, cmp) ||
-                         path.StartsWith(root + Path.DirectorySeparatorChar, cmp));
-    }
+            .Select(t => TrimSeparators(t.Value))
+            .Any(root => IsUnder(path, root));
 
     /// <summary>True when this value is a template rather than a concrete path.</summary>
     public static bool IsTemplate(string? value) =>
@@ -500,29 +495,28 @@ public sealed class PathResolver
     /// reduce a filename to its directory, and refuse anything not rooted in one of our tokens.
     /// Shared so a &lt;storeUserId&gt; fan-out gets identical treatment to a straight expansion.
     /// <para>
-    /// A template is refused outright unless it is an absolute path with no <c>..</c> segment, and
-    /// the path it yields must survive <see cref="WithinRealRoots"/> — its link-resolved form has to
-    /// sit under the link-resolved form of one of this resolver's own roots. The manifest is a
-    /// downloaded document, so its templates are treated as input to be constrained, not trusted:
-    /// this is the resolver-side counterpart of "a pulled archive is hostile input" (Decisions).
+    /// A template is refused outright unless it is an absolute path, and the path it yields must
+    /// survive <see cref="WithinRealRoots"/> — its link-resolved form has to sit under the
+    /// link-resolved form of one of this resolver's own roots. The manifest is a downloaded
+    /// document, so its templates are treated as input to be constrained, not trusted: this is the
+    /// resolver-side counterpart of "a pulled archive is hostile input" (Decisions).
     /// </para>
     /// </summary>
     private string? ResolveConcrete(string expanded)
     {
         expanded = expanded.Replace('/', Path.DirectorySeparatorChar);
 
-        // Not an absolute path, or one that walks UP with "..": refused before anything else.
+        // Not an absolute path: refused before anything else.
         //
-        // Manifest templates are token-anchored absolute paths — "<winAppData>/Foo" — and a ".."
-        // section in one is exactly what the old root check could not see: the check compared the
-        // RAW string, so "<winAppData>/../../../x" began with a token's value and passed, then
-        // Path.GetFullPath collapsed the traversal downstream and returned a confident path
-        // anywhere on the machine. Rejection is strict — even a ".." that would stay inside a root
-        // — because no well-formed entry needs one, and "no such directory" (the caller asks the
-        // user to pick) is strictly better than trusting arithmetic on attacker-shaped input.
+        // A ".." segment is deliberately NOT refused here. The community manifest contains real
+        // entries whose wildcard trim leaves one — "<base>/cfg/../*.json", the shape the detection
+        // harness collapses on both sides because production used to return those paths — and a
+        // flat ban silently drops them. The containment below is what closes traversal instead:
+        // Path.GetFullPath canonicalises ".." away first, and the canonicalised path must then sit
+        // under a token root AND survive link resolution inside one. That is exactly what the old
+        // raw-string prefix check missed: "<winAppData>/../../../x" began with the token's value,
+        // passed, and Path.GetFullPath collapsed it somewhere else on the machine.
         if (!Path.IsPathRooted(expanded)) return null;
-        foreach (var seg in expanded.Split(Path.DirectorySeparatorChar))
-            if (seg == "..") return null;
 
         // Trim at the first wildcard segment so we return a concrete directory.
         var segments = expanded.Split(Path.DirectorySeparatorChar);
@@ -589,6 +583,15 @@ public sealed class PathResolver
     /// cache: a root is a fact about the filesystem a single game's resolution relies on).</summary>
     private List<string>? _realRoots;
 
+    /// <summary>
+    /// Root VALUES resolve once per process. A scan builds one resolver per game, so without this a
+    /// 200-title scan re-walks the same ~14 known folders 200 times (~5k metadata probes) before
+    /// touching a single template. Only roots are cached, never the FINAL path: a link planted
+    /// after an earlier resolve must still be seen, and that is the attack this containment exists
+    /// for. A stale root can only narrow what is accepted, never widen it.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, string?> ResolvedRootValues = new();
+
     private List<string> RealRoots()
     {
         if (_realRoots is not null) return _realRoots;
@@ -597,7 +600,8 @@ public sealed class PathResolver
         foreach (var (token, value) in _tokens)
         {
             if (NonPathTokens.Contains(token) || string.IsNullOrEmpty(value)) continue;
-            if (RealPath.Resolve(value) is { } real) roots.Add(TrimSeparators(real));
+            if (ResolvedRootValues.GetOrAdd(value, RealPath.Resolve) is { } real)
+                roots.Add(TrimSeparators(real));
         }
         return _realRoots = roots;
     }

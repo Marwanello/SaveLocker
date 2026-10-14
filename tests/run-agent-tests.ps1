@@ -111,13 +111,13 @@ if ($onWindows) {
         Remove-Item $publicExpected -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # A manifest entry that climbs with ".." must resolve to nothing. The raw string begins with the
-    # token's value — which is exactly what the old textual root check saw — and the destination
-    # EXISTS (created here), so this asserts the refusal itself, not a missing folder. The sibling
-    # entry proves the guard blocks nothing real.
-    $traversalTarget = Join-Path $env:USERPROFILE "LGSTraversalEscape"
+    # A manifest entry that climbs with ".." out of every root must resolve to nothing. The raw string
+    # begins with the token's value — which is exactly what the old textual root check saw, and it
+    # handed the collapsed answer back — and the destination (C:\Users) EXISTS on every Windows box,
+    # so this asserts the refusal itself, not a missing folder. The sibling entry proves the guard
+    # blocks nothing real.
     $cleanSibling = Join-Path $env:APPDATA "LGSCleanSibling"
-    New-Item -ItemType Directory -Force $traversalTarget, $cleanSibling | Out-Null
+    New-Item -ItemType Directory -Force $cleanSibling | Out-Null
     try {
         $traversalOut = Agent resolve --config $detectCfg --manifest "LGS Traversal Game"
         $cleanSiblingOut = Agent resolve --config $detectCfg --manifest "LGS Clean Sibling Game"
@@ -127,7 +127,6 @@ if ($onWindows) {
             (($cleanSiblingOut -join "`n") -like "*$cleanSibling*")
     }
     finally {
-        Remove-Item $traversalTarget -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item $cleanSibling -Recurse -Force -ErrorAction SilentlyContinue
     }
 } else {

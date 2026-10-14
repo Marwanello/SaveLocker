@@ -7041,7 +7041,10 @@
         "type": "object",
         "properties": {
           "refreshDays": {
-            "type": "integer",
+            "type": [
+              "null",
+              "integer"
+            ],
             "format": "int32"
           }
         }

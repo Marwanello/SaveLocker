@@ -1,4 +1,6 @@
-﻿using YamlDotNet.Serialization;
+﻿using System.Net;
+using YamlDotNet.Core;
+using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
 namespace SaveLocker.Shared;
@@ -19,6 +21,15 @@ public sealed class ManifestLoader
     /// <summary>Any spelling we have seen → the manifest's OWN key, preserving its casing.</summary>
     private readonly Dictionary<string, string> _canonical;
 
+    /// <summary>
+    /// The client every download without an explicit one shares: one instance instead of a fresh,
+    /// never-disposed <see cref="HttpClient"/> per refresh, and — the reason it cannot use the
+    /// default 100 s timeout — the manifest is ~17 MB, so on a slow link a refresh would die as a
+    /// cancellation before finishing while the console reported success. This URL is not the
+    /// configured server, so there is no pin to carry; default TLS validation is the whole policy.
+    /// </summary>
+    private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromMinutes(30) };
+
     private ManifestLoader(Dictionary<string, ManifestGame> games, Dictionary<string, string> canonical)
     {
         _games = games;
@@ -30,7 +41,11 @@ public sealed class ManifestLoader
     public IEnumerable<string> GameNames => _games.Keys;
 
     /// <summary>Parse a manifest from YAML text.</summary>
-    public static ManifestLoader Parse(string yaml)
+    public static ManifestLoader Parse(string yaml) => Parse(new StringReader(yaml));
+
+    /// <summary><see cref="Parse(string)"/>, reading from anywhere — the download parses the capped
+    /// temp file straight off disk instead of materialising the whole document as a string first.</summary>
+    public static ManifestLoader Parse(TextReader yaml)
     {
         var deserializer = new DeserializerBuilder()
             .WithNamingConvention(NullNamingConvention.Instance)
@@ -54,7 +69,12 @@ public sealed class ManifestLoader
     }
 
     /// <summary>Load from a local cached manifest file.</summary>
-    public static ManifestLoader LoadFromFile(string path) => Parse(File.ReadAllText(path));
+    public static ManifestLoader LoadFromFile(string path)
+    {
+        using var stream = File.OpenRead(path);
+        using var reader = new StreamReader(stream);
+        return Parse(reader);
+    }
 
     /// <summary>
     /// A manifest smaller than this is not the manifest: the real one carries ~53k games, and a
@@ -79,6 +99,13 @@ public sealed class ManifestLoader
     /// released last week detectable — see Decisions.md. The safety here comes from constraining
     /// what an entry can RESOLVE to (<see cref="PathResolver"/>), not from freezing the feed.
     /// </para>
+    /// <para>
+    /// A cached copy and its recorded ETag make the request conditional: when upstream has not
+    /// changed, the 304 restarts the freshness window without transferring 17 MB again. A 200 that
+    /// is not parseable YAML (a proxy error page, a captive portal) throws
+    /// <see cref="InvalidDataException"/> rather than <c>YamlException</c> — the body came from the
+    /// network, and every caller treats it as failed input, not as a bug in this library.
+    /// </para>
     /// </summary>
     public static async Task<ManifestLoader> DownloadAsync(
         string cachePath,
@@ -86,43 +113,90 @@ public sealed class ManifestLoader
         HttpClient? http = null,
         CancellationToken ct = default)
     {
-        var client = http ?? new HttpClient();
-        var yaml = await GetBoundedStringAsync(client, url ?? DefaultManifestUrl, ct);
+        var client = http ?? SharedHttp;
+        var target = url ?? DefaultManifestUrl;
+        var etagPath = cachePath + ".etag";
 
-        var parsed = Parse(yaml);
-        if (parsed.GameCount < MinPlausibleGames)
-            throw new InvalidDataException(
-                $"The manifest at {url ?? DefaultManifestUrl} parsed to {parsed.GameCount} games, fewer than " +
-                $"the {MinPlausibleGames} any real manifest has. Refusing to replace the cached copy.");
+        using var request = new HttpRequestMessage(HttpMethod.Get, target);
+        if (File.Exists(cachePath) && ReadEtag(etagPath) is { } known)
+            request.Headers.TryAddWithoutValidation("If-None-Match", known);
 
-        var dir = Path.GetDirectoryName(cachePath);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        var tmp = cachePath + ".tmp";
-        await File.WriteAllTextAsync(tmp, yaml, ct);
-        File.Move(tmp, cachePath, overwrite: true); // a reader sees the old copy or the new one, never a half file
-        return parsed;
-    }
-
-    private static async Task<string> GetBoundedStringAsync(HttpClient client, string url, CancellationToken ct)
-    {
-        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (response.StatusCode == HttpStatusCode.NotModified)
+        {
+            // Upstream unchanged. The fetch still answered "is this machine current?", so the
+            // window restarts; the cache file itself is not rewritten.
+            try
+            {
+                File.SetLastWriteTimeUtc(cachePath, DateTime.UtcNow);
+                return LoadFromFile(cachePath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or YamlException)
+            {
+                // Another process replaced or removed the cache while this request was in flight;
+                // report it as a failed download, not as a library fault.
+                throw new InvalidDataException($"The manifest cache at {cachePath} changed during the refresh: {ex.Message}", ex);
+            }
+        }
         response.EnsureSuccessStatusCode();
         if (response.Content.Headers.ContentLength is > MaxManifestBytes)
             throw new InvalidDataException(
-                $"The manifest at {url} declares {response.Content.Headers.ContentLength} bytes, over the {MaxManifestBytes} cap.");
+                $"The manifest at {target} declares {response.Content.Headers.ContentLength} bytes, over the {MaxManifestBytes} cap.");
 
-        await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        int read;
-        while ((read = await stream.ReadAsync(chunk, ct)) > 0)
+        var dir = Path.GetDirectoryName(cachePath);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+        var temp = AtomicWrite.NewTempPath(cachePath);
+        try
         {
-            if (buffer.Length + read > MaxManifestBytes)
-                throw new InvalidDataException($"The manifest at {url} is over the {MaxManifestBytes}-byte cap.");
-            buffer.Write(chunk, 0, read);
-        }
+            long received;
+            await using (var body = await response.Content.ReadAsStreamAsync(ct))
+            await using (var file = File.Create(temp))
+            {
+                received = await HttpBodies.CopyAtMostAsync(body, file, MaxManifestBytes, target, ct);
+            }
 
-        return System.Text.Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+            // Content-Length is a claim, and a body cut short at a game boundary still parses —
+            // into a plausible-looking but incomplete manifest the floor below would not catch.
+            if (response.Content.Headers.ContentLength is { } declared && declared != received)
+                throw new InvalidDataException(
+                    $"The manifest at {target} declares {declared} bytes but delivered {received}.");
+
+            ManifestLoader parsed;
+            try
+            {
+                using var stream = File.OpenRead(temp);
+                using var reader = new StreamReader(stream);
+                parsed = Parse(reader);
+            }
+            catch (YamlException ex)
+            {
+                throw new InvalidDataException($"The manifest at {target} is not valid YAML: {ex.Message}", ex);
+            }
+
+            if (parsed.GameCount < MinPlausibleGames)
+                throw new InvalidDataException(
+                    $"The manifest at {target} parsed to {parsed.GameCount} games, fewer than " +
+                    $"the {MinPlausibleGames} any real manifest has. Refusing to replace the cached copy.");
+
+            File.Move(temp, cachePath, overwrite: true); // a reader sees the old copy or the new one, never a half file
+            if (response.Headers.ETag is { } tag)
+                AtomicWrite.WriteAllText(etagPath, tag.ToString());
+            else
+                try { File.Delete(etagPath); } catch (IOException) { }
+            return parsed;
+        }
+        catch
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+            throw;
+        }
+    }
+
+    private static string? ReadEtag(string etagPath)
+    {
+        try { return File.Exists(etagPath) ? File.ReadAllText(etagPath).Trim() : null; }
+        catch (IOException) { return null; }
     }
 
     /// <summary>
