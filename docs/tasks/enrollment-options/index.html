@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SaveLocker — Enrollment options (three clickable mockups)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* ============================================================================
+   Index for the three enrollment walkthroughs. Not shipped code — the token
+   values and component shapes are copied from the shipped Checkpoint design
+   system (web/src/index.css, web/src/components/ui/*).
+   ========================================================================== */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0f0f10;--panel:#141416;--raise:#191a1c;--tile:#1b1c1f;--hover:#202124;
+  --fg:#f0eee9;--dim:#a09d97;--faint:#817e78;--line:#242427;--row:#1d1d20;
+  --safe:#7fa96a;--watch:#d9a63f;--info:#7b9fd0;--accent:#e0533c;--on-accent:#160f0e;
+  --accent-soft:color-mix(in oklab,var(--accent) 14%,var(--panel));
+  --accent-line:color-mix(in oklab,var(--accent) 42%,var(--panel));
+  --accent-ink:color-mix(in oklab,var(--accent) 80%,var(--fg));
+  --safe-soft:color-mix(in oklab,var(--safe) 14%,var(--panel));
+  --safe-line:color-mix(in oklab,var(--safe) 40%,var(--panel));
+  --safe-ink:color-mix(in oklab,var(--safe) 82%,var(--fg));
+  --watch-soft:color-mix(in oklab,var(--watch) 14%,var(--panel));
+  --watch-line:color-mix(in oklab,var(--watch) 40%,var(--panel));
+  --watch-ink:color-mix(in oklab,var(--watch) 82%,var(--fg));
+  --font-sans:'Archivo',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+  --ease:cubic-bezier(.2,.8,.25,1);color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --ink:#f5f3ef;--panel:#fffefc;--raise:#f0ede8;--tile:#ebe7e0;--hover:#e8e3dc;
+  --fg:#191719;--dim:#57534d;--faint:#79756f;--line:#e2ddd5;--row:#eeeae3;
+  --safe:#4c7b3e;--watch:#8a6212;--info:#3d6aa8;--accent:#c0432c;--on-accent:#fff8f6;color-scheme:light;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme]){
+    --ink:#f5f3ef;--panel:#fffefc;--raise:#f0ede8;--tile:#ebe7e0;--hover:#e8e3dc;
+    --fg:#191719;--dim:#57534d;--faint:#79756f;--line:#e2ddd5;--row:#eeeae3;
+    --safe:#4c7b3e;--watch:#8a6212;--info:#3d6aa8;--accent:#c0432c;--on-accent:#fff8f6;color-scheme:light;
+  }
+}
+body{background:var(--ink);color:var(--fg);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+a{color:inherit}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+b{font-weight:600}
+.muted{color:var(--dim);font-size:12px}
+.mono{font-family:var(--mono)}
+
+.mockbar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px;background:var(--raise);border-bottom:1px solid var(--line);font-size:12px;color:var(--dim)}
+.mockbar b{color:var(--fg);font-weight:600}
+.mockbar .spacer{flex:1}
+.brand{display:inline-flex;align-items:center;gap:9px;font-size:16px;font-weight:700;letter-spacing:-.035em}
+.brand .accent{color:var(--accent)}
+
+.wrap{max-width:1120px;margin:0 auto;padding:26px 20px 60px;display:flex;flex-direction:column;gap:18px}
+.pagehead h1{font-size:30px;font-weight:700;letter-spacing:-.035em;line-height:1.08}
+.pagehead .sub{margin-top:8px;font-size:12.5px;color:var(--dim);max-width:78ch}
+
+.seg{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:999px;padding:3px;gap:2px}
+.seg button{border-radius:999px;font-size:11.5px;font-weight:500;padding:5px 11px;color:var(--dim)}
+.seg button.is-on{background:var(--panel);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.22)}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.card>header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line)}
+.card>header h3{font-size:14px;font-weight:600;letter-spacing:-.02em}
+.card .pad{padding:15px 16px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--raise);color:var(--dim);white-space:nowrap}
+.chip.ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.chip.warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.chip.crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-weight:500;font-size:13px;padding:8px 15px;border-radius:999px;border:1px solid var(--line);background:var(--raise);color:var(--fg);text-decoration:none;transition:background-color .15s var(--ease),transform .15s var(--ease),filter .15s var(--ease);white-space:nowrap}
+.btn:hover{background:var(--hover);transform:translateY(-1px)}
+.btn:active{transform:scale(.96)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.sm{padding:5px 11px;font-size:12px}
+.banner{display:flex;align-items:center;gap:13px;padding:13px 16px;border-radius:14px;border:1px solid var(--watch-line);background:var(--watch-soft);flex-wrap:wrap}
+.banner .body{flex:1;min-width:240px}
+.banner .ttl{font-size:13.5px;font-weight:600;color:var(--watch-ink)}
+.banner .txt{font-size:12px;color:var(--dim);margin-top:3px;max-width:90ch}
+
+.optgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media (max-width:900px){.optgrid{grid-template-columns:1fr}}
+.opt{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:17px;display:flex;flex-direction:column;gap:11px;min-width:0;transition:border-color .15s var(--ease),transform .15s var(--ease)}
+.opt:hover{border-color:var(--faint);transform:translateY(-1px)}
+.opt h3{font-size:16.5px;font-weight:700;letter-spacing:-.02em}
+.opt .pitch{font-size:12.5px;color:var(--dim)}
+.opt ul{margin:0 0 0 16px;padding:0;display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--dim)}
+.opt .sp{flex:1}
+.opt .go{justify-content:center}
+
+.dt{width:100%;border-collapse:collapse}
+.dt th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);font-weight:600;white-space:nowrap;vertical-align:bottom}
+.dt th:first-child{width:180px}
+.dt td{padding:10px 14px;font-size:12.5px;color:var(--dim);border-bottom:1px solid var(--row);vertical-align:top}
+.dt tr:last-child td{border-bottom:none}
+.dt td.k{color:var(--fg);font-weight:600;font-size:12px}
+.dt .yes{color:var(--safe-ink)}
+.dt .no{color:var(--faint)}
+.winwrap{overflow-x:auto}
+.foot{font-size:11.5px;color:var(--faint);line-height:1.6}
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <span class="brand">SaveLocker</span><b>Mockups</b><span>Enrollment options — docs/tasks/enrollment-options/</span>
+  <span class="spacer"></span>
+  <span class="seg" role="group" aria-label="Theme">
+    <button data-act="theme:system">System</button>
+    <button data-act="theme:dark">Dark</button>
+    <button data-act="theme:light">Light</button>
+  </span>
+</div>
+
+<div class="wrap">
+  <div class="pagehead">
+    <h1>Enrollment, three easier ways</h1>
+    <div class="sub">The enrollment file works, but it is the most awkward moment in the product: a one-time JSON you download once (it cannot be shown again), carry to the machine, and race against its 15-minute expiry — and the agent UI itself cannot even open one, so the tray user has no path to it at all. These are three replacements, each a clickable walkthrough through the real console and agent UI.</div>
+  </div>
+
+  <div class="banner">
+    <span class="chip warn">Today</span>
+    <div class="body"><div class="ttl">What the file costs</div>
+    <div class="txt">Download \u2192 copy over USB / scp / network share \u2192 <span class="mono">savelocker enroll --file</span> (or the installer\u2019s browse button). Single-use and unrecoverable if the download is lost; 15 minutes default TTL; no import in the agent UI on the tray.</div></div>
+  </div>
+
+  <div class="optgrid">
+    <div class="opt">
+      <span class="chip crit" style="align-self:flex-start">Option A</span>
+      <h3>Short code</h3>
+      <div class="pitch">The console shows an 8-character code; the new machine types it in. Nothing to carry, nothing to lose.</div>
+      <ul>
+        <li>Console: <span class="mono">K7QM-4H2X</span>, copy button, live expiry</li>
+        <li>Agent UI: Settings \u2192 Join with a code (or <span class="mono">enroll --code</span>)</li>
+        <li>Deck: the gamepad keyboard types it with a controller</li>
+      </ul>
+      <span class="sp"></span>
+      <a class="btn primary go" href="option-a-code.html">Open the walkthrough</a>
+    </div>
+    <div class="opt">
+      <span class="chip crit" style="align-self:flex-start">Option B</span>
+      <h3>Join link</h3>
+      <div class="pitch">One URL does the install and the enrollment. Open it on the new machine (or scan the QR) — nothing to type there.</div>
+      <ul>
+        <li>Windows: the installer enrolls as it installs (the link fills in the file it used to ask you to browse for)</li>
+        <li>Linux / Deck: one <span class="mono">curl | sh</span> line, pastes into SSH</li>
+        <li>Agent already installed? The page hands off to it with one click</li>
+      </ul>
+      <span class="sp"></span>
+      <a class="btn primary go" href="option-b-link.html">Open the walkthrough</a>
+    </div>
+    <div class="opt">
+      <span class="chip crit" style="align-self:flex-start">Option C</span>
+      <h3>Ask &amp; approve</h3>
+      <div class="pitch">The device asks to join; the console approves with one click. No credential ever moves.</div>
+      <ul>
+        <li>Agent finds the server on the LAN (mDNS) or you type it once</li>
+        <li>Console: a bell notice + Join requests card, with a code to match</li>
+        <li>The Plex / Steam Link motion — zero typing, zero copying</li>
+      </ul>
+      <span class="sp"></span>
+      <a class="btn primary go" href="option-c-approve.html">Open the walkthrough</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>How the three compare</h3><span class="muted">all three reuse the same single-use enrollment token and POST /api/enroll — the API key never travels</span></header>
+    <div class="winwrap">
+      <table class="dt">
+        <thead><tr><th></th><th>A \u00b7 Short code</th><th>B \u00b7 Join link</th><th>C \u00b7 Ask &amp; approve</th></tr></thead>
+        <tbody>
+          <tr><td class="k">What moves between machines</td><td>8 characters, typable</td><td>one URL (click or scan)</td><td class="yes">nothing</td></tr>
+          <tr><td class="k">Typing on the new device</td><td>~9 characters + server address</td><td class="yes">none (browser click or one pasted line)</td><td class="yes">none</td></tr>
+          <tr><td class="k">New device needs a browser</td><td class="yes">no</td><td>yes, for the link</td><td class="yes">no</td></tr>
+          <tr><td class="k">Install + enroll in one step</td><td class="no">no \u2014 install first, then type</td><td class="yes">yes \u2014 that is the point</td><td class="yes">yes, if the agent is the installer payload</td></tr>
+          <tr><td class="k">Works over SSH / remote hands</td><td class="yes">yes \u2014 relay the code</td><td class="yes">yes \u2014 paste the link or one-liner</td><td class="no">needs the console nearby to approve</td></tr>
+          <tr><td class="k">New server work</td><td>base32 render + redeem throttle</td><td><span class="mono">/join</span> page, installer tag, <span class="mono">install.sh</span></td><td>request/approve routes, bell notice, mDNS</td></tr>
+          <tr><td class="k">New agent work</td><td><span class="mono">--code</span> + one Settings block</td><td><span class="mono">#enroll/{code}</span> route</td><td>first-run ask screen + decision poll</td></tr>
+          <tr><td class="k">Installer work</td><td class="yes">none</td><td>small \u2014 <span class="mono">/ENROLL-URL</span></td><td class="yes">none</td></tr>
+          <tr><td class="k">Security shape</td><td>short-lived single-use code, throttled redeem</td><td>same token, but lives in a URL / browser history briefly</td><td>approval is the credential; code-on-screen blocks LAN strangers</td></tr>
+          <tr><td class="k">Best when</td><td>a human sits at both machines (or relays 8 characters)</td><td>fresh install, a helper who has never seen SaveLocker</td><td>appliance setups \u2014 Deck now, approve from a phone or PC</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="foot">
+    Each walkthrough is a single self-contained HTML file \u2014 open it in any browser; the step rail on the left drives it, and every button is clickable.
+    The enrollment file can stay for scripted installs (<span class="mono">/SILENT /ENROLL=</span>); these are for people.
+  </div>
+</div>
+
+<script>
+const S={theme:'system'};
+function setTheme(t){
+  S.theme=t;
+  if(t==='system')document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme',t);
+  document.querySelectorAll('.mockbar [data-act^="theme:"]').forEach(b=>b.classList.toggle('is-on',b.dataset.act==='theme:'+t));
+}
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act]');if(!el)return;
+  if(el.dataset.act.startsWith('theme:')){e.preventDefault();setTheme(el.dataset.act.split(':')[1])}
+});
+setTheme('system');
+</script>
+</body>
+</html>
