@@ -137,6 +137,21 @@ public sealed class SwitchSavesTests : IDisposable
         ], entries);
         Assert.Equal("0000000000000003", entries[0].Folder);
         Assert.Empty(RyujinxSaveIndex.Parse("not an index"u8));
+
+        // Sizes that would wrap past int.MaxValue together end the read instead of throwing.
+        var hostile = Convert.FromHexString(PcIndex[..32] + "FFFFFF7FFFFFFF7F" + new string('0', 0x100));
+        Assert.Empty(RyujinxSaveIndex.Parse(hostile));
+    }
+
+    [Theory]
+    [InlineData("Ryujinx", "Ryujinx", true)]
+    [InlineData("eden.AppImage", "Eden", true)]
+    [InlineData("yuzu-cmd", "Yuzu", true)]
+    [InlineData("EdenSync", "Eden", false)]
+    [InlineData("yuzuhelper", "Yuzu", false)]
+    public void A_running_emulator_is_its_own_process_not_one_that_shares_a_prefix(string process, string emulator, bool its)
+    {
+        Assert.Equal(its, SwitchCopies.IsProcessOf(process, emulator));
     }
 
     [Fact]

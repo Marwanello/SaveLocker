@@ -1973,6 +1973,15 @@ server takes a Switch game's eShop icon (no SteamGridDB key needed). Checked liv
 the real TotK icon fetched). Unit **558**. The emulator/console icon work is planned as Group J (Phase 21), not built.
 **Rig gotcha:** another session's tray held :5188, so `testenv up` reported *its* build — this branch's Windows tray ran
 with `-WinPort 5198`.
+<br>**2026-10-14, PR review fixes (same PR):** keep-in-sync compared a copy against a different set of folders than it
+wrote, so a device save only one emulator had a place for (Ryujinx before it makes one) was copied again every poller
+tick, each with a backup and a toast — both sides now go through `SwitchCopies.Pair` (only the folders both have) and an
+empty extra folder hashes as absent. Turning keep-in-sync on now seeds `LastHash` so the save played last wins instead of
+an instant "Both changed". Copy actions and the poller's reconcile run under the game's sync lock
+(`SyncEngine.WithGameLockAsync`, the API server's `withGameLock`). **Make this the synced copy** tells the server first
+and changes nothing when it can't (the poller applies the server's folder back), and refuses a target with no device
+save when the game keeps one. The server never joins or edits a same-named game keyed to another title; the poller
+renames only a `Switch <title ID>` placeholder. Unit **566**.
 <br>**Next action for this item:** the rest of the testenv pass for Group F (`Build and Run` → *Testing emulator saves*,
 Group F steps 1–7), then the Switch row of Group H on the Deck (Yuzu ↔ Ryujinx) and the PC (Eden).
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,

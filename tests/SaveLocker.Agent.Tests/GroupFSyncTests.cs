@@ -313,4 +313,90 @@ public sealed class GroupFSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.True(moved.EmulatorCopies.Single(c => c.Emulator == "Eden").KeepInSync);
         Assert.Equal([("Ryujinx", "synced"), ("Eden", "same")], SwitchCopies.List(pc, moved, setups).Select(r => (r.Emulator, r.State)));
     }
+    [Fact]
+    public async Task A_device_save_only_one_emulator_has_a_place_for_is_not_copied_again_every_tick()
+    {
+        var eden = S.Eden(P("pc/Emulation"), EdenUser);
+        var ryu = S.Ryujinx(P("pc/ryu"), RyuUser, (Title, RyuUser, RyujinxSaveIndex.SaveType.Account, 2));
+        S.Write(Path.Combine(S.EdenSave(P("pc/Emulation"), EdenUser, Title), "save.bin"), "eden");
+        S.Write(Path.Combine(S.EdenSave(P("pc/Emulation"), SwitchEmulators.DeviceProfile, Title), "island.bin"), "island");
+        Directory.CreateDirectory(S.RyujinxSave(P("pc/ryu"), 2));
+        IReadOnlyList<SwitchEmulators.Setup> setups = [eden, ryu];
+        var pc = await Machine("pc");
+        var game = await Enroll(pc, SwitchEmulators.Scan(setups, []), Title);
+        Assert.Contains(game.ExtraPaths, p => p.Key == SwitchEmulators.DeviceFolderKey);
+
+        // Ryujinx has made no device save, so only the main folder goes there — and then the two are the same.
+        Assert.Null(SwitchCopies.CopyHere(pc, game, "Ryujinx", _ => { }, setups));
+        SwitchCopies.SetKeepInSync(pc, game, "Ryujinx", true, setups);
+        Assert.Empty(SwitchCopies.Reconcile(pc, game, _ => { }, setups));
+        Assert.Empty(SwitchCopies.Reconcile(pc, game, _ => { }, setups));
+        Assert.Equal("same", SwitchCopies.List(pc, game, setups)[1].State);
+    }
+
+    [Fact]
+    public async Task Turning_keep_in_sync_on_takes_the_save_played_last_without_asking()
+    {
+        var eden = S.Eden(P("pc/Emulation"), EdenUser);
+        var ryu = S.Ryujinx(P("pc/ryu"), RyuUser, (Title, RyuUser, RyujinxSaveIndex.SaveType.Account, 2));
+        var edenSave = Path.Combine(S.EdenSave(P("pc/Emulation"), EdenUser, Title), "save.bin");
+        var ryuSave = Path.Combine(S.RyujinxSave(P("pc/ryu"), 2), "save.bin");
+        S.Write(edenSave, "eden");
+        S.Write(ryuSave, "ryu-older");
+        File.SetLastWriteTimeUtc(ryuSave, DateTime.UtcNow.AddDays(-2));
+        IReadOnlyList<SwitchEmulators.Setup> setups = [eden, ryu];
+        var pc = await Machine("pc");
+        var game = await Enroll(pc, SwitchEmulators.Scan(setups, []), Title);
+        Assert.Equal("older", SwitchCopies.List(pc, game, setups)[1].State);
+
+        // Eden's was played last: it goes to Ryujinx.
+        SwitchCopies.SetKeepInSync(pc, game, "Ryujinx", true, setups);
+        Assert.Single(SwitchCopies.Reconcile(pc, game, _ => { }, setups));
+        Assert.Equal("eden", File.ReadAllText(ryuSave));
+
+        // Off and on again after Ryujinx was played: Ryujinx's comes into Eden's.
+        SwitchCopies.SetKeepInSync(pc, game, "Ryujinx", false, setups);
+        S.Write(ryuSave, "ryu-newer");
+        File.SetLastWriteTimeUtc(ryuSave, DateTime.UtcNow.AddMinutes(5));
+        SwitchCopies.SetKeepInSync(pc, game, "Ryujinx", true, setups);
+        Assert.Single(SwitchCopies.Reconcile(pc, game, _ => { }, setups));
+        Assert.Equal("ryu-newer", File.ReadAllText(edenSave));
+        Assert.False(game.EmulatorCopies.Single().Conflict);
+    }
+
+    [Fact]
+    public async Task Making_a_copy_the_synced_one_changes_nothing_when_it_cannot_be_kept()
+    {
+        var eden = S.Eden(P("pc/Emulation"), EdenUser);
+        var ryu = S.Ryujinx(P("pc/ryu"), RyuUser, (Title, RyuUser, RyujinxSaveIndex.SaveType.Account, 2));
+        var edenDir = S.EdenSave(P("pc/Emulation"), EdenUser, Title);
+        S.Write(Path.Combine(edenDir, "save.bin"), "eden");
+        S.Write(Path.Combine(S.RyujinxSave(P("pc/ryu"), 2), "save.bin"), "ryu");
+        // Older, so the scan lists Eden's and Eden's copy is the one that syncs.
+        File.SetLastWriteTimeUtc(Path.Combine(S.RyujinxSave(P("pc/ryu"), 2), "save.bin"), DateTime.UtcNow.AddDays(-2));
+        IReadOnlyList<SwitchEmulators.Setup> setups = [eden, ryu];
+        var pc = await Machine("pc");
+        var game = await Enroll(pc, SwitchEmulators.Scan(setups, []), Title);
+
+        // No server to tell: the poller would put the server's folder back, so it isn't moved here either.
+        Assert.NotNull(await SwitchCopies.MakeSyncedAsync(pc, game, "Ryujinx", null, _ => { }, setups));
+        Assert.Equal(edenDir, AgentConfig.Load(pc.ConfigPath).Games.Single(g => g.GameId == game.GameId).SaveDirectory);
+
+        // A game that keeps a device save, where Ryujinx has made none: refused rather than leaving the device folder behind.
+        var other = $"0101{_id}000000";
+        var eden2 = S.Eden(P("pc2/Emulation"), EdenUser);
+        var ryu2 = S.Ryujinx(P("pc2/ryu"), RyuUser, (other, RyuUser, RyujinxSaveIndex.SaveType.Account, 2));
+        var eden2Dir = S.EdenSave(P("pc2/Emulation"), EdenUser, other);
+        S.Write(Path.Combine(eden2Dir, "save.bin"), "eden");
+        S.Write(Path.Combine(S.EdenSave(P("pc2/Emulation"), SwitchEmulators.DeviceProfile, other), "island.bin"), "island");
+        S.Write(Path.Combine(S.RyujinxSave(P("pc2/ryu"), 2), "save.bin"), "ryu");
+        // Older, so the scan lists Eden's and Eden's copy is the one that syncs.
+        File.SetLastWriteTimeUtc(Path.Combine(S.RyujinxSave(P("pc2/ryu"), 2), "save.bin"), DateTime.UtcNow.AddDays(-2));
+        IReadOnlyList<SwitchEmulators.Setup> setups2 = [eden2, ryu2];
+        var pc2 = await Machine("pc2");
+        var withDevice = await Enroll(pc2, SwitchEmulators.Scan(setups2, []), other);
+        Assert.Contains(withDevice.ExtraPaths, p => p.Key == SwitchEmulators.DeviceFolderKey);
+        Assert.Contains("device save", await SwitchCopies.MakeSyncedAsync(pc2, withDevice, "Ryujinx", ApiClient.For(pc2), _ => { }, setups2));
+        Assert.Equal(eden2Dir, AgentConfig.Load(pc2.ConfigPath).Games.Single(g => g.GameId == withDevice.GameId).SaveDirectory);
+    }
 }

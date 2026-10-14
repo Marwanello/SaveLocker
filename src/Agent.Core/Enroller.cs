@@ -576,11 +576,6 @@ public static class Enroller
     }
 
     /// <summary>
-    /// Does a server game hold <paramref name="name"/> against <paramref name="c"/>? Every game of the name does,
-    /// except another region's release of a console game (<see cref="OtherRegion(GameDto, ScanCandidate)"/>): the European Warrior Within
-    /// is "Prince of Persia - Warrior Within" as much as the USA one, and the server tells the two apart by region.
-    /// </summary>
-    /// <summary>
     /// The name a save joining its title's game asks for: the game's own, unless the first machine could only call it
     /// <c>Switch &lt;title ID&gt;</c> and this one knows better — then this one's, which the server takes in its place.
     /// </summary>
@@ -591,6 +586,11 @@ public static class Enroller
             ? c.Name
             : keyed.Name;
 
+    /// <summary>
+    /// Does a server game hold <paramref name="name"/> against <paramref name="c"/>? Every game of the name does,
+    /// except another region's release of a console game (<see cref="OtherRegion(GameDto, ScanCandidate)"/>): the European Warrior Within
+    /// is "Prince of Persia - Warrior Within" as much as the USA one, and the server tells the two apart by region.
+    /// </summary>
     internal static bool NameTaken(IEnumerable<GameDto> server, string name, ScanCandidate c) =>
         server.Any(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase) && !OtherRegion(g, c));
 

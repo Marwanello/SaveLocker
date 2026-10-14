@@ -82,6 +82,9 @@ public sealed class AgentApiServer : IDisposable
     // SyncEngine.ForgetSavePathAsync: dropping an extra folder deletes its shadow, so it runs under the
     // game's lock in whichever engine is current.
     private readonly Func<TrackedGame, string, Task<bool>> _forgetFolder;
+    // SyncEngine.WithGameLockAsync in whichever engine is current: what changes a Switch game's copies runs under the game's
+    // sync lock. A host with no engine runs it as it is.
+    private readonly Func<TrackedGame, Func<Task<string?>>, Task<(bool Ran, string? Result)>> _withGameLock;
     // POST /api/conflicts/{id}/resolve — SyncEngine.ResolveOwnConflictAsync in whichever engine is current.
     // Null on a host with no engine, where the route only tells the server.
     private readonly Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? _resolveConflict;
@@ -149,9 +152,11 @@ public sealed class AgentApiServer : IDisposable
         Func<TrackedGame, string, string, KeepSide?, Task<MapFolderResult>>? mapFolder = null,
         Func<TrackedGame, string, Task<bool>>? forgetFolder = null,
         Func<string, string?>? prefixForAppId = null,
-        Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? resolveConflict = null)
+        Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? resolveConflict = null,
+        Func<TrackedGame, Func<Task<string?>>, Task<(bool Ran, string? Result)>>? withGameLock = null)
     {
         _resolveConflict = resolveConflict;
+        _withGameLock = withGameLock ?? (async (_, work) => (true, await work()));
         _forgetFolder = forgetFolder ?? ((_, _) => Task.FromResult(false));
         _suggestions = new FolderSuggestions(config, detection, prefixForAppId);
         _openFile = openFile;
@@ -1276,7 +1281,8 @@ public sealed class AgentApiServer : IDisposable
         }).Produces<SwitchCopyDto[]>();
 
         // One action on one emulator's copy: copy the synced save there, keep it in step (on/off), make it the one that
-        // syncs, or settle a copy where both sides changed. Gated with the game's own sync, so it never races a pull.
+        // syncs, or settle a copy where both sides changed. Under the game's sync lock (_withGameLock), so it never lands in
+        // the middle of a push or a pull, whichever process or surface started it.
         app.MapPost("/api/games/{id:guid}/switch-copies/{emulator}",
             async Task<Results<Ok<SwitchCopyDto[]>, BadRequest<ErrorResponse>, Conflict<ErrorResponse>, NotFound>> (Guid id, string emulator, SwitchCopyActionRequest body) =>
         {
@@ -1285,19 +1291,21 @@ public sealed class AgentApiServer : IDisposable
             var gate = _gameSyncGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
             if (!await gate.WaitAsync(0))
                 return TypedResults.Conflict(new ErrorResponse("A sync of this game is running. Try again when it is done."));
+            Func<Task<string?>>? work = body.Action switch
+            {
+                SwitchCopyActions.CopyHere => () => Task.FromResult(SwitchCopies.CopyHere(_config, game, emulator, AgentLogger.Log)),
+                SwitchCopyActions.KeepInSync => () => { SwitchCopies.SetKeepInSync(_config, game, emulator, true); return Task.FromResult<string?>(null); },
+                SwitchCopyActions.StopKeeping => () => { SwitchCopies.SetKeepInSync(_config, game, emulator, false); return Task.FromResult<string?>(null); },
+                SwitchCopyActions.MakeSynced => () => SwitchCopies.MakeSyncedAsync(_config, game, emulator, ApiClient.For(_config), AgentLogger.Log),
+                SwitchCopyActions.KeepCopy => () => Task.FromResult(SwitchCopies.Resolve(_config, game, emulator, keepCopy: true, AgentLogger.Log)),
+                SwitchCopyActions.KeepSynced => () => Task.FromResult(SwitchCopies.Resolve(_config, game, emulator, keepCopy: false, AgentLogger.Log)),
+                _ => null,
+            };
+            if (work is null) return TypedResults.BadRequest(new ErrorResponse($"Unknown action '{body.Action}'."));
             try
             {
-                string? refusal;
-                switch (body.Action)
-                {
-                    case SwitchCopyActions.CopyHere: refusal = SwitchCopies.CopyHere(_config, game, emulator, AgentLogger.Log); break;
-                    case SwitchCopyActions.KeepInSync: SwitchCopies.SetKeepInSync(_config, game, emulator, true); refusal = null; break;
-                    case SwitchCopyActions.StopKeeping: SwitchCopies.SetKeepInSync(_config, game, emulator, false); refusal = null; break;
-                    case SwitchCopyActions.MakeSynced: refusal = await SwitchCopies.MakeSyncedAsync(_config, game, emulator, ApiClient.For(_config), AgentLogger.Log); break;
-                    case SwitchCopyActions.KeepCopy: refusal = SwitchCopies.Resolve(_config, game, emulator, keepCopy: true, AgentLogger.Log); break;
-                    case SwitchCopyActions.KeepSynced: refusal = SwitchCopies.Resolve(_config, game, emulator, keepCopy: false, AgentLogger.Log); break;
-                    default: return TypedResults.BadRequest(new ErrorResponse($"Unknown action '{body.Action}'."));
-                }
+                var (ran, refusal) = await _withGameLock(game, work);
+                if (!ran) return TypedResults.Conflict(new ErrorResponse("A sync of this game is running. Try again when it is done."));
                 return refusal is null ? TypedResults.Ok(SwitchCopyRows(game)) : TypedResults.BadRequest(new ErrorResponse(refusal));
             }
             finally { gate.Release(); }

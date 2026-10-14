@@ -56,7 +56,6 @@ public static class SwitchCopies
         if (TitleId(game) is not { } title) return [];
         setups ??= SwitchEmulators.Find();
         var synced = SyncedSetup(game, setups);
-        var syncedHash = Hash(game.Roots(config.StateDir));
         var syncedWritten = game.Roots(config.StateDir).Select(r => SwitchEmulators.Written(r.Directory)).DefaultIfEmpty(DateTime.MinValue).Max();
         var rows = new List<Row>();
         foreach (var s in setups)
@@ -75,10 +74,11 @@ public static class SwitchCopies
                     s.IsRyujinx ? $"Start the game once in {s.Emulator}: it makes the game's save folder the first time." : "No user in this emulator yet."));
                 continue;
             }
-            var hash = slot.Exists ? Hash(Roots(slot)) : null;
+            var (mine, theirs) = Pair(game.Roots(config.StateDir), CopyRoots(s, title, slot, game));
+            var hash = slot.Exists ? Hash(theirs) : null;
             var state = saved?.Conflict == true ? States.Conflict
                 : hash is null ? States.Empty
-                : hash == syncedHash ? States.Same
+                : hash == Hash(mine) ? States.Same
                 : slot.WrittenUtc > syncedWritten ? States.Newer : States.Older;
             rows.Add(new Row(s.Emulator, slot.UserName, slot.Dir, false, state, slot.Exists ? slot.WrittenUtc : null,
                 saved?.KeepInSync ?? false, state != States.Same, slot.Exists, null));
@@ -97,12 +97,27 @@ public static class SwitchCopies
         IReadOnlyList<SwitchEmulators.Setup>? setups = null) =>
         Transfer(config, game, emulator, toCopy: !keepCopy, log, setups);
 
-    /// <summary>Turn keeping <paramref name="emulator"/>'s copy in step on or off.</summary>
-    public static void SetKeepInSync(AgentConfig config, TrackedGame game, string emulator, bool keep)
+    /// <summary>
+    /// Turn keeping <paramref name="emulator"/>'s copy in step on or off. Turned on, the two count as last the same as the
+    /// side played longer ago, so the next reconcile takes the one played last — what the page promises — rather than
+    /// asking about two saves that were never made the same.
+    /// </summary>
+    public static void SetKeepInSync(AgentConfig config, TrackedGame game, string emulator, bool keep,
+        IReadOnlyList<SwitchEmulators.Setup>? setups = null)
     {
         var copies = game.EmulatorCopies.Select(c => c with { }).ToList();
         var copy = copies.FirstOrDefault(c => Is(c.Emulator, emulator));
         if (copy is null) copies.Add(copy = new EmulatorCopy { Emulator = emulator });
+        if (keep && !copy.KeepInSync && !copy.Conflict && TitleId(game) is { } title)
+        {
+            setups ??= SwitchEmulators.Find();
+            if (setups.FirstOrDefault(s => Is(s.Emulator, emulator)) is { } setup && SwitchEmulators.Slot(setup, title) is { Exists: true } slot)
+            {
+                var (mine, theirs) = Pair(game.Roots(config.StateDir), CopyRoots(setup, title, slot, game));
+                var syncedWritten = mine.Select(r => SwitchEmulators.Written(r.Directory)).DefaultIfEmpty(DateTime.MinValue).Max();
+                copy.LastHash = slot.WrittenUtc > syncedWritten ? Hash(mine) : Hash(theirs);
+            }
+        }
         copy.KeepInSync = keep;
         Save(config, game, copies);
     }
@@ -110,6 +125,8 @@ public static class SwitchCopies
     /// <summary>
     /// Make <paramref name="emulator"/>'s copy the one that syncs: the game's folders here move to it and the server is told;
     /// the old synced copy becomes a copy, kept in step if this one was. Its save is pushed by the next sync like any change.
+    /// The server is told first and nothing changes here when it can't be: the server's folder for this machine is what the
+    /// poller applies, so a move only made here would be undone on its next tick.
     /// </summary>
     public static async Task<string?> MakeSyncedAsync(AgentConfig config, TrackedGame game, string emulator, ApiClient? api, Action<string> log,
         IReadOnlyList<SwitchEmulators.Setup>? setups = null)
@@ -118,7 +135,31 @@ public static class SwitchCopies
         setups ??= SwitchEmulators.Find();
         var target = setups.FirstOrDefault(s => Is(s.Emulator, emulator));
         if (target is null || SwitchEmulators.Slot(target, title) is not { } slot) return $"{emulator} has no save folder for this game.";
+        var device = game.ExtraPaths.FirstOrDefault(p => p.Key == SwitchEmulators.DeviceFolderKey);
+        var deviceDir = DeviceDir(target, title, slot);
+        if (device is not null && deviceDir is null)
+            return $"{emulator} has no device save for this game yet, and the game keeps one. Start the game in {emulator} once.";
         if (RunningEmulator() is { } running) return $"{running} is running. Close it first.";
+        if (api is null) return "this machine isn't connected to a server, which keeps each machine's folder.";
+        var source = new GameSourceDto(GameSourceKinds.Emulator, target.Emulator, target.EmuDeck ? ["Switch", "EmuDeck"] : ["Switch"]);
+        var movedThere = false;
+        try
+        {
+            await api.SetMachinePathAsync(game.GameId, slot.Dir);
+            movedThere = true;
+            if (device is not null) await api.SetMachinePathAsync(game.GameId, deviceDir!, SwitchEmulators.DeviceFolderKey);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            // Half told: put the main folder back, or the poller would move only it.
+            if (movedThere)
+                try { await api.SetMachinePathAsync(game.GameId, game.SaveDirectory); }
+                catch (Exception back) when (back is HttpRequestException or TaskCanceledException)
+                {
+                    log($"[{game.Name}] could not put the server's folder back to {game.SaveDirectory}: {back.Message}");
+                }
+            return $"could not tell the server about the new folder, so nothing changed: {ex.Message}";
+        }
         var old = SyncedSetup(game, setups);
 
         var copies = game.EmulatorCopies.Select(c => c with { }).Where(c => !Is(c.Emulator, emulator)).ToList();
@@ -127,24 +168,17 @@ public static class SwitchCopies
             copies.Add(new EmulatorCopy { Emulator = old.Emulator, KeepInSync = was?.KeepInSync ?? false, LastHash = was?.LastHash });
 
         game.SaveDirectory = slot.Dir;
-        if (game.ExtraPaths.FirstOrDefault(p => p.Key == SwitchEmulators.DeviceFolderKey) is { } device)
-            device.Directory = DeviceDir(target, title, slot);
+        if (device is not null) device.Directory = deviceDir;
         config.SaveGameFolders(game);
         Save(config, game, copies);
-        var source = new GameSourceDto(GameSourceKinds.Emulator, target.Emulator, target.EmuDeck ? ["Switch", "EmuDeck"] : ["Switch"]);
         config.SaveGameSource(game.GameId, source);
         game.Source = source;
         log($"[{game.Name}] {target.Emulator}'s copy is now the one that syncs ({slot.Dir}).");
-        if (api is not null)
+        // The poller re-sends a source the server's copy differs from, so this one may fail.
+        try { await api.SetGameSourceAsync(game.GameId, source); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            try
-            {
-                await api.SetMachinePathAsync(game.GameId, slot.Dir);
-                if (game.ExtraPaths.FirstOrDefault(p => p.Key == SwitchEmulators.DeviceFolderKey)?.Directory is { } d)
-                    await api.SetMachinePathAsync(game.GameId, d, SwitchEmulators.DeviceFolderKey);
-                await api.SetGameSourceAsync(game.GameId, source);
-            }
-            catch (Exception ex) { log($"[{game.Name}] could not tell the server about the new folder: {ex.Message}"); }
+            log($"[{game.Name}] could not tell the server the game's new emulator yet: {ex.Message}");
         }
         return null;
     }
@@ -165,9 +199,9 @@ public static class SwitchCopies
         {
             var setup = setups.FirstOrDefault(s => Is(s.Emulator, copy.Emulator));
             if (setup is null || setup == SyncedSetup(game, setups) || SwitchEmulators.Slot(setup, title) is not { } slot) continue;
-            var syncedRoots = game.Roots(config.StateDir);
+            var (syncedRoots, copyRoots) = Pair(game.Roots(config.StateDir), CopyRoots(setup, title, slot, game));
             var syncedHash = Hash(syncedRoots);
-            var copyHash = slot.Exists ? Hash(Roots(slot)) : null;
+            var copyHash = slot.Exists ? Hash(copyRoots) : null;
             if (copyHash == syncedHash)
             {
                 if (copy.LastHash != syncedHash) { copy.LastHash = syncedHash; changed = true; }
@@ -178,9 +212,9 @@ public static class SwitchCopies
             string? why;
             string? copied;
             if (copyHash is null || (syncedChanged && !copyChanged))
-                why = Copy(config, game, syncedRoots, CopyRoots(setup, title, slot, game), copy.Emulator, log, out copied);
+                why = Copy(config, game, syncedRoots, copyRoots, copy.Emulator, log, out copied);
             else if (copyChanged && !syncedChanged)
-                why = Copy(config, game, Roots(slot), syncedRoots, "synced", log, out copied);
+                why = Copy(config, game, copyRoots, syncedRoots, "synced", log, out copied);
             else
             {
                 copy.Conflict = true;
@@ -211,7 +245,7 @@ public static class SwitchCopies
             try
             {
                 var name = p.ProcessName;
-                if (SwitchEmulators.Names.FirstOrDefault(n => name.StartsWith(n, StringComparison.OrdinalIgnoreCase)) is { } emulator)
+                if (SwitchEmulators.Names.FirstOrDefault(n => IsProcessOf(name, n)) is { } emulator)
                     return emulator;
             }
             catch { /* it exited meanwhile */ }
@@ -219,6 +253,13 @@ public static class SwitchCopies
         }
         return null;
     }
+
+    /// <summary>The emulator's own process: its name, or its name and a suffix — <c>yuzu-cmd</c>, <c>Eden.AppImage</c>
+    /// (Linux shortens a process name to 15 characters, which keeps the dot).</summary>
+    internal static bool IsProcessOf(string process, string emulator) =>
+        process.Equals(emulator, StringComparison.OrdinalIgnoreCase) ||
+        (process.StartsWith(emulator, StringComparison.OrdinalIgnoreCase) && process.Length > emulator.Length &&
+         process[emulator.Length] is '.' or '-' or '_');
 
     /// <summary>After a pull into Ryujinx's committed copy (<c>&lt;save ID&gt;/0</c>), its working copy (<c>1</c>) is made the
     /// same, so Ryujinx finds the pulled save whichever one it opens.</summary>
@@ -253,9 +294,10 @@ public static class SwitchCopies
         var copies = game.EmulatorCopies.Select(c => c with { }).ToList();
         var copy = copies.FirstOrDefault(c => Is(c.Emulator, emulator));
         if (copy is null) copies.Add(copy = new EmulatorCopy { Emulator = emulator });
+        var (syncedRoots, copyRoots) = Pair(game.Roots(config.StateDir), CopyRoots(setup, title, slot, game));
         var why = toCopy
-            ? Copy(config, game, game.Roots(config.StateDir), CopyRoots(setup, title, slot, game), emulator, log, out var hash)
-            : Copy(config, game, Roots(slot), game.Roots(config.StateDir), "synced", log, out hash);
+            ? Copy(config, game, syncedRoots, copyRoots, emulator, log, out var hash)
+            : Copy(config, game, copyRoots, syncedRoots, "synced", log, out hash);
         if (why is not null) return why;
         copy.LastHash = hash;
         copy.Conflict = false;
@@ -263,24 +305,30 @@ public static class SwitchCopies
         return null;
     }
 
-    /// <summary>Make <paramref name="to"/> hold exactly <paramref name="from"/>'s files, folder by folder (by key), after
-    /// zipping what <paramref name="to"/> had. Null when done.</summary>
+    /// <summary>Make <paramref name="to"/> hold exactly <paramref name="from"/>'s files, folder by folder (by key — the two
+    /// come from <see cref="Pair"/>), after zipping what <paramref name="to"/> had. Null when done.</summary>
     private static string? Copy(AgentConfig config, TrackedGame game, IReadOnlyList<SaveRoot> from, IReadOnlyList<SaveRoot> to,
         string label, Action<string> log, out string? hash)
     {
         hash = null;
-        var source = from.Where(r => r.IsPrimary || Directory.Exists(r.Directory)).ToList();
-        var target = to.Where(r => r.IsPrimary || source.Any(s => s.Key == r.Key)).Select(r => r with { IncludeGlobs = null }).ToList();
         var temp = Path.Combine(config.StateDir, "emulator-copies", "tmp");
+        var empty = Path.Combine(temp, $"empty-{Guid.NewGuid():N}");
         try
         {
-            Directory.CreateDirectory(temp);
+            // A folder empty on both sides is left alone, so no emulator is handed an empty save folder it never made.
+            var keys = from.Where(r => r.IsPrimary || AnyFiles(r.Directory) || to.Any(t => t.Key == r.Key && AnyFiles(t.Directory)))
+                .Select(r => r.Key).ToHashSet();
+            // One with no folder on the source side is copied as an empty one, so the target's files go too.
+            var source = from.Where(r => keys.Contains(r.Key))
+                .Select(r => Directory.Exists(r.Directory) ? r : r with { Directory = Path.Combine(empty, r.IsPrimary ? "main" : r.Key) })
+                .Select(r => r with { IncludeGlobs = null }).ToList();
+            var target = to.Where(r => keys.Contains(r.Key)).Select(r => r with { IncludeGlobs = null }).ToList();
+            foreach (var r in source) Directory.CreateDirectory(r.Directory);
             if (target.Any(r => SwitchEmulators.HasFiles(r.Directory)))
                 Backup(config, game, target, label);
             var zip = Path.Combine(temp, $"{game.GameId:N}-{Guid.NewGuid():N}.zip");
             try
             {
-                Directory.CreateDirectory(source.Single(r => r.IsPrimary).Directory);
                 SaveArchive.CreateArchive(source, zip);
                 foreach (var r in target) Directory.CreateDirectory(r.Directory);
                 SaveArchive.RestoreArchive(zip, target, temp);
@@ -288,14 +336,15 @@ public static class SwitchCopies
             finally { try { File.Delete(zip); } catch (IOException) { } }
             foreach (var r in target)
                 if (RyujinxWorking(r.Directory) is { } working) Mirror(r.Directory, working);
-            hash = Hash(target);
-            log($"[{game.Name}] copied {Describe(source)} to {Describe(target)}.");
+            hash = Hash(to);
+            log($"[{game.Name}] copied {Describe(from)} to {Describe(to)}.");
             return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or SaveArchive.UnsafeArchiveException)
         {
             return ex.Message;
         }
+        finally { try { if (Directory.Exists(empty)) Directory.Delete(empty, recursive: true); } catch (IOException) { } }
     }
 
     private static string Describe(IReadOnlyList<SaveRoot> roots) => roots.Single(r => r.IsPrimary).Directory;
@@ -306,7 +355,7 @@ public static class SwitchCopies
         Directory.CreateDirectory(dir);
         var safe = string.Concat(label.Select(ch => char.IsLetterOrDigit(ch) ? ch : '-'));
         SaveArchive.CreateArchive(roots.Where(r => r.IsPrimary || Directory.Exists(r.Directory)).ToList(),
-            Path.Combine(dir, $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{safe}.zip"));
+            Path.Combine(dir, $"{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{safe}.zip"));
         foreach (var old in new DirectoryInfo(dir).GetFiles("*.zip").OrderByDescending(f => f.Name).Skip(BackupsKept))
             try { old.Delete(); } catch (IOException) { }
     }
@@ -320,11 +369,15 @@ public static class SwitchCopies
         return roots;
     }
 
-    private static List<SaveRoot> Roots(SwitchEmulators.TitleSave slot)
+    /// <summary>
+    /// The synced folders and a copy's, key for key: the main folder and each other one both sides have a place for. Every
+    /// comparison and copy goes through this, so a folder only one side can hold (a device save Ryujinx hasn't made yet)
+    /// never reads as a change the copy can't carry, and is never copied again on every tick.
+    /// </summary>
+    private static (List<SaveRoot> Synced, List<SaveRoot> Copy) Pair(IReadOnlyList<SaveRoot> synced, IReadOnlyList<SaveRoot> copy)
     {
-        var roots = new List<SaveRoot> { SaveRoot.Primary(slot.Dir) };
-        if (slot.DeviceDir is { } device) roots.Add(new SaveRoot(SwitchEmulators.DeviceFolderKey, device));
-        return roots;
+        bool Both(SaveRoot r) => r.IsPrimary || (synced.Any(s => s.Key == r.Key) && copy.Any(c => c.Key == r.Key));
+        return (synced.Where(Both).Select(r => r with { IncludeGlobs = null }).ToList(), copy.Where(Both).ToList());
     }
 
     /// <summary>A title's device save folder in a setup: a fork's is known in advance, Ryujinx's only once it made one.</summary>
@@ -335,10 +388,17 @@ public static class SwitchCopies
     {
         try
         {
-            var existing = roots.Where(r => r.IsPrimary || Directory.Exists(r.Directory)).Select(r => r with { IncludeGlobs = null }).ToList();
-            return Directory.Exists(existing.Single(r => r.IsPrimary).Directory) ? SaveArchive.HashDirectory(existing) : null;
+            if (!Directory.Exists(roots.Single(r => r.IsPrimary).Directory)) return null;
+            // Another folder with nothing in it hashes as absent: one side's empty folder is no difference between them.
+            return SaveArchive.HashDirectory(roots.Where(r => r.IsPrimary || AnyFiles(r.Directory)).Select(r => r with { IncludeGlobs = null }).ToList());
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    private static bool AnyFiles(string dir)
+    {
+        try { return Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Any(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
     }
 
     /// <summary>The setup whose folder for the title is the game's synced folder here.</summary>

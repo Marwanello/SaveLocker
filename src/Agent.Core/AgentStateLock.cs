@@ -127,5 +127,10 @@ public sealed class AgentStateLock : IDisposable
         Guid gameId, string stateDir, TimeSpan? timeout = null, CancellationToken ct = default) =>
         Acquire($"game-{gameId:N}", stateDir, timeout, ct);
 
+    /// <summary><see cref="ForGame"/>, but null instead of throwing when it is still held after <paramref name="timeout"/>.</summary>
+    public static AgentStateLock? TryForGame(
+        Guid gameId, string stateDir, TimeSpan timeout, CancellationToken ct = default) =>
+        TryAcquire($"game-{gameId:N}", stateDir, timeout, ct);
+
     public void Dispose() => _stream.Dispose();
 }
