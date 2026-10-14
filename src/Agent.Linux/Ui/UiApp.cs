@@ -1959,7 +1959,7 @@ sealed partial class UiApp
                 EnterSetFolder(i);
             if (duplicates is not null)
             {
-                var tracked = duplicates.Find(x => x.Tracked);
+                var tracked = duplicates.FirstOrDefault(x => x.Tracked);
                 Widgets.TextWrapped(
                     $"Steam has {duplicates.Count} shortcuts with different AppIDs; this scan follows AppID {tracked?.AppId ?? "none"}. " +
                     "Its saves sync only if that is the one Steam launches.",
