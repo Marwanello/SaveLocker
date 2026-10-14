@@ -508,3 +508,62 @@ button.sl-tree__twist:focus-visible { outline: 2px solid var(--color-accent); ou
   .sl-emucopy { flex-direction: column; align-items: stretch; }
   .sl-emucopy__actions { min-width: 0; }
 }
+
+/* ---- Controller layer (agent-ui/src/gamepad) ------------------------------------------------- */
+/* The pointer's outline, borrowed for the pad. Applied by nav.ts to the focused control (the
+   checkbox's own label when the focusable is the box itself). */
+.pad-focused { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 8px; }
+label.pad-focused { outline-offset: 0; }
+/* A binding glyph shown on the control it acts on — only rendered while a controller is active. */
+.sl-padglyph { display: inline-flex; align-items: center; flex: none; opacity: .95; }
+/* Every sprite is scaled so its opaque content fits this box, so all glyphs read the same size
+   whatever transparent padding the pack drew around them. */
+.sl-glyph-box { position: relative; display: inline-block; flex: none; }
+.sl-glyph { user-select: none; max-width: none; }
+.sl-glyph-box .sl-glyph { position: absolute; display: block; }
+
+/* ---- Controller layer surfaces (agent-ui/src/gamepad) ------------------------------------------ */
+/* The hint bar is a fixed strip; while it is up, PadLayer marks the shell so the strip's own
+   height is reserved and no control hides underneath it. */
+html.sl-pad-mode .sl-app { padding-bottom: var(--sl-hintbar-h, 44px); }
+.sl-hintbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1600;
+  display: flex; align-items: center; gap: 18px; padding: 7px 18px; min-height: var(--sl-hintbar-h, 44px);
+  background: var(--color-panel); border-top: 1px solid var(--color-line);
+  font-size: 12px; color: var(--color-dim);
+}
+.sl-hint { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; transition: color .12s ease; }
+.sl-hint b { font-weight: 500; }
+.sl-hint--hot { color: var(--color-fg); }
+.sl-hintbar__spacer { flex: 1; }
+.sl-hintbar__pad { display: inline-flex; align-items: center; gap: 5px; color: var(--color-faint); font-size: 10.5px; }
+.sl-hintbar__name { margin-left: 7px; }
+
+/* On-screen keyboard (fallback text entry, A over a text field) */
+.sl-osk {
+  position: fixed; inset: 0; z-index: 1700; background: rgba(8, 8, 9, .72);
+  display: flex; align-items: flex-end; justify-content: center; padding: 18px;
+}
+.sl-osk__panel {
+  width: min(780px, 100%); background: var(--color-panel); border: 1px solid var(--color-line);
+  border-radius: 14px; padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 10px;
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, .9);
+}
+.sl-osk__title { font-size: 12.5px; font-weight: 600; color: var(--color-fg); }
+.sl-osk__field {
+  font-family: var(--font-mono); font-size: 14px; background: var(--color-ink);
+  border: 1px solid var(--color-line); border-radius: 10px; padding: 9px 12px; min-height: 38px;
+  color: var(--color-fg); overflow-wrap: anywhere;
+}
+.sl-osk__caret { display: inline-block; width: 2px; height: 15px; background: var(--color-accent); vertical-align: -2px; animation: sl-blink 1s steps(1) infinite; }
+@keyframes sl-blink { 50% { opacity: 0; } }
+.sl-osk__rows { display: flex; flex-direction: column; gap: 5px; align-items: center; }
+.sl-osk__row { display: flex; gap: 5px; }
+.sl-osk__sp { width: 10px; }
+.sl-osk__key {
+  min-width: 46px; height: 40px; padding: 0 8px; border-radius: 9px; border: 1px solid var(--color-line);
+  background: var(--color-raise); color: var(--color-fg); font: inherit; font-size: 13px; cursor: pointer;
+}
+.sl-osk__key:hover { background: var(--color-hover); }
+.sl-osk__key--wide { min-width: 240px; }
+.sl-osk__foot { display: flex; justify-content: flex-end; gap: 8px; }

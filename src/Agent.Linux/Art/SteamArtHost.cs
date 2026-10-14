@@ -53,8 +53,8 @@ public static class SteamArtHost
     /// </summary>
     private static void RepaintTestShortcut(AgentConfig config, AppearanceDto look)
     {
-        if (DevSteamShortcut.ReadArtRecord(config.StateDir) is not { } record || !Directory.Exists(record.GridDir)) return;
-        if (DevSteamShortcut.PaintArt(record.GridDir, record.AppId, look.Accent, look.Mark, Layer) > 0)
+        if (SteamShortcutWriter.ReadArtRecord(config.StateDir) is not { } record || !Directory.Exists(record.GridDir)) return;
+        if (SteamShortcutWriter.PaintArt(record.GridDir, record.AppId, look.Accent, look.Mark, Layer) > 0)
             AgentLogger.Log($"Steam art: repainted the test shortcut's library art as {look.Accent}/{look.Mark}. Restart Steam to see it.");
     }
 

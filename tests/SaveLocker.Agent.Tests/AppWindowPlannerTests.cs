@@ -20,7 +20,7 @@ public class AppWindowPlannerTests
     {
         var plan = Choose(binaries: ["chromium"]);
         Assert.Equal("chromium", plan.FileName);
-        Assert.Equal(["--app=http://localhost:5178/?app#conflicts"], plan.Args);
+        Assert.Equal(["--app=http://localhost:5178/?app#conflicts", AppWindowPlanner.WindowSizeFlag], plan.Args);
         Assert.True(plan.IsAppWindow);
     }
 
@@ -29,7 +29,10 @@ public class AppWindowPlannerTests
     {
         var plan = Choose(flatpaks: ["com.google.Chrome"]);
         Assert.Equal("flatpak", plan.FileName);
-        Assert.Equal(["run", "com.google.Chrome", "--app=http://localhost:5178/?app#conflicts"], plan.Args);
+        Assert.Equal(
+            ["run", "--filesystem=/run/udev:ro", "com.google.Chrome",
+             "--app=http://localhost:5178/?app#conflicts", AppWindowPlanner.WindowSizeFlag],
+            plan.Args);
         Assert.True(plan.IsAppWindow);
     }
 
@@ -69,7 +72,9 @@ public class AppWindowPlannerTests
         Assert.Equal("--user", plan.Args[0]);
         var separator = plan.Args.ToList().IndexOf("--");
         Assert.True(separator > 0);
-        Assert.Equal(["flatpak", "run", "com.google.Chrome", "--app=http://localhost:5178/?app#conflicts"],
+        Assert.Equal(
+            ["flatpak", "run", "--filesystem=/run/udev:ro", "com.google.Chrome",
+             "--app=http://localhost:5178/?app#conflicts", AppWindowPlanner.WindowSizeFlag],
             plan.Args.Skip(separator + 1));
         Assert.True(plan.IsAppWindow);
     }

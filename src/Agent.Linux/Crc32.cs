@@ -2,7 +2,7 @@ namespace SaveLocker.Agent.Linux;
 
 /// <summary>
 /// The standard CRC-32 (poly 0xEDB88320), table-accelerated: PNG chunks (<see cref="Ui.Screenshot"/>) and Valve's
-/// non-Steam shortcut AppID (<see cref="DevSteamShortcut"/>) both use it. Pure, so the tests link it in.
+/// non-Steam shortcut AppID (<see cref="SteamShortcutWriter"/>) both use it. Pure, so the tests link it in.
 /// </summary>
 static class Crc32
 {

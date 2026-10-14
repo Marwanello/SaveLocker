@@ -4,6 +4,7 @@ import type { Conflict, DlcCheck, GameState, GameSyncMode, SaveVersion, SyncStat
 import { api } from '../api'
 import { formatAgo, formatBytes, formatDateTime } from '../format'
 import { refreshActivity, useActivityBusy } from '../useActivity'
+import { PadGlyph } from '../gamepad/PadGlyph'
 import { GameArt } from './GameArt'
 import { GameManagement } from './GameManagement'
 import { SaveFilesCard } from './SaveFilesCard'
@@ -205,11 +206,18 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
 
       {enrolled ? (
         <div className="sl-actions">
-          <Button variant="primary" disabled={locked} onClick={() => void run('sync')}>
+          <Button variant="primary" data-pad-action="sync-this-game" disabled={locked} onClick={() => void run('sync')}>
             {pending === 'sync' ? 'Syncing…' : 'Sync this game'}
+            <PadGlyph id="x" />
           </Button>
-          <Button disabled={locked} onClick={() => void run('push')}>{pending === 'push' ? 'Pushing…' : 'Push now'}</Button>
-          <Button disabled={locked} onClick={() => void run('pull')}>{pending === 'pull' ? 'Pulling…' : 'Pull latest'}</Button>
+          <Button data-pad-action="push-now" disabled={locked} onClick={() => void run('push')}>
+            {pending === 'push' ? 'Pushing…' : 'Push now'}
+            <PadGlyph id="lt" />
+          </Button>
+          <Button data-pad-action="pull-latest" disabled={locked} onClick={() => void run('pull')}>
+            {pending === 'pull' ? 'Pulling…' : 'Pull latest'}
+            <PadGlyph id="rt" />
+          </Button>
           {emulator && (
             <Button onClick={() => setEmuTab(dlcAsking.length > 0 && dlcMissing === 0 ? 'sharing' : dlcMissing > 0 ? 'dlc' : 'profile')}>
               <SlidersHorizontal size={14} aria-hidden="true" />Emulator settings

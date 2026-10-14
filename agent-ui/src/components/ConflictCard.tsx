@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Cloud, HardDrive } from 'lucide-react'
 import type { Conflict, SaveVersion, VersionStats } from '../types'
 import { asUtc, formatAgo, formatDateTime } from '../format'
+import { PadGlyph } from '../gamepad/PadGlyph'
 
 const shortId = (id: string) => id.replace(/-/g, '').slice(0, 8)
 const fmtSize = (n: number) =>
@@ -116,6 +117,10 @@ export function ConflictCard({
           return (
             <div
               key={side.id}
+              role="button"
+              tabIndex={-1}
+              aria-disabled={resolving || undefined}
+              data-pad-label={mode === 'confirm' ? 'Pick this side' : 'Keep this side'}
               onClick={() => { if (!resolving) act(side.id) }}
               style={{
                 flex: '1 1 210px', minWidth: 210, cursor: resolving ? 'default' : 'pointer',
@@ -169,6 +174,7 @@ export function ConflictCard({
 
               <button
                 disabled={resolving}
+                data-pad-skip
                 onClick={e => { e.stopPropagation(); act(side.id) }}
                 style={{
                   marginTop: 2, alignSelf: 'flex-start',
@@ -197,6 +203,7 @@ export function ConflictCard({
             onChange={e => setKeepBoth(e.target.checked)}
             style={{ accentColor: 'var(--color-watch-ink)', width: 13, height: 13 }}
           />
+          <PadGlyph id="lt" />
           Also keep the other one as a backup — restorable later from Backups
         </label>
 
@@ -211,9 +218,11 @@ export function ConflictCard({
               cursor: selected && !resolving ? 'pointer' : 'default',
               background: selected ? 'var(--color-accent)' : 'var(--color-raise)',
               color: selected ? 'var(--color-on-accent)' : 'var(--color-dim)',
+              display: 'inline-flex', alignItems: 'center', gap: 9,
             }}
           >
             {selectedLabel ? `Resolve with ${selectedLabel}` : 'Resolve'}
+            <PadGlyph id="rt" />
           </button>
         )}
       </div>
