@@ -1621,6 +1621,16 @@ check "the row carries the wrapper invocation"        "$(contains "${rows}" 'run
 # could report. Saying "not applied" here would make the signal worthless.
 check "an unreported game is unknown, not failed"    "$(contains "${rows}" '"appliedAt":null')"
 
+# The duplicate-shortcut warning reaches Add games — the same shape doctor notes above, on the wire
+# agent-ui's chip reads: one entry per AppID, the shortcut this scan resolved marked tracked.
+dup_json="$(get "http://localhost:5187/api/candidates")"
+check "duplicate shortcut: the candidate carries both AppIDs" \
+  "$(contains "${dup_json}" '"duplicateShortcuts":[')"
+check "duplicate shortcut: the resolved one is marked tracked" \
+  "$(contains "${dup_json}" '"tracked":true')"
+check "duplicate shortcut: the dead one is not tracked" \
+  "$(contains "${dup_json}" '"tracked":false')"
+
 # The management API hands out control of this machine; these two are the whole reason a browser
 # tab cannot drive it (LocalAuth). Asserted here because a new route is a new chance to forget.
 code="$(curl -s -o /dev/null -w '%{http_code}' "${lo_api}")"

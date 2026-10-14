@@ -1902,6 +1902,9 @@ sealed partial class UiApp
         bool hasFolder = !string.IsNullOrEmpty(c.SuggestedSaveDir);
         // A memory card every game of a console shares: listed so the Deck says why, never tickable.
         bool blocked = c.NotSyncable is not null;
+        // Steam has this game under more than one AppID: the tile warns, the caption names the one
+        // this scan follows (the note's Add-games shape, trimmed for a controller screen).
+        var duplicates = c.DuplicateShortcuts is { Count: > 1 } d ? d : null;
 
         ImGui.PushID(i);
         bool ticked = alreadyTracked || _selected.Contains(i);
@@ -1927,6 +1930,7 @@ sealed partial class UiApp
         var tileY = ImGui.GetCursorPosY();
         if (alreadyTracked) Widgets.StatusTile(Icons.Check, Theme.Safe, tile);
         else if (blocked) Widgets.StatusTile(Icons.AlertTriangle, Theme.Watch, tile);
+        else if (duplicates is not null) Widgets.StatusTile(Icons.AlertTriangle, Theme.Watch, tile);
         else if (hasFolder) Widgets.StatusTile(Icons.SearchCheck, Theme.Fg, tile, Theme.Tile);
         else Widgets.StatusTile(Icons.AlertTriangle, Theme.Watch, tile);
         ImGui.SameLine(0, Theme.Space.Sm);
@@ -1953,6 +1957,14 @@ sealed partial class UiApp
             if (Widgets.PillButton(hasFolder ? "Change folder" : "Set save folder",
                     hasFolder ? Widgets.ButtonKind.Ghost : Widgets.ButtonKind.Secondary, Icons.Folder))
                 EnterSetFolder(i);
+            if (duplicates is not null)
+            {
+                var tracked = duplicates.Find(x => x.Tracked);
+                Widgets.TextWrapped(
+                    $"Steam has {duplicates.Count} shortcuts with different AppIDs; this scan follows AppID {tracked?.AppId ?? "none"}. " +
+                    "Its saves sync only if that is the one Steam launches.",
+                    Theme.WatchInk, Theme.Caption);
+            }
             DrawCandidateAlsoFound(i, c);
         }
         ImGui.EndGroup();
