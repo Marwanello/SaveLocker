@@ -228,7 +228,17 @@ public record ServerSettingsDto(
     DateTime? NextAutoFetchRunAt = null,
     AppearanceSettingsDto? Appearance = null,
     bool DefaultExcludeGlobsFromConsole = false,
-    ServerStorageDto? Storage = null);
+    ServerStorageDto? Storage = null,
+    // The manifest refresh window the console set (days; 0 = never), and when its "Refresh now"
+    // was last pressed. Appended optional so an older console simply ignores them.
+    int ManifestRefreshDays = 3,
+    DateTime? ManifestRefreshRequestedAt = null);
+
+/// <summary>How the console asks for a manifest refresh window (days; 0 = never auto-refresh).</summary>
+public record SetManifestRefreshRequest(int RefreshDays);
+
+/// <summary>What both manifest settings routes answer: the stored window and the last on-demand request.</summary>
+public record ManifestRefreshSettingsDto(int RefreshDays, DateTime? RequestedAt);
 
 /// <summary>What the Configuration page's Server card reads: where archives live and how full that volume
 /// is (null sizes when the volume cannot be read), the default keep, and the conflict-escalation window.</summary>
@@ -962,15 +972,23 @@ public record ConflictEscalationDto(
 /// Server guidance returned with a heartbeat.
 /// <para>
 /// <paramref name="Appearance"/> is appended and optional for the same reason
-/// <see cref="AgentHeartbeat.PathCandidates"/> is: an older agent ignores the field, and a newer
+/// <see cref="AgentHeartbeat.ManifestRefreshDays"/> is: an older agent ignores the field, and a newer
 /// agent talking to an older server sees null, so the fleet and the container upgrade in either
 /// order. Null also means "the console is not sharing its look" — an agent keeps whatever it last
 /// applied, it does not fall back to the default.
 /// </para>
+/// <para>
+/// <paramref name="ManifestRefreshDays"/> is the console's manifest refresh window (days; 0 =
+/// never auto-refresh); null means no value has ever been pushed, so the agent uses its own.
+/// <paramref name="ManifestRefreshRequestedAt"/> is the console's "Refresh now": the agent compares
+/// it to the request it last acted on and downloads once when it is newer.
+/// </para>
 /// </summary>
 public record AgentHeartbeatResponse(
     ConflictEscalationDto[] EscalatedConflicts,
-    AppearanceDto? Appearance = null);
+    AppearanceDto? Appearance = null,
+    int? ManifestRefreshDays = null,
+    DateTime? ManifestRefreshRequestedAt = null);
 
 /// <summary>
 /// "This machine's scan found a save folder for a game it tracks but has not mapped." Reported so

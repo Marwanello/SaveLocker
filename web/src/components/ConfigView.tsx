@@ -279,6 +279,31 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
     } catch (e) { toastError('Could not change auto-update: ' + errorText(e)); }
   }
 
+  // ── Manifest refresh (save-detection data) ──
+  const manifestDays = settings.manifestRefreshDays ?? 3;
+  const [savingManifest, setSavingManifest] = useState(false);
+  async function setManifestDays(days: number) {
+    setSavingManifest(true);
+    try {
+      const stored = await api.setManifestRefreshDays(days);
+      toast(stored.refreshDays === 0
+        ? 'Automatic manifest refresh is off. Refresh now still works.'
+        : `Each machine refreshes its save-detection data every ${plural(stored.refreshDays, 'day')}.`);
+      onRefresh();
+    } catch (e) { toastError('Could not change the manifest refresh window: ' + errorText(e)); }
+    finally { setSavingManifest(false); }
+  }
+  const [refreshingManifest, setRefreshingManifest] = useState(false);
+  async function refreshManifestNow() {
+    setRefreshingManifest(true);
+    try {
+      await api.refreshManifestNow();
+      toast('Refresh requested — every machine picks it up at its next heartbeat.');
+      onRefresh();
+    } catch (e) { toastError('Could not request a manifest refresh: ' + errorText(e)); }
+    finally { setRefreshingManifest(false); }
+  }
+
   // ── Server card ──
   const [copiedBuild, setCopiedBuild] = useState(false);
   const volumeUsed = storage?.volumeTotalBytes && storage.volumeFreeBytes != null
@@ -526,6 +551,31 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
         <Card title="Defaults & maintenance">
           <Toggle label="Agent auto-update" checked={autoUpdateOn} onChange={v => void setAutoUpdate(v)}
             hint={autoUpdateOn ? 'Checks GitHub for a newer installer and hosts it for agents. Schedule: Agent updates, below.' : 'Off — upload installers by hand under Agent updates, below.'} />
+
+          <div className="flex items-center justify-between gap-4 py-2.5 border-b border-row">
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-fg">Manifest refresh</div>
+              <div className="text-xs text-dim mt-0.5">
+                The save-detection data used to find new games.
+                {savingManifest ? ' Saving…' : <> Each machine refreshes{' '}
+                  <select aria-label="Manifest refresh window" value={manifestDays}
+                    onChange={e => void setManifestDays(Number(e.target.value))}
+                    className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                    <option value={1}>every day</option>
+                    <option value={3}>every 3 days</option>
+                    <option value={7}>weekly</option>
+                    <option value={14}>every 14 days</option>
+                    <option value={30}>monthly</option>
+                    <option value={0}>never automatically</option>
+                  </select>.</>}
+                {settings.manifestRefreshRequestedAt && <> Last requested {ago(settings.manifestRefreshRequestedAt)}.</>}
+              </div>
+            </div>
+            <Button size="sm" variant="quiet" disabled={refreshingManifest} onClick={() => void refreshManifestNow()}>
+              {refreshingManifest ? 'Requesting…' : 'Refresh now'}
+            </Button>
+          </div>
+
           <Toggle label="Scheduled backup" checked={!!backup?.enabled} disabled={!backup}
             onChange={v => void setBackupSchedule({ enabled: v })}
             hint={backup

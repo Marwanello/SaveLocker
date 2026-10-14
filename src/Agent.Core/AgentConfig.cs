@@ -105,6 +105,26 @@ public sealed class AgentConfig
     public AppearanceDto? LocalAppearance { get; set; }
 
     /// <summary>
+    /// How many days a cached Ludusavi manifest may serve before a background refresh is due. This
+    /// machine's own default; the console's value (<see cref="ConsoleManifestRefreshDays"/>) wins
+    /// once one has been pushed. <b>0 = never</b> refresh automatically — a manual refresh and the
+    /// console's button still work.
+    /// </summary>
+    public int ManifestRefreshDays { get; set; } = 3;
+
+    /// <summary>The refresh window the console last pushed on a heartbeat; null until one carried it
+    /// (an unregistered machine, or a server older than the setting), when the local value applies.</summary>
+    public int? ConsoleManifestRefreshDays { get; set; }
+
+    /// <summary>When the console's on-demand refresh was last acted on (UTC, by the SERVER's clock —
+    /// the same timestamp the console sent). Persisted so an agent restart does not re-run it.</summary>
+    public DateTime? ManifestRefreshHandledAt { get; set; }
+
+    /// <summary>The refresh window in force here: the console's value once pushed, else this machine's.</summary>
+    [JsonIgnore]
+    public int EffectiveManifestRefreshDays => ConsoleManifestRefreshDays ?? ManifestRefreshDays;
+
+    /// <summary>
     /// The look this machine actually draws: the console's when following it, this machine's own
     /// otherwise, always a known-good value. Derived rather than stored so it can never disagree with
     /// the three fields above.
@@ -252,6 +272,11 @@ public sealed class AgentConfig
             ConsoleAppearance = onDisk.ConsoleAppearance;
             ConsoleAppearanceAt = onDisk.ConsoleAppearanceAt;
             LocalAppearance = onDisk.LocalAppearance;
+            // Same again for the manifest window and its handled request timestamp: both are written
+            // by the heartbeat through UpdateSettings, so a host holding a boot-time copy must not
+            // write that copy back.
+            ConsoleManifestRefreshDays = onDisk.ConsoleManifestRefreshDays;
+            ManifestRefreshHandledAt = onDisk.ManifestRefreshHandledAt;
             XeniaProfileAtLaunch = onDisk.XeniaProfileAtLaunch;
             DlcSend = onDisk.DlcSend;
 
@@ -361,6 +386,8 @@ public sealed class AgentConfig
         ConsoleAppearance = fresh.ConsoleAppearance;
         ConsoleAppearanceAt = fresh.ConsoleAppearanceAt;
         LocalAppearance = fresh.LocalAppearance;
+        ConsoleManifestRefreshDays = fresh.ConsoleManifestRefreshDays;
+        ManifestRefreshHandledAt = fresh.ManifestRefreshHandledAt;
         TotalSavesPushed = fresh.TotalSavesPushed;
         LastSyncTime = fresh.LastSyncTime;
         SentTodayBytes = fresh.SentTodayBytes;
@@ -424,6 +451,34 @@ public sealed class AgentConfig
         var after = EffectiveAppearance;
         if (after != before) AppearanceChanged?.Invoke(after);
     }
+
+    /// <summary>
+    /// The console's manifest refresh window, applied from a heartbeat. Null means no value has ever
+    /// been pushed (an unregistered machine, or a server older than the setting), when this machine's
+    /// own <see cref="ManifestRefreshDays"/> stays in force. Runs on every ~20 s heartbeat, so the
+    /// unchanged case answers from memory and writes nothing.
+    /// </summary>
+    public void ApplyManifestSettings(int? refreshDays)
+    {
+        var days = refreshDays is { } d ? Math.Clamp(d, 0, 365) : (int?)null;
+        if (ConsoleManifestRefreshDays == days) return;
+        UpdateSettings(c => c.ConsoleManifestRefreshDays = days);
+    }
+
+    /// <summary>Is this on-demand refresh one this machine has not acted on yet? Both timestamps are
+    /// the SERVER's, so the two machines' clocks never mix.</summary>
+    public bool IsManifestRefreshDue(DateTime? requestedAt) =>
+        requestedAt is { } at && (ManifestRefreshHandledAt is null || at > ManifestRefreshHandledAt);
+
+    /// <summary>Record that the console's outstanding on-demand refresh was acted on — attempted,
+    /// not necessarily succeeded: a failed download is not retried forever, and pressing the button
+    /// again is what retries it.</summary>
+    public void MarkManifestRefreshHandled(DateTime requestedAt) =>
+        UpdateSettings(c =>
+        {
+            if (c.ManifestRefreshHandledAt is null || requestedAt > c.ManifestRefreshHandledAt)
+                c.ManifestRefreshHandledAt = requestedAt;
+        });
 
     /// <summary>Is this server game one this machine has opted out of tracking?</summary>
     public bool IsUntracked(Guid gameId) => UntrackedGameIds.Contains(gameId);

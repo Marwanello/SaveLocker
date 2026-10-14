@@ -113,10 +113,18 @@ public sealed class CommandPoller : IDisposable
         {
             // Outside the try, and last: the heartbeat must go out even when reconcile or a command
             // threw — a tick that failed is precisely the tick the console needs to hear about.
-            // HealthReporter.SendAsync never throws.
+            // HealthReporter.SendAsync never throws. Its response carries the console's manifest
+            // window and "Refresh now"; this host is where the refresh can actually run.
             if (_health is not null)
                 await _health.SendAsync(_api(), _config, _offlineQueue, _notify,
-                    onEscalation: _notices is null ? null : e => _notices.RaiseEscalation(e));
+                    onEscalation: _notices is null ? null : e => _notices.RaiseEscalation(e),
+                    onManifestRefresh: () => _ = _detection.RefreshManifestIfDueAsync(force: true));
+
+            // The manifest is refreshed on its own cadence, never inside a scan: this starts nothing
+            // more than an mtime comparison until the window has actually passed, and a download
+            // that does start (17 MB) runs here, off any user-facing scan. Fire-and-forget on
+            // purpose — a slow download must not stretch the tick.
+            _ = _detection.RefreshManifestIfDueAsync();
 
             Interlocked.Exchange(ref _busy, 0);
         }

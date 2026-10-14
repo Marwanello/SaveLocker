@@ -42,6 +42,65 @@ public sealed class Detection
         finally { _manifestLock.Release(); }
     }
 
+    private DateTime? _lastRefreshAttemptUtc;
+
+    /// <summary>Where a refresh fetches from. Null in every host — the community feed — and set only
+    /// by tests; a host-facing URL setting is deliberately not offered (the manifest is a live feed
+    /// and its safety comes from constraining what entries may resolve to, not from freezing it).</summary>
+    internal string? ManifestUrlOverride { get; set; }
+
+    /// <summary>
+    /// Download a newer manifest when the cached one is past its refresh window — or when
+    /// <paramref name="force"/> (the console's "Refresh now"). Never throws, and never blocks a scan:
+    /// the caller keeps serving the cached copy, and a failure (network, an error page, a truncated
+    /// download) just leaves it in place. The attempt gap keeps a stale cache from re-downloading
+    /// 17 MB on every 20 s tick, and a failing server from being asked again and again.
+    /// </summary>
+    public async Task<bool> RefreshManifestIfDueAsync(bool force = false, CancellationToken ct = default)
+    {
+        var windowDays = _config.EffectiveManifestRefreshDays;
+        if (!force && windowDays <= 0) return false;
+
+        var minGap = force ? TimeSpan.FromSeconds(30) : TimeSpan.FromHours(1);
+        if (_lastRefreshAttemptUtc is { } last && DateTime.UtcNow - last < minGap) return false;
+
+        if (!force)
+        {
+            // No cache at all is first-run's normal load, not a refresh; and a fresh enough copy
+            // means nothing to do — the common case, one mtime read.
+            if (!File.Exists(_config.ManifestCachePath)) return false;
+            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(_config.ManifestCachePath) < TimeSpan.FromDays(windowDays))
+                return false;
+        }
+
+        _lastRefreshAttemptUtc = DateTime.UtcNow;
+
+        await _manifestLock.WaitAsync(ct);
+        try
+        {
+            // Re-check under the lock: another caller (or the CLI's own refresh) may have just
+            // written a fresh copy while this one waited.
+            if (!force && File.Exists(_config.ManifestCachePath) &&
+                DateTime.UtcNow - File.GetLastWriteTimeUtc(_config.ManifestCachePath) < TimeSpan.FromDays(windowDays))
+                return false;
+
+            try
+            {
+                _manifest = await ManifestLoader.DownloadAsync(
+                    _config.ManifestCachePath, ManifestUrlOverride, ct: ct);
+                AgentLogger.Log($"Manifest refreshed: {_manifest.GameCount} games.");
+                return true;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException
+                                          or UnauthorizedAccessException or InvalidDataException)
+            {
+                AgentLogger.Log($"Manifest refresh failed; keeping the cached copy: {ex.Message}");
+                return false;
+            }
+        }
+        finally { _manifestLock.Release(); }
+    }
+
     /// <summary>
     /// Find candidate save directories for a manifest game name. Empty if the game isn't in the
     /// manifest or none of its paths exist. On Linux with no <paramref name="resolver"/> this is

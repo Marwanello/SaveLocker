@@ -149,7 +149,8 @@ public sealed class HealthReporter
         OfflineQueue? offlineQueue,
         Action<string>? notify = null,
         CancellationToken ct = default,
-        Action<ConflictEscalationDto>? onEscalation = null)
+        Action<ConflictEscalationDto>? onEscalation = null,
+        Action? onManifestRefresh = null)
     {
         Pending[] events;
         Guid[] resolved;
@@ -226,6 +227,21 @@ public sealed class HealthReporter
             try { config.ApplyConsoleAppearance(look); }
             catch (Exception ex) { AgentLogger.LogException("HealthReporter.Appearance", ex); }
         }
+
+        // The console's manifest window and its "Refresh now" ride the same response. The window is
+        // stored here; the on-demand refresh is handed to the host through `onManifestRefresh` —
+        // only a host with a Detection can act, so a one-shot CLI (no callback) leaves the request
+        // pending for the daemon's next beat instead of marking something handled it never did.
+        try
+        {
+            config.ApplyManifestSettings(response.ManifestRefreshDays);
+            if (onManifestRefresh is not null && config.IsManifestRefreshDue(response.ManifestRefreshRequestedAt))
+            {
+                config.MarkManifestRefreshHandled(response.ManifestRefreshRequestedAt!.Value);
+                onManifestRefresh();
+            }
+        }
+        catch (Exception ex) { AgentLogger.LogException("HealthReporter.Manifest", ex); }
 
         // Clear only what was actually sent — a fault reported while the request was in flight must
         // survive to the next beat rather than being silently dropped here.

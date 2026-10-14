@@ -2850,6 +2850,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetManifestRefreshRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ManifestRefreshSettingsDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/manifest/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ManifestRefreshSettingsDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/agent-update-auto-fetch": {
         parameters: {
             query?: never;
@@ -4711,6 +4785,10 @@ export interface components {
         AgentHeartbeatResponse: {
             escalatedConflicts: components["schemas"]["ConflictEscalationDto"][];
             appearance?: null | components["schemas"]["AppearanceDto"];
+            /** Format: int32 */
+            manifestRefreshDays?: null | number;
+            /** Format: date-time */
+            manifestRefreshRequestedAt?: null | string;
         };
         AgentInstallerStatus: {
             version: string;
@@ -5246,6 +5324,12 @@ export interface components {
             /** Format: date-time */
             lastSeen: string;
         };
+        ManifestRefreshSettingsDto: {
+            /** Format: int32 */
+            refreshDays: number;
+            /** Format: date-time */
+            requestedAt: null | string;
+        };
         RedeemEnrollmentRequest: {
             token: string;
             machineName?: null | string;
@@ -5323,6 +5407,13 @@ export interface components {
             /** @default false */
             defaultExcludeGlobsFromConsole: boolean;
             storage?: null | components["schemas"]["ServerStorageDto"];
+            /**
+             * Format: int32
+             * @default 3
+             */
+            manifestRefreshDays: number;
+            /** Format: date-time */
+            manifestRefreshRequestedAt?: null | string;
         };
         ServerStorageDto: {
             archiveRoot: string;
@@ -5379,6 +5470,10 @@ export interface components {
         };
         SetGameArtRequest: {
             url: string;
+        };
+        SetManifestRefreshRequest: {
+            /** Format: int32 */
+            refreshDays: number;
         };
         SetSteamGridDbKeyRequest: {
             apiKey: null | string;

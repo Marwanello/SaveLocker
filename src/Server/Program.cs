@@ -1004,6 +1004,31 @@ admin.MapPost("/settings/appearance", async (
     return Results.Ok(stored);
 }).Produces<AppearanceSettingsDto>();
 
+// How current every machine's save detection is: the manifest refresh window (0 = never), and the
+// "Refresh now" every agent acts on at its next heartbeat. Audited like the look — it is a decision
+// about the whole fleet, not one machine.
+admin.MapPost("/settings/manifest", async (
+    SetManifestRefreshRequest req, SettingsService settings, SyncService sync, CancellationToken ct) =>
+{
+    if (req.RefreshDays is < 0 or > 365)
+        return Results.BadRequest("RefreshDays must be 0 (never) to 365.");
+
+    await settings.SetManifestRefreshDaysAsync(req.RefreshDays, ct);
+    var stored = await settings.GetManifestRefreshAsync(ct);
+    await sync.LogAuditAsync("settings.manifest_refresh_days",
+        req.RefreshDays == 0 ? "automatic refresh off" : $"every {req.RefreshDays} day(s)");
+    return Results.Ok(stored);
+}).Produces<ManifestRefreshSettingsDto>();
+
+admin.MapPost("/settings/manifest/refresh", async (
+    SettingsService settings, SyncService sync, CancellationToken ct) =>
+{
+    await settings.RequestManifestRefreshAsync(ct);
+    var stored = await settings.GetManifestRefreshAsync(ct);
+    await sync.LogAuditAsync("settings.manifest_refresh", "requested on every machine");
+    return Results.Ok(stored);
+}).Produces<ManifestRefreshSettingsDto>();
+
 admin.MapPost("/settings/agent-update-auto-fetch", async (
     AutoFetchSchedule req, SettingsService settings, CancellationToken ct) =>
 {

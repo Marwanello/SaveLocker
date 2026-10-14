@@ -42,6 +42,15 @@ public sealed class SettingsService
     /// prototype's default, and the reason "set it once, every machine matches" works out of the box.</summary>
     public const string UiPushToAgents = "Ui:PushToAgents";
 
+    /// <summary>The manifest refresh window in days (0 = never auto-refresh). Absent means the
+    /// product default (3): a game released upstream should be found within days, and the console's
+    /// Configuration card is where that window is set. Pushed to agents on the heartbeat.</summary>
+    public const string ManifestRefreshDays = "Manifest:RefreshDays";
+
+    /// <summary>UTC timestamp of the console's last "Refresh now", pushed on every heartbeat. Agents
+    /// refresh once when it is newer than the request they last acted on.</summary>
+    public const string ManifestRefreshRequestedAt = "Manifest:RefreshRequestedAt";
+
     /// <summary>The console's default exclude list, as a JSON array — JSON so that an admin who removes
     /// every default ("[]") is told apart from one who never saved a list (no row: config applies).</summary>
     public const string DefaultExcludeGlobs = "Sync:DefaultExcludeGlobs";
@@ -273,6 +282,41 @@ public sealed class SettingsService
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// The manifest refresh window in force, and when "Refresh now" was last pressed. Always a
+    /// usable window: an unreadable or out-of-range stored value falls back to the default here, at
+    /// the one place every reader — the console and every heartbeat — goes through.
+    /// </summary>
+    public async Task<ManifestRefreshSettingsDto> GetManifestRefreshAsync(CancellationToken ct = default)
+    {
+        // Unset or unreadable means the product default; a stored value is honoured, 0 included.
+        var days = 3;
+        if (int.TryParse(await GetEffectiveAsync(ManifestRefreshDays, ct), out var parsed))
+            days = Math.Clamp(parsed, 0, 365);
+
+        var requestedAt = DateTime.TryParse(
+            await GetEffectiveAsync(ManifestRefreshRequestedAt, ct), null,
+            System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+            out var at)
+            ? at
+            : (DateTime?)null;
+
+        return new ManifestRefreshSettingsDto(days, requestedAt);
+    }
+
+    /// <summary>Store the refresh window (days; 0 = never auto-refresh). Validated at the route.</summary>
+    public Task SetManifestRefreshDaysAsync(int days, CancellationToken ct = default) =>
+        SetAsync(ManifestRefreshDays, days.ToString(), ct);
+
+    /// <summary>Record the console's on-demand refresh. Returns the timestamp every heartbeat will
+    /// carry: an agent that has not yet acted on it downloads once and remembers it.</summary>
+    public async Task<DateTime> RequestManifestRefreshAsync(CancellationToken ct = default)
+    {
+        var at = DateTime.UtcNow;
+        await SetAsync(ManifestRefreshRequestedAt, at.ToString("o"), ct);
+        return at;
+    }
+
     /// <summary>The exclude patterns every game inherits, and whether they were saved from the console.</summary>
     public async Task<(string[] Globs, bool FromConsole)> GetDefaultExcludesAsync(CancellationToken ct = default)
     {
@@ -302,6 +346,7 @@ public sealed class SettingsService
         var key = await GetEffectiveAsync(SteamGridDbApiKey, ct);
         var schedule = await GetAutoFetchScheduleAsync(ct);
         var (defaults, defaultsFromConsole) = await GetDefaultExcludesAsync(ct);
+        var manifest = await GetManifestRefreshAsync(ct);
         return new ServerSettingsDto(
             SteamGridDbConfigured: !string.IsNullOrWhiteSpace(key),
             SteamGridDbKeyMasked: Mask(key),
@@ -312,7 +357,9 @@ public sealed class SettingsService
             Schedule: schedule,
             NextAutoFetchRunAt: AutoFetchScheduler.ComputeNextRun(schedule, DateTime.UtcNow),
             Appearance: await GetAppearanceAsync(ct),
-            DefaultExcludeGlobsFromConsole: defaultsFromConsole);
+            DefaultExcludeGlobsFromConsole: defaultsFromConsole,
+            ManifestRefreshDays: manifest.RefreshDays,
+            ManifestRefreshRequestedAt: manifest.RequestedAt);
     }
 
     /// <summary>Show only the last 4 characters so the dashboard can confirm which key is set.</summary>

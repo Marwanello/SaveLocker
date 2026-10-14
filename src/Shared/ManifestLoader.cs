@@ -56,19 +56,73 @@ public sealed class ManifestLoader
     /// <summary>Load from a local cached manifest file.</summary>
     public static ManifestLoader LoadFromFile(string path) => Parse(File.ReadAllText(path));
 
-    /// <summary>Download the manifest and cache it to <paramref name="cachePath"/>.</summary>
+    /// <summary>
+    /// A manifest smaller than this is not the manifest: the real one carries ~53k games, and a
+    /// proxy's HTML error page or a truncated download parses to nothing or near-nothing. Refusing
+    /// it here keeps the previous cache serving instead of replacing it with garbage — this is the
+    /// download-side counterpart of the hostile-archive rule (a file fetched from the network is
+    /// input to be validated, whatever source it names).
+    /// </summary>
+    public const int MinPlausibleGames = 5_000;
+
+    /// <summary>Bound on the download: the real manifest is ~17 MB, so 64 MB is generous and still
+    /// refuses a body that is not this file.</summary>
+    public const long MaxManifestBytes = 64L * 1024 * 1024;
+
+    /// <summary>
+    /// Download the manifest and cache it to <paramref name="cachePath"/>.
+    /// <para>
+    /// The downloaded bytes are parsed and checked BEFORE anything is written, and the cache is only
+    /// replaced by a temp-file move, so a failed or implausible download leaves the previous copy
+    /// untouched and serving. This deliberately re-fetches upstream <c>master</c>: the manifest is a
+    /// live community feed (updated several times a day), and freshness is what makes a game
+    /// released last week detectable — see Decisions.md. The safety here comes from constraining
+    /// what an entry can RESOLVE to (<see cref="PathResolver"/>), not from freezing the feed.
+    /// </para>
+    /// </summary>
     public static async Task<ManifestLoader> DownloadAsync(
         string cachePath,
-        string url = DefaultManifestUrl,
+        string? url = null,
         HttpClient? http = null,
         CancellationToken ct = default)
     {
         var client = http ?? new HttpClient();
-        var yaml = await client.GetStringAsync(url, ct);
+        var yaml = await GetBoundedStringAsync(client, url ?? DefaultManifestUrl, ct);
+
+        var parsed = Parse(yaml);
+        if (parsed.GameCount < MinPlausibleGames)
+            throw new InvalidDataException(
+                $"The manifest at {url ?? DefaultManifestUrl} parsed to {parsed.GameCount} games, fewer than " +
+                $"the {MinPlausibleGames} any real manifest has. Refusing to replace the cached copy.");
+
         var dir = Path.GetDirectoryName(cachePath);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        await File.WriteAllTextAsync(cachePath, yaml, ct);
-        return Parse(yaml);
+        var tmp = cachePath + ".tmp";
+        await File.WriteAllTextAsync(tmp, yaml, ct);
+        File.Move(tmp, cachePath, overwrite: true); // a reader sees the old copy or the new one, never a half file
+        return parsed;
+    }
+
+    private static async Task<string> GetBoundedStringAsync(HttpClient client, string url, CancellationToken ct)
+    {
+        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength is > MaxManifestBytes)
+            throw new InvalidDataException(
+                $"The manifest at {url} declares {response.Content.Headers.ContentLength} bytes, over the {MaxManifestBytes} cap.");
+
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, ct)) > 0)
+        {
+            if (buffer.Length + read > MaxManifestBytes)
+                throw new InvalidDataException($"The manifest at {url} is over the {MaxManifestBytes}-byte cap.");
+            buffer.Write(chunk, 0, read);
+        }
+
+        return System.Text.Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
     }
 
     /// <summary>
