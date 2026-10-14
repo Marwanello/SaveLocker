@@ -110,6 +110,26 @@ if ($onWindows) {
         Remove-Item (Join-Path $publicRoot "Documents\Documents") -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item $publicExpected -Recurse -Force -ErrorAction SilentlyContinue
     }
+
+    # A manifest entry that climbs with ".." must resolve to nothing. The raw string begins with the
+    # token's value — which is exactly what the old textual root check saw — and the destination
+    # EXISTS (created here), so this asserts the refusal itself, not a missing folder. The sibling
+    # entry proves the guard blocks nothing real.
+    $traversalTarget = Join-Path $env:USERPROFILE "LGSTraversalEscape"
+    $cleanSibling = Join-Path $env:APPDATA "LGSCleanSibling"
+    New-Item -ItemType Directory -Force $traversalTarget, $cleanSibling | Out-Null
+    try {
+        $traversalOut = Agent resolve --config $detectCfg --manifest "LGS Traversal Game"
+        $cleanSiblingOut = Agent resolve --config $detectCfg --manifest "LGS Clean Sibling Game"
+        Check "a manifest traversal entry resolves to nothing" `
+            (($traversalOut -join "`n") -like "*no existing save directory found*")
+        Check "a clean sibling entry still resolves" `
+            (($cleanSiblingOut -join "`n") -like "*$cleanSibling*")
+    }
+    finally {
+        Remove-Item $traversalTarget -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $cleanSibling -Recurse -Force -ErrorAction SilentlyContinue
+    }
 } else {
     $detectOut = Agent resolve --config $detectCfg --manifest "LGS Test Game"
     Check "detection refuses to invent a host path for a Windows game" `

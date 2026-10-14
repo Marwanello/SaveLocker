@@ -15,3 +15,19 @@ LGS Public Game:
     <winPublic>/Documents/LGSPublicTestGame:
       tags:
         - save
+
+# A hostile-shaped entry: the path climbs out of <winAppData> with "..", landing in the user
+# profile — a folder the suite can create without elevation, so the check distinguishes a REFUSAL
+# from "nothing happens to be there". The destination is created by the suite before the check.
+# The sibling entry below proves the guard blocks nothing real.
+LGS Traversal Game:
+  files:
+    <winAppData>/../../LGSTraversalEscape:
+      tags:
+        - save
+
+LGS Clean Sibling Game:
+  files:
+    <winAppData>/LGSCleanSibling:
+      tags:
+        - save
