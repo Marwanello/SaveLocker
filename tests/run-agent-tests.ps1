@@ -64,13 +64,13 @@ $manifest = Join-Path $fixtures "manifest.yaml"
 
 # Fresh agent configs pointing at local server and fixture manifest.
 foreach ($c in @($pcCfg, $lapCfg)) {
-    @{ ServerUrl = "http://localhost:5179"; ManifestCachePath = $manifest; Games = @() } |
+    @{ ServerUrl = "http://localhost:5179"; ManifestCachePath = $manifest; ManifestRefreshDays = 0; Games = @() } |
         ConvertTo-Json | Set-Content -Path $c -Encoding utf8
 }
 
 # Detect-config written to scratch so the ManifestCachePath resolves correctly.
 $detectCfg = Join-Path $scratch "detect-config.json"
-@{ ServerUrl = "http://localhost:5179"; MachineName = "DetectTest"; ManifestCachePath = $manifest; Games = @() } |
+@{ ServerUrl = "http://localhost:5179"; MachineName = "DetectTest"; ManifestCachePath = $manifest; ManifestRefreshDays = 0; Games = @() } |
     ConvertTo-Json | Set-Content -Path $detectCfg -Encoding utf8
 
 # ---- Detection: resolve a manifest game's save dir on this machine ----
@@ -129,7 +129,7 @@ Set-Content -Path (Join-Path $canonSave "s.dat") -Value "x"
 $canonA = Join-Path $scratch "canon-a.json"
 $canonB = Join-Path $scratch "canon-b.json"
 foreach ($c in @($canonA, $canonB)) {
-    @{ ServerUrl = "http://localhost:5179"; ManifestCachePath = $manifest; Games = @() } |
+    @{ ServerUrl = "http://localhost:5179"; ManifestCachePath = $manifest; ManifestRefreshDays = 0; Games = @() } |
         ConvertTo-Json | Set-Content -Path $c -Encoding utf8
 }
 Agent register --config $canonA --name CanonA | Out-Null

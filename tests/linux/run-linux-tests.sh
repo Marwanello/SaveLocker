@@ -131,6 +131,7 @@ for c in "${deck_cfg}" "${other_cfg}"; do
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "SettleQuietSeconds": 3,
   "SettleMaxWaitSeconds": 60,
   "Games": []
@@ -923,6 +924,7 @@ cat >"${prefix_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "Games": []
 }
 EOF
@@ -1537,6 +1539,7 @@ cat >"${noappid_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "Games": [
     { "GameId": "33333333-3333-3333-3333-333333333333", "Name": "Prefix Game No AppId",
       "SaveDirectory": "${PREFIX_SAVE}" }
@@ -1586,6 +1589,7 @@ cat >"${lo_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "Games": [
     { "GameId": "11111111-1111-1111-1111-111111111111", "Name": "Prefix Game",
       "SaveDirectory": "${PREFIX_SAVE}", "SteamAppId": "-1234567890" },

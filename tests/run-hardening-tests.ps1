@@ -1,4 +1,4 @@
-# Hardening (Linux agent Phase 6) - 34 checks on Linux / 33 on Windows. Runs on BOTH.
+# Hardening (Linux agent Phase 6) - 38 checks on Linux / 37 on Windows. Runs on BOTH.
 #
 # These are SECURITY tests: each one must prove the ATTACK FAILS, not merely that ordinary saves
 # still sync. Two of them delete-or-leak files outside the save folder if the fix regresses, so they
@@ -11,6 +11,8 @@
 #   4. OneDrive regression guard - the fix must key on symlinks ONLY. OneDrive files-on-demand are also
 #                                  reparse points, and skipping every reparse point would silently stop
 #                                  archiving OneDrive saves (see Gotchas.md).
+#   5. Manifest path constraint  - a downloaded manifest entry that climbs with "..", or that only looks
+#                                  like it sits in a Wine prefix (a link), must resolve to nothing.
 #
 # Windows uses a JUNCTION (no admin needed; symlinks require elevation or Developer Mode) — which is
 # the Windows form of exactly this bug. Linux uses a symlink.
@@ -149,7 +151,58 @@ try {
     Check "ordinary nested files still sync"        (Test-Path (Join-Path $deckSave "profiles/slot1/slot.dat"))
 
     # =================================================================================
-    # 4. ZIP-SLIP: a malicious archive must not write outside the target
+    # 4. MANIFEST PATHS ARE CONSTRAINED (traversal and a link out of the prefix)
+    # =================================================================================
+    # The manifest is a downloaded document, so its templates are input to be constrained, not
+    # trusted: an entry that climbs with "..", or that only LOOKS like it sits in the prefix (a
+    # link), must resolve to nothing — the same answer as any entry the resolver cannot expand, so
+    # the user is asked to pick a folder. A clean sibling entry proves the guard blocks nothing real.
+    # The escape target EXISTS, so a resolver that followed either shape would have returned it.
+    $manifestCfg = Join-Path $scratch "manifest.json"
+    $fixtureManifest = Join-Path $scratch "harden-manifest.yaml"
+    @{ ServerUrl = $server; Games = @(); ManifestCachePath = $fixtureManifest; ManifestRefreshDays = 0 } |
+        ConvertTo-Json | Set-Content -Path $manifestCfg -Encoding utf8
+
+    # A fake Wine prefix: <winAppData> resolves to its steamuser AppData\Roaming.
+    $prefix  = Join-Path $scratch "prefix/12345"
+    $roaming = Join-Path $prefix "pfx/drive_c/users/steamuser/AppData/Roaming"
+    New-Item -ItemType Directory -Force (Join-Path $roaming "HardenClean") | Out-Null
+    # "<winAppData>/" + six ".." walks from Roaming to the compatdata dir, where MANIFEST_ESCAPE sits.
+    $manifestEscape = Join-Path $prefix "MANIFEST_ESCAPE"
+    New-Item -ItemType Directory -Force $manifestEscape | Out-Null
+    # A link inside the prefix pointing OUT of it — what a game, or anything, can leave behind.
+    New-DirLink (Join-Path $roaming "HardenLinked") $secrets
+
+    # "<winAppData>/" + seven ".." walks from Roaming to the prefix root, where MANIFEST_ESCAPE sits.
+    @(
+        "Harden Clean Game:",
+        "  files:",
+        "    <winAppData>/HardenClean:",
+        "      tags:",
+        "        - save",
+        "Harden Traversal Game:",
+        "  files:",
+        "    <winAppData>/../../../../../../MANIFEST_ESCAPE:",
+        "      tags:",
+        "        - save",
+        "Harden Linked Game:",
+        "  files:",
+        "    <winAppData>/HardenLinked:",
+        "      tags:",
+        "        - save"
+    ) -join "`n" | Set-Content -Path $fixtureManifest -Encoding utf8
+
+    $cleanOut = Agent resolve --config $manifestCfg --manifest "Harden Clean Game" --prefix $prefix
+    $traversalOut = Agent resolve --config $manifestCfg --manifest "Harden Traversal Game" --prefix $prefix
+    $linkedOut = Agent resolve --config $manifestCfg --manifest "Harden Linked Game" --prefix $prefix
+
+    Check "a clean manifest entry still resolves"     ("$cleanOut" -match "Resolved:")
+    Check "the traversal entry resolves to nothing"   ("$traversalOut" -match "no existing save directory")
+    Check "the link entry resolves to nothing"        ("$linkedOut" -match "no existing save directory")
+    Check "the traversal target was never touched"    (Test-Path $manifestEscape)
+
+    # =================================================================================
+    # 5. ZIP-SLIP: a malicious archive must not write outside the target
     # =================================================================================
     # This runs LAST on purpose: it force-uploads a hostile archive, which becomes the server head.
     # Any sync check placed after it would be testing against a poisoned head and fail for reasons

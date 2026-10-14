@@ -1256,7 +1256,7 @@ try {
     ) -join "`n" | Set-Content -Path $wa11Manifest -Encoding utf8
 
     $wa11Cfg = Join-Path $scratch "wa11.json"
-    @{ ServerUrl = $server; Games = @(); ManifestCachePath = $wa11Manifest } |
+    @{ ServerUrl = $server; Games = @(); ManifestCachePath = $wa11Manifest; ManifestRefreshDays = 0 } |
         ConvertTo-Json | Set-Content -Path $wa11Cfg -Encoding utf8
 
     $logPath11 = Join-Path $env:ProgramData "SaveLocker\agent.log"

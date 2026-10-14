@@ -92,6 +92,7 @@ cat >"${deck_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "SettleQuietSeconds": 3,
   "SettleMaxWaitSeconds": 60,
   "Games": []
@@ -174,6 +175,7 @@ cat >"${deck_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "SettleQuietSeconds": 3,
   "Games": []
 }
@@ -264,6 +266,7 @@ cat >"${deck_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "SettleQuietSeconds": 3,
   "Games": [
     { "GameId": "44444444-4444-4444-4444-444444444444", "Name": "UpdateSettingsGame",
