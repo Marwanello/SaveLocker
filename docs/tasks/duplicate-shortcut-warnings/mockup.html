@@ -145,6 +145,26 @@ button:disabled{cursor:default}
 .sl-check-row--enrolled .sl-path{color:var(--color-faint)}
 .sl-check-row__note{font-size:11.5px;color:var(--color-safe-ink)}
 .sl-check-row__why{display:block;margin-top:4px;font-size:11.5px;line-height:1.45;color:var(--color-watch-ink)}
+/* The duplicate-shortcut chip (planned): agent-ui's ReleaseChip pattern — hover shows the details, a click
+   keeps them open; amber, because this is a warning, and no tooltips anywhere. */
+.sl-release{position:relative;display:inline-flex}
+.sl-release__chip{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11.5px;line-height:1.3;white-space:nowrap;padding:4px 11px;border-radius:99px;border:1px solid var(--color-line);background:var(--color-raise);color:var(--color-fg);cursor:pointer;transition:background-color .15s var(--ease),filter .15s var(--ease)}
+.sl-release__chip:hover,.sl-release__chip[aria-expanded="true"]{background:var(--color-tile)}
+.sl-release__chip:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.sl-release__chip--warn{color:var(--color-watch-ink);border-color:var(--color-watch-line);background:var(--color-watch-soft)}
+.sl-release__chip--warn:hover,.sl-release__chip--warn[aria-expanded="true"]{background:var(--color-watch-soft);filter:brightness(1.06)}
+.sl-release__dot{width:4px;height:4px;border-radius:50%;background:var(--color-accent)}
+.sl-release__dot--warn{background:var(--color-watch)}
+.sl-release__pop{position:absolute;left:0;top:calc(100% + 8px);z-index:30;width:340px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;gap:10px;padding:12px 14px;font-size:12.5px;white-space:normal;background:var(--color-panel);border:1px solid var(--color-line);border-radius:14px;box-shadow:0 18px 40px -16px rgba(0,0,0,.55);animation:sl-rise 180ms var(--ease) both}
+.sl-release__title{font-size:13px;font-weight:600;text-wrap:balance}
+.sl-release__note{color:var(--color-dim);font-size:11.5px;border-top:1px solid var(--color-line);padding-top:8px}
+.sl-card--pop{overflow:visible}
+.dup-row{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border:1px solid var(--color-line);border-radius:10px;background:var(--color-raise)}
+.dup-row--tracked{border-color:var(--color-safe-line);background:var(--color-safe-soft)}
+.dup-row__head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dup-row__name{font-weight:600;font-size:12.5px;color:var(--color-fg)}
+.dup-row__id{font-family:var(--font-mono);font-size:11px;color:var(--color-dim)}
+.dup-row__sub{font-size:11px;color:var(--color-dim)}
 .sl-status{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;border-radius:6px}
 .sl-status--ok{background:var(--color-safe-soft);color:var(--color-safe-ink)}
 .sl-status--has{background:var(--color-tile);color:var(--color-fg)}
@@ -176,7 +196,7 @@ button:disabled{cursor:default}
   </span></span>
   <span class="spacer"></span>
   <button class="sl-btn sl-btn--sm" id="warnToggle" aria-pressed="true">Duplicate warning: shown</button>
-  <span class="hint">Everything except the yellow chip + note is today's Add Games page, unchanged.</span>
+  <span class="hint">Everything except the amber chip + its details popover is today's Add Games page, unchanged. The chip works like the emulator release chip: hover opens, click pins, Esc closes.</span>
 </div>
 
 <div class="sl-app">
@@ -236,8 +256,12 @@ function markSvg(size) {
 
 /* ---- mock data (agent-ui's Candidate shape, plus the planned DuplicateAppIds) ---- */
 const GAMES = [
-  { id:1, name:'HITMAN 3', source:'SteamShortcut', path:'C:\\steam\\steamapps\\compatdata\\236870\\pfx\\drive_c\\users\\steamuser\\Documents\\IO Interactive\\HITMAN 3',
-    duplicateAppIds:['1659040','3823860'] },                       // planned: ScanCandidate.DuplicateAppIds
+  { id:1, name:'HITMAN 3', source:'SteamShortcut', path:'C:\\steam\\steamapps\\compatdata\\1659040\\pfx\\drive_c\\users\\steamuser\\Documents\\IO Interactive\\HITMAN 3',
+    // planned: ScanCandidate.DuplicateShortcuts — one entry per same-named shortcut; Tracked = the dedupe winner
+    duplicates:[
+      { appId:'1659040', name:'HITMAN 3', tracked:true,  detail:'save folder found · 8 files, newest 3 days ago' },
+      { appId:'3823860', name:'Hitman 3', tracked:false, detail:'no save folder found' },
+    ] },
   { id:2, name:'Cyberpunk 2077', source:'SteamInstalled', hasSteamCloud:true, path:'C:\\steam\\steamapps\\compatdata\\1091500\\pfx\\drive_c\\users\\steamuser\\Saved Games\\CD Projekt Red\\Cyberpunk 2077' },
   { id:3, name:'Moving Out', source:'SteamShortcut', path:'C:\\steam\\steamapps\\compatdata\\996770\\pfx\\drive_c\\users\\steamuser\\AppData\\Local\\Moving Out' },
   { id:4, name:'Minit', source:'SteamShortcut', path:'C:\\steam\\steamapps\\compatdata\\609490\\pfx\\drive_c\\users\\steamuser\\AppData\\Local\\Minit' },
@@ -261,7 +285,7 @@ const PATH_MODES = [
 const NAV = ['Overview','Games','Add Games','Conflicts','Activity','Settings'];
 
 /* ---- state ------------------------------------------------------------------ */
-const S = { filter:'suggested', pathMode:'all', hideEnrolled:true, query:'', checked:new Set(), warning:true, theme:'system', syncing:false };
+const S = { filter:'suggested', pathMode:'all', hideEnrolled:true, query:'', checked:new Set(), warning:true, theme:'system', syncing:false, dupOpen:null, dupPinned:false };
 
 /* ---- render ------------------------------------------------------------------ */
 const stage = document.getElementById('page');
@@ -273,6 +297,27 @@ function statusMark(c) {
   return '<span class="sl-status sl-status--' + s.tone + '" role="img" aria-label="' + s.label + '" title="' + s.label + '">' + icon(s.icon, 13, 2.3) + '</span>';
 }
 
+function dupChip(c) {
+  const open = S.dupOpen === c.id;
+  return '<span class="sl-release" data-dup="' + c.id + '">'
+    + '<button type="button" class="sl-release__chip sl-release__chip--warn" aria-haspopup="dialog" aria-expanded="' + open + '"'
+    + ' aria-label="' + c.duplicates.length + ' shortcuts with different AppIDs — which one will be tracked"'
+    + ' data-act="dup:' + c.id + '">' + c.duplicates.length + ' shortcuts · different AppIDs'
+    + '<span class="sl-release__dot sl-release__dot--warn" aria-hidden="true"></span></button>'
+    + (open ? dupPop(c) : '') + '</span>';
+}
+/* The details, the way the emulator release chip shows them — real UI, not a tooltip. */
+function dupPop(c) {
+  return '<span class="sl-release__pop" role="dialog" aria-label="Shortcuts with different AppIDs">'
+    + '<span class="sl-release__title">' + c.name + ' — ' + c.duplicates.length + ' shortcuts with different AppIDs</span>'
+    + c.duplicates.map(d => '<span class="dup-row' + (d.tracked ? ' dup-row--tracked' : '') + '">'
+      + '<span class="dup-row__head"><span class="dup-row__name">' + d.name + '</span>'
+      + '<span class="dup-row__id">AppID ' + d.appId + '</span>'
+      + (d.tracked ? '<span class="sl-chip sl-chip--ok">Will be tracked</span>' : '<span class="sl-chip">Duplicate</span>')
+      + '</span><span class="dup-row__sub">' + d.detail + '</span></span>').join('')
+    + '<span class="sl-release__note">Steam launches only one of them. SaveLocker tracks the one whose save folder is found here; the rest are dead weight and can be removed in Steam.</span>'
+    + '</span>';
+}
 function rowHtml(c) {
   const cls = c.enrolled ? 'sl-check-row sl-check-row--enrolled' : 'sl-check-row';
   let chips = '<span class="sl-chip">' + c.source + '</span>';
@@ -280,9 +325,8 @@ function rowHtml(c) {
   if (c.emulatorRom && c.emulatorRom !== c.name) chips += '<span class="sl-chip">' + c.emulatorRom + '</span>';
   if (c.hasSteamCloud) chips += '<span class="sl-chip">Steam Cloud</span>';
   // The planned addition: a warn chip naming the situation, AppIDs in the tooltip.
-  if (S.warning && c.duplicateAppIds) {
-    chips += '<span class="sl-chip sl-chip--warn" title="AppIDs ' + c.duplicateAppIds.join(', ') + ' — Steam launches only one of them.">'
-      + c.duplicateAppIds.length + ' shortcuts · different AppIDs</span>';
+  if (S.warning && c.duplicates) {
+    chips += dupChip(c);
   }
 
   let detail;
@@ -297,9 +341,11 @@ function rowHtml(c) {
       + '<button class="sl-btn sl-btn--sm" data-act="folder-change">' + icon('folder-search', 12, 1.75) + 'Set save folder</button></div>';
   }
   // The planned note line. Reuses .sl-check-row__why (watch ink) — the same tone the blocked row uses.
-  if (S.warning && c.duplicateAppIds) {
-    detail += '<span class="sl-check-row__why">Steam launches only one of them. If the wrong one gets tracked, its saves are never backed up — '
-      + 'check which folder has recent files, or map the other one with <code style="font-family:var(--font-mono)">--dir</code>.</span>';
+  if (S.warning && c.duplicates) {
+    const tracked = c.duplicates.find(d => d.tracked);
+    detail += '<span class="sl-check-row__why">Steam launches only one of them. SaveLocker will track AppID ' + tracked.appId
+      + ' — if that is the stale shortcut, its saves are never backed up. Hover the chip for both shortcuts; '
+      + 'map the other with <code style="font-family:var(--font-mono)">--dir</code> to switch.</span>';
   }
   if (!c.enrolled && c.statesOnly) {
     detail += '<span class="sl-check-row__note" style="display:block;margin-top:4px">Save states only so far. Its in-game saves sync too once the game makes one.</span>';
@@ -368,7 +414,7 @@ function render() {
     +   '<div style="font-size:12px;color:var(--color-dim)">Showing ' + (S.filter === 'suggested' ? 'everything except games Steam Cloud already backs up' : 'every game found, including Steam Cloud titles') + '.</div>'
     + '</div>'
 
-    + '<div class="sl-card">' + (base.length === 0
+    + '<div class="sl-card' + (S.dupOpen !== null ? ' sl-card--pop' : '') + '">' + (base.length === 0
         ? '<div class="sl-empty">Nothing matches that filter.</div>'
         : base.map(rowHtml).join('')) + '</div>'
 
@@ -405,6 +451,12 @@ document.addEventListener('click', e => {
   }
   if (act.startsWith('filter:')) { e.preventDefault(); S.filter = act.split(':')[1]; return render(); }
   if (act.startsWith('path:')) { e.preventDefault(); S.pathMode = act.split(':')[1]; return render(); }
+  if (act.startsWith('dup:')) {
+    const id = +act.split(':')[1];
+    S.dupOpen = (S.dupOpen === id && S.dupPinned) ? null : id;
+    S.dupPinned = S.dupOpen !== null;
+    return render();
+  }
   if (act === 'hide-enrolled') { e.preventDefault(); S.hideEnrolled = !S.hideEnrolled; if (S.hideEnrolled) S.pathMode = 'all'; return render(); }
   if (act === 'clear') { S.checked.clear(); return render(); }
   if (act === 'add') {
@@ -422,6 +474,27 @@ document.addEventListener('click', e => {
   if (act.startsWith('nav:')) { e.preventDefault(); if (act.split(':')[1] !== 'Add Games') toast('This mockup only covers Add Games.'); return; }
   if (act.startsWith('theme:')) { S.theme = act.split(':')[1]; applyTheme(); return render(); }
   if (act.startsWith('folder-change')) return;
+});
+/* Hover/click behaviour copied from ReleaseChip: hover shows the details, a click pins them, Esc or a
+   click elsewhere closes. A null relatedTarget (the node was just re-rendered under the pointer) is
+   ignored so opening cannot immediately close itself. */
+const canHover = () => window.matchMedia?.('(hover: hover)').matches ?? true;
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest?.('[data-dup]');
+  if (!el || !canHover()) return;
+  const id = +el.dataset.dup;
+  if (S.dupOpen !== id) { S.dupOpen = id; S.dupPinned = false; render(); }
+});
+document.addEventListener('mouseout', e => {
+  const from = e.target.closest?.('[data-dup]');
+  if (!from || S.dupPinned || e.relatedTarget === null) return;
+  if (e.relatedTarget.closest?.('[data-dup]') !== from) { S.dupOpen = null; render(); }
+});
+document.addEventListener('mousedown', e => {
+  if (S.dupPinned && !e.target.closest?.('[data-dup]')) { S.dupOpen = null; S.dupPinned = false; render(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.dupOpen !== null) { S.dupOpen = null; S.dupPinned = false; render(); }
 });
 document.addEventListener('input', e => {
   if (e.target.matches('[data-act="search"]')) { S.query = e.target.value; render(); e.target.focus(); }

@@ -36,25 +36,29 @@ affected Add Games candidate in `agent-ui` (and, small, the Game Mode row) — i
    shortcut lists both scanners and `Doctor` already read and returns duplicate groups
    (normalized name → distinct AppIds). Refactor `Doctor.cs:97–116` onto it — no behaviour change,
    existing string assertion stays green.
-2. **`ScanCandidate` gains a trailing optional field** `IReadOnlyList<string>? DuplicateAppIds = null`
-   — the distinct AppIds whose same-named shortcuts exist on this machine. The dedupe winner carries
-   it; the losers still collapse as today. Trailing optional keeps every existing constructor call
-   compiling.
+2. **`ScanCandidate` gains a trailing optional field** `IReadOnlyList<DuplicateShortcut>? DuplicateShortcuts = null`,
+   one entry per same-named shortcut: `{ AppId, Name, Tracked }` — the shortcut's own vdf name, and
+   `Tracked` on the dedupe winner (the one whose save folder resolves here; `SteamAppId` is already dropped
+   on the wire). The dedupe winner carries the list; the losers still collapse as today. Trailing optional
+   keeps every existing constructor call compiling.
 3. **Both scanners set it.** Linux sets it from the rows it already has before the `DedupeKey` group;
    Windows sets it in `MergeDuplicates`. Same PR — the helper makes parity one line.
-4. **Wire:** `CandidateDto` grows `DuplicateAppIds` (additive, nullable). `ToCandidateDtos` maps it.
+4. **Wire:** `CandidateDto` grows `DuplicateShortcuts` (additive, nullable). `ToCandidateDtos` maps it.
    `agent-ui/src/api-types.ts` is regenerated from the AGENT's OpenAPI — run a scratch daemon on a
    free port and generate against `:5190`, never the installed agent's `:5178` (see Gotchas).
    No `SaveLocker.Server` change, so its `openapi.json` is untouched.
 5. **UI:**
-   - `AddGamesView.tsx`: a `warn`-tone `Chip` on the name row — `2 shortcuts · different AppIDs` —
-     plus one note line in the existing note stack explaining the consequence and the fix (Steam
-     launches only one; check which compatdata folder has recent files, or map the other with
-     `--dir`). The row stays selectable: this is a warning, not `NotSyncable`.
+   - `AddGamesView.tsx`: a `warn`-tone chip on the name row — `2 shortcuts · different AppIDs` — that
+     behaves like the emulator `ReleaseChip` (`agent-ui/src/components/ReleaseChip.tsx`): hovering (or
+     clicking, which pins it) opens a popover listing every same-named shortcut with its own name, its
+     AppID (mono) and a **Will be tracked** marker on the winner; **no tooltips**. One note line in the
+     existing note stack keeps the consequence short and names the tracked AppID (`map the other with
+     --dir` to switch). The row stays selectable: this is a warning, not `NotSyncable`.
    - Game Mode (`Ui/UiApp.cs`): `AlertTriangle` as the row's status tile plus the same one-line
      caption when the field is set.
-6. **Tests:** extend `run-linux-tests.sh` (or its API checks) to assert `duplicateAppIds` on
-   `/api/candidates` for the existing fixture duplicate, alongside the doctor string check.
+6. **Tests:** extend `run-linux-tests.sh` (or its API checks) to assert `duplicateShortcuts` — the
+   AppIds, the shortcuts' own names, and the tracked flag — on `/api/candidates` for the existing
+   fixture duplicate, alongside the doctor string check.
 
 ## Phases
 
@@ -79,8 +83,10 @@ Each phase is commit-sized; one PR for 1–3 is reasonable, with 4 optional.
 
 ## Open questions
 
-- Field name/shape: `DuplicateAppIds` (plain string list) vs a small record with roots. Recommend
-  the list — the UI sentence needs ids only, and roots are doctor's concern.
-- Should the chip list the AppIds? Recommend no — keep them in the note line/tooltip.
+- Field shape: `DuplicateShortcuts` records `{ AppId, Name, Tracked }` (chosen, and mocked up) vs a
+  bare id list. Records, because the UI shows each shortcut's own name and which one is tracked;
+  roots stay doctor's concern.
+- Should the chip list the AppIds? Yes — in the hover/click popover (name + AppID + tracked marker),
+  the emulator `ReleaseChip` pattern; the chip itself stays short.
 - One duplicate usually resolves a save path while the other does not: the warning still matters
   (the resolvable prefix may be the dead one). No special-case.
