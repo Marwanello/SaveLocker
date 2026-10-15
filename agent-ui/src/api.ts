@@ -89,6 +89,10 @@ export const api = {
   }) => post<{ identityCleared: boolean; startWithWindows: boolean }>('/api/config', body),
   register: (adminPassword?: string) =>
     post<{ machineName: string }>('/api/register', { adminPassword }),
+  // Join this machine to a server from its join link, or a bare code plus the server address
+  // (tasks/enrollment-options, option B). Same flow the CLI's `enroll --url` runs.
+  join: (body: { url?: string; code?: string; serverUrl?: string; machineName?: string }) =>
+    post<{ machineName: string; machineId: string; mapped: number; unmapped: number }>('/api/join', body),
   games: () => req<TrackedGame[]>('/api/games'),
   removeGame: (id: string) => post(`/api/games/${id}/remove`),
   // `confirm` accepts a folder the sanity heuristics flagged (a suspected Wine prefix, an oversized

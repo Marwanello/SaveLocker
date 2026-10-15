@@ -254,7 +254,18 @@ public record ServerSettingsDto(
     DateTime? NextAutoFetchRunAt = null,
     AppearanceSettingsDto? Appearance = null,
     bool DefaultExcludeGlobsFromConsole = false,
-    ServerStorageDto? Storage = null);
+    ServerStorageDto? Storage = null,
+    // The manifest refresh window the console set (days; 0 = never), and when its "Refresh now"
+    // was last pressed. Appended optional so an older console simply ignores them.
+    int ManifestRefreshDays = 3,
+    DateTime? ManifestRefreshRequestedAt = null);
+
+/// <summary>How the console asks for a manifest refresh window (days; 0 = never auto-refresh).
+/// Nullable so a body that omits the field is refused rather than silently read as "never".</summary>
+public record SetManifestRefreshRequest(int? RefreshDays);
+
+/// <summary>What both manifest settings routes answer: the stored window and the last on-demand request.</summary>
+public record ManifestRefreshSettingsDto(int RefreshDays, DateTime? RequestedAt);
 
 /// <summary>What the Configuration page's Server card reads: where archives live and how full that volume
 /// is (null sizes when the volume cannot be read), the default keep, and the conflict-escalation window.</summary>
@@ -822,17 +833,15 @@ public record PruneResult(int Removed);
 // ----- Enrollment -----
 
 /// <summary>
-/// Admin: mint a single-use enrollment token. <paramref name="ServerUrl"/> overrides the URL the
-/// console was reached on — needed when the admin browses over the LAN but the enrolling machine
-/// must use the public (tunnel) URL. <paramref name="GameIds"/> null = every enabled game.
+/// Admin: mint a single-use join code and the link around it. <paramref name="ServerUrl"/> overrides
+/// the URL the console was reached on — needed when the admin browses over the LAN but the enrolling
+/// machine must use the public (tunnel) URL. The policy's game list is built when the link is opened
+/// (GET /join/{code}/policy), not here, so it always describes what the server holds right now.
 /// </summary>
 public record CreateEnrollmentRequest(
     string? MachineName = null,
     int? TtlMinutes = null,
-    string? ServerUrl = null,
-    Guid[]? GameIds = null,
-    int? SettleQuietSeconds = null,
-    int? SettleMaxWaitSeconds = null);
+    string? ServerUrl = null);
 
 /// <summary>An enrollment token as the console lists it. The raw token is shown ONCE, at mint.</summary>
 public record EnrollmentDto(
@@ -843,8 +852,21 @@ public record EnrollmentDto(
     DateTime? RedeemedAt,
     string? RedeemedByMachineName);
 
-/// <summary>Mint result: the row (for listing/revoking) plus the policy file handed to the agent.</summary>
-public record CreateEnrollmentResponse(Guid Id, EnrollmentPolicy Policy);
+/// <summary>
+/// Mint result: the row (for listing/revoking), the typable join code — shown ONCE, like the raw
+/// token before it — and the link that opens the pairing page on the new machine.
+/// </summary>
+public record CreateEnrollmentResponse(Guid Id, string Code, string JoinUrl, DateTime ExpiresAt);
+
+/// <summary>
+/// Agent UI / local API: enroll this machine from a join link, or from a bare code plus the server
+/// address it belongs to. Exactly one of <paramref name="Url"/> or <paramref name="Code"/> is
+/// required; <paramref name="ServerUrl"/> is only consulted for the bare-code form.
+/// </summary>
+public record JoinRequest(string? Url = null, string? Code = null, string? ServerUrl = null, string? MachineName = null);
+
+/// <summary>What one join did: the identity it bought and how many games pre-seeded.</summary>
+public record JoinResponse(string MachineName, Guid MachineId, int Mapped, int Unmapped);
 
 /// <summary>
 /// The server URL an enrollment file would be minted with right now, so the console can show it
@@ -860,14 +882,15 @@ public record CreateEnrollmentResponse(Guid Id, EnrollmentPolicy Policy);
 public record EffectiveServerUrl(string Url, bool FromConfig, bool IsLoopback);
 
 /// <summary>
-/// The enrollment file: <c>savelocker enroll --file &lt;policy&gt;</c>. Carries a single-use,
-/// short-lived <see cref="Token"/> — never a machine API key, so a leaked file expires on its own
-/// and is revocable.
+/// The enrollment policy: served by <c>GET /join/{code}/policy</c> to the agent's
+/// <c>savelocker enroll --url &lt;join link&gt;</c>. Carries a single-use, short-lived
+/// <see cref="Token"/> — never a machine API key, so a leaked link expires on its own and is
+/// revocable.
 /// <para>
-/// <b>Deliberately unsigned</b> (Decisions.md §4). The threat a forged file poses is not a bogus
+/// <b>Deliberately unsigned</b> (Decisions.md §4). The threat a hostile link poses is not a bogus
 /// token but a <i>malicious server URL</i>, whose pull writes into save directories — and a fresh
 /// agent has no trust anchor with which to check a signature, so a PKI here would be theatre. The
-/// user is the trust anchor: they downloaded this from their own console. HTTPS plus the TOFU pin
+/// user is the trust anchor: they opened the link from their own console. HTTPS plus the TOFU pin
 /// the agent records at enrollment are what actually mitigate it.
 /// </para>
 /// The <see cref="Games"/> list only <i>pre-seeds</i> the agent so a fresh machine is useful before
@@ -988,15 +1011,23 @@ public record ConflictEscalationDto(
 /// Server guidance returned with a heartbeat.
 /// <para>
 /// <paramref name="Appearance"/> is appended and optional for the same reason
-/// <see cref="AgentHeartbeat.PathCandidates"/> is: an older agent ignores the field, and a newer
+/// <see cref="AgentHeartbeat.ManifestRefreshDays"/> is: an older agent ignores the field, and a newer
 /// agent talking to an older server sees null, so the fleet and the container upgrade in either
 /// order. Null also means "the console is not sharing its look" — an agent keeps whatever it last
 /// applied, it does not fall back to the default.
 /// </para>
+/// <para>
+/// <paramref name="ManifestRefreshDays"/> is the console's manifest refresh window (days; 0 =
+/// never auto-refresh); null means no value has ever been pushed, so the agent uses its own.
+/// <paramref name="ManifestRefreshRequestedAt"/> is the console's "Refresh now": the agent compares
+/// it to the request it last acted on and downloads once when it is newer.
+/// </para>
 /// </summary>
 public record AgentHeartbeatResponse(
     ConflictEscalationDto[] EscalatedConflicts,
-    AppearanceDto? Appearance = null);
+    AppearanceDto? Appearance = null,
+    int? ManifestRefreshDays = null,
+    DateTime? ManifestRefreshRequestedAt = null);
 
 /// <summary>
 /// "This machine's scan found a save folder for a game it tracks but has not mapped." Reported so

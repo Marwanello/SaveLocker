@@ -773,7 +773,7 @@ try {
     # Scoped deliberately. This deployment is LAN-only over plain HTTP with no reverse proxy and no
     # tunnel, so the forwarded-header and HTTPS-scheme half of the finding has nothing to protect
     # and is not implemented (Decisions.md). What survives is a real LAN failure: the console
-    # reached at localhost mints an enrollment file telling the new machine to sync with itself.
+    # reached at localhost mints a join link telling the new machine to sync with itself.
     # This harness reaches the server at localhost, so it is already in that state.
     Write-Host ""
     Write-Host "==== CS-06: enrollment and update URLs an agent can actually reach ===="
@@ -806,13 +806,13 @@ try {
 
     $good = MintEnrollment @{ machineName = "cs06-good"; ttlMinutes = 10; serverUrl = "http://192.168.68.55:5080/" }
     Check "a valid override mints"                      ($good.code -eq 200)
-    Check "the policy carries the override, normalised" ($good.body.policy.serverUrl -eq "http://192.168.68.55:5080")
+    Check "the link carries the override, normalised"   ($good.body.joinUrl -eq "http://192.168.68.55:5080/join/$($good.body.code)")
 
     # Agent and server on one machine is a real setup — it is what run-enrollment-tests does. Only
     # an INFERRED loopback address is refused; one the admin states is a declaration of intent.
     $sameBox = MintEnrollment @{ machineName = "cs06-samebox"; ttlMinutes = 10; serverUrl = $url }
     Check "an explicitly stated loopback URL is allowed" ($sameBox.code -eq 200)
-    Check "the same-box policy carries localhost"        ($sameBox.body.policy.serverUrl -eq $url)
+    Check "the same-box link carries localhost"          ($sameBox.body.joinUrl -eq "$url/join/$($sameBox.body.code)")
 
     # ---- Server:PublicBaseUrl wins over the request origin ----
     Stop-TestServer $srv
@@ -825,7 +825,7 @@ try {
 
     $configured = MintEnrollment @{ machineName = "cs06-configured"; ttlMinutes = 10 }
     Check "minting over localhost now succeeds"          ($configured.code -eq 200)
-    Check "the policy carries the configured URL"        ($configured.body.policy.serverUrl -eq "http://192.168.68.55:5080")
+    Check "the link carries the configured URL"          ($configured.body.joinUrl -eq "http://192.168.68.55:5080/join/$($configured.body.code)")
 
     Remove-Item Env:Server__PublicBaseUrl -ErrorAction SilentlyContinue
     Stop-TestServer $srv
@@ -1166,8 +1166,8 @@ try {
     }
     $at = (Get-Date).AddSeconds(3).ToUniversalTime().Ticks
     $rjobs = @(
-        (Start-Job -ScriptBlock $redeemer -ArgumentList $url, $mint.policy.token, $at),
-        (Start-Job -ScriptBlock $redeemer -ArgumentList $url, $mint.policy.token, $at)
+        (Start-Job -ScriptBlock $redeemer -ArgumentList $url, $mint.code, $at),
+        (Start-Job -ScriptBlock $redeemer -ArgumentList $url, $mint.code, $at)
     )
     $rres = $rjobs | Wait-Job -Timeout 90 | Receive-Job
     $rjobs | Remove-Job -Force

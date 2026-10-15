@@ -21,6 +21,37 @@ session can judge an edge case, not to reopen the choice.
   manifest" and is not the same answer as "no"** — that case keeps the old assumption, which is what
   makes the change purely additive. This does not reopen the scope decision below: installed Steam
   games are still out of the *default view*, just no longer out of it for a reason that was false.
+- **The manifest is a live feed, refreshed on a window — not pinned** (2026-10-14, tasks/manifest-path-constraints).
+  It is downloaded from upstream `master` (rewritten several times a day), **validated before it replaces
+  the cache** (it must parse — a non-YAML body such as a proxy error page is wrapped as
+  `InvalidDataException`, never surfaced as a `YamlException` fault — and carry at least
+  `ManifestLoader.MinPlausibleGames`, bounded by `MaxManifestBytes`), and refreshed in the background once
+  the cached copy is older than a window the console edits (default **3 days**, `0` = never). A console
+  "Refresh now" rides the heartbeat; each agent downloads once when the timestamp **differs** from the
+  request it last acted on (not "is newer than": a server clock step-back must not strand a press), and
+  "acted on" is stamped only once the attempt actually starts, so a press the attempt gap refuses stays
+  pending. **Why the heartbeat and not `AgentCommand`:** a command's type is a string enum on the wire, so
+  an agent older than a new command type throws deserializing the whole command poll — the heartbeat's
+  appended optional fields are read by old agents as absent, which is the ordering safety this one-shot
+  needs. **Pinning an approved revision was considered and rejected:** a pinned copy
+  makes every game released after the pin undetectable until the app ships a new pin, and the manifest's
+  commits are unsigned, so "verify a fresh copy" has nothing to verify against. The safety comes from
+  the next bullet — constraining what an entry may resolve to — not from freezing the feed. A failed or
+  implausible download never replaces a good cache; a first-ever download failing simply leaves detection
+  with fewer answers, never a broken agent.
+- **Manifest-expanded paths are constrained, not trusted** (2026-10-14, tasks/manifest-path-constraints).
+  A template must be an absolute path, and the path it yields must survive `WithinRealRoots`: its
+  link-resolved form (every symlink/junction component, via `Shared/RealPath.cs`) has to sit under the
+  link-resolved form of one of the resolver's own roots. A `..` segment is NOT refused by itself — the
+  community manifest contains real entries whose wildcard trim leaves one (`<base>/cfg/../*.json`), and a
+  flat ban silently drops them; `Path.GetFullPath` canonicalises the traversal away first, and containment
+  is what decides. This is the resolver-side counterpart of *"a pulled archive is hostile
+  input"*. The old check compared the raw string to a token root, so `<winAppData>/../../../../x` began
+  with a root's value, passed, and `Path.GetFullPath` collapsed it somewhere else — and a link inside a
+  Wine prefix could redirect an otherwise-contained path out of it. A refusal yields "no existing save
+  directory": the user is asked to pick, never handed a confident wrong path. User-mapped folders
+  (folder picker, typed paths, CLI `--dir`) never expand templates and keep their existing treatment —
+  `SavePathGuard` stays the trusted-user floor, unchanged.
 - **Conflict prevention: proactive lock/lease.** Server tracks a per-game checkout; the agent pulls
   before launch *where it has a real launch boundary* (see the next bullet); other machines are
   warned if leased elsewhere. Content-hash + parent-version lineage is the fallback detector.
@@ -520,6 +551,19 @@ session can judge an edge case, not to reopen the choice.
   the real machine key; expires ~15 min. Deliberately unsigned — the threat is a forged file
   pointing at a malicious server, which signing can't fix (no trust anchor exists before the
   user's own download). Mitigated by HTTPS + hardened restore path + TOFU pin after enrollment.
+  <br>**Amended 2026-10-14: the file is gone — enrollment is a join link** (`tasks/enrollment-options`,
+  option B; picked over a typed short code and over device-asks-console-approves). The console mints
+  an 8-character Crockford code (40 bits) into `GET /join/{code}` — a server-hosted pairing page
+  whose Windows tab starts the installer download and copies the link for the wizard's paste box,
+  whose Linux tab is a `curl …/join/{code}/install.sh | sh` one-liner, and which hands off to an
+  already-installed agent via `127.0.0.1:5178/#enroll:…`. The agent's `enroll --url` (CLI) and
+  `POST /api/join` (local API — the Settings tab and that deep link) fetch
+  `GET /join/{code}/policy`, then redeem exactly as before; `enroll --file` is removed with the file.
+  Because 40 bits is short, guessing is throttled (`JoinThrottle`: 15 failures / 15 min / client
+  plus a global backstop; only *unknown* codes count; a successful redeem resets the client) — the
+  throttle is a security property of the short code, not tuning. The policy's game list is built at
+  delivery, so a link opened later still describes the server as it is now. The code is shown once
+  and the link list keeps the pre-existing Valid/Used/Expired/Revoked lifecycle.
 - **Linux install: `~/.local/share/SaveLocker` + `systemd --user`**, never `/usr` — SteamOS's
   rootfs is immutable and wiped on update. Self-contained publish (SteamOS ships no .NET runtime).
 - **Linux dev: WSL2 (Ubuntu 24.04 LTS) on ext4**, not a VM or Arch. Reproduces everything that

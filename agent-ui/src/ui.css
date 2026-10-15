@@ -466,6 +466,9 @@ button.sl-tree__twist:focus-visible { outline: 2px solid var(--color-accent); ou
 .sl-release { position: relative; display: inline-flex; }
 /* The head's entry animation leaves it a stacking context, and the cards after it paint over anything it holds. */
 .sl-gamehead:has(.sl-release__pop) { position: relative; z-index: 5; }
+/* An Add-games card clips its rows at the card's radius, which would cut the chip's popover off at the
+   card's edge when the row sits near the bottom of the list. While one is open the card stops clipping. */
+.sl-card:has(.sl-release__pop) { overflow: visible; }
 .sl-release__chip {
   display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; line-height: 1.3; white-space: nowrap;
   padding: 4px 11px; border-radius: 99px; border: 1px solid var(--color-line);
@@ -488,6 +491,15 @@ button.sl-tree__twist:focus-visible { outline: 2px solid var(--color-accent); ou
 .sl-release__mono { font-family: var(--font-mono, ui-monospace, Consolas, monospace); font-size: 11.5px; }
 .sl-release__note { color: var(--color-dim); font-size: 11.5px; border-top: 1px solid var(--color-line); padding-top: 8px; }
 .sl-release__from { color: var(--color-faint); font-size: 11px; }
+/* The duplicate-shortcut chip: the release chip's pattern in the warning tone, and its popover
+   listing each same-named shortcut and which one the scan tracks. */
+.sl-release__chip--warn { color: var(--color-watch-ink); border-color: var(--color-watch-line); background: var(--color-watch-soft); }
+.sl-release__chip--warn:hover, .sl-release__chip--warn[aria-expanded="true"] { background: var(--color-watch-soft); filter: brightness(1.06); }
+.sl-release__dot--warn { background: var(--color-watch); }
+.sl-dup { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-raise); }
+.sl-dup--tracked { border-color: var(--color-safe-line); background: var(--color-safe-soft); }
+.sl-dup__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sl-dup__name { font-weight: 600; font-size: 12.5px; color: var(--color-fg); }
 .sl-tile__sub { font-size: 11px; color: var(--color-dim); margin-top: -5px; }
 
 /* A Switch game's copy in one emulator (Emulator settings): one panel per emulator, the synced one marked. */

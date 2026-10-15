@@ -15,14 +15,21 @@ SaveLocker/
 │   │   │                               #   (`ComputeManifest`) for delta uploads. Several save folders per
 │   │   │                               #   game: primary at the zip root, extras under `.savelocker/`
 │   │   ├── SaveRoot.cs                  # One save folder of a game: key (`main` or an extra), dir, include scope
-│   │   ├── ManifestLoader.cs            # Ludusavi manifest downloader + cloud/tag parsing
+│   │   ├── ManifestLoader.cs            # Ludusavi manifest downloader + cloud/tag parsing. Validated
+│   │   │                               #   (parses, plausible size/count) before it replaces the cache;
+│   │   │                               #   refreshed on a window, never pinned
 │   │   ├── Appearance.cs                # The look (theme/accent/mark) as three closed id lists + the DTOs,
 │   │   │                               #   and `Appearances.Normalize` — every reader normalises, none rejects
 │   │   ├── SwitchTitles.cs              # Switch title ID → eShop name + icon hash (agent names, server icon);
 │   │   │                               #   SwitchTitles/switch-titles.tsv.gz from blawar/titledb, MIT (NOTICE.md);
 │   │   │                               #   Update-SwitchTitles.ps1 rebuilds it
 │   │   ├── PathResolver.cs              # Expands manifest placeholders (<winAppData>, <base>) to real
-│   │   │                               #   dirs, trimmed at the first wildcard so there is a dir to watch
+│   │   │                               #   dirs, trimmed at the first wildcard so there is a dir to watch.
+│   │   │                               #   Constrained: no "..", and the link-resolved path must stay
+│   │   │                               #   inside the resolver's own roots (RealPath.cs)
+│   │   ├── RealPath.cs                  # Resolves every symlink/junction component of a path, not just
+│   │   │                               #   the leaf — what a manifest-expanded path is checked against
+│   │   │                               #   (OneDrive-style non-link reparse points stay ordinary)
 │   │   └── WinePrefix.cs                # drive_c + which Wine user the game runs as — needed before any
 │   │                                   #   manifest token can be resolved inside a prefix
 │   │

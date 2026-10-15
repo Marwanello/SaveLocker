@@ -264,6 +264,45 @@ an error instead of a silent no-op. Because the Deck is only awake when woken (s
 handoff section in [[CONTEXT]]), every SSH/`scp` call has a short connect timeout and reports
 "unreachable" rather than hanging or aborting the rest of the rig.
 
+### Testing a fresh install (`flow`)
+
+The rest of the rig runs a pre-built agent beside the real one, so it never exercises what comes
+**before** an agent exists: the join link's `.desktop` launcher, the release's
+`SaveLocker-Installer.desktop`, `install.sh`, the menu entry's `savelocker://` handler and enrolling.
+All of those write to `$HOME`, so `flow` runs each in a **throwaway HOME** (`~/savelocker-flow/…`), with
+install.sh's test-only `SAVELOCKER_INSTALL_SANDBOX` keeping it off the one thing `$HOME` does not
+separate — the user's systemd manager ([[Gotchas]] → *Test-only environment variables*). The real
+`~/.local/share/SaveLocker`, `savelocker.service`, port 5178, menu entry and Steam are never touched.
+
+```powershell
+.\tests\testenv.ps1 sync; .\tests\testenv.ps1 build -Only console; .\tests\testenv.ps1 up -Only console
+.\tests\testenv.ps1 flow -Only linux        # WSL, headless: both launchers run and are checked
+.\tests\testenv.ps1 flow -Only deck         # stages two launchers on the Deck's desktop
+.\tests\testenv.ps1 flow -Only deck -Headless
+.\tests\testenv.ps1 flow -Only windows      # the real installer, in Windows Sandbox
+.\tests\testenv.ps1 clean                   # also removes every flow sandbox
+```
+
+`flow` hosts the Deck build (built first if missing — `sync` first so it is this branch's) as the
+console's Linux package, mints join links, and mirrors a GitHub release locally
+(`SAVELOCKER_RELEASE_BASE`) for the GitHub installer. It refuses a build whose install.sh predates the
+sandbox. **WSL** runs both launchers through GLib's own `.desktop` parser and checks: installed,
+enrolled, daemon on the sandbox port, the `savelocker://` default written, the GitHub install ending at
+the Join step; then `open savelocker://enroll?link=…` and the Join card's API call enroll that second
+sandbox. **Deck**: in Desktop Mode, double-click `SaveLocker TEST - join link` and
+`SaveLocker TEST - GitHub installer` on the desktop (KDE's trust prompt included), then run
+`~/savelocker-flow/open-link.sh` for the handler; the pairing page's own *Download installer* must not
+be used there — that one installs for real. **Windows**: the Inno installer writes Program Files, the
+Run key and the installed agent's mutex, so it only runs in **Windows Sandbox** —
+`flow -Only windows` builds it stamped `-Version`, hosts it, and writes
+`artifacts\testenv-flow\SaveLocker-flow.wsb` (in the repo, not AppData: a terminal inside the Claude
+desktop app has its AppData writes hidden from WSL and the sandbox), which opens a join link inside the sandbox (needs the
+*Windows Sandbox* feature: `Enable-WindowsOptionalFeature -Online -FeatureName
+Containers-DisposableClientVM -All` from an elevated shell, then a reboot).
+
+Not covered by any sandbox: a real browser handing a `savelocker://` link to the desktop (the handler
+is registered in the sandbox's own `mimeapps.list`, which the real session's browser does not read).
+
 ### Testing emulator saves (a fake EmuDeck folder)
 
 ```powershell
@@ -577,6 +616,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Quick-wins batch: registration default, conflict latch, exit lease, sessions table, art cleanup, lockout notice, Sync all detail (2026-10-09, `fix/backlog-quick-wins`, merged up through PRs #62–#63) | `dotnet test tests/SaveLocker.Agent.Tests` **397/397** (`ConflictLatchTests` 3 — the stale-latch clear mutation-checked; `SaveFileTreeTests`' shared-server registration now carries the admin password, which the flipped default requires — without it that one test fails; the `ArcadeSavesTests.Supermodel_nvram_…` failure #61 carried is gone once #63 is merged in) · `run-console-security-tests` **364/364** (was 308; +56: the default-ON registration half and the OFF switch, the sessions table + revoke-by-id, the lockout list, art removed with its game) · `run-local-api-tests` **127/127** (post-exit-sync while a held Sync all answers 409 *and* still releases the lease; a stale candidate-folder check fixed — it expected the user profile accepted, which `SavePathGuard` refuses; do not name a variable `$home`; `SL_LOCALAPI_PORT` if another worktree's rig holds :5188) · `run-agent-tests` 47 · `run-delta-upload-tests` 33 · `run-health-tests` 33 · `openapi.json` + `web/src/api-types.ts` regenerated, additions only · `web` build + lint clean |
 | Art picker source choice + Linux agent secret permissions (2026-10-12, `art-picker-and-linux-agent-secrets`) | `run-console-security-tests` **378/378** (+14: `art/source` GET/PUT validation and reset, `art/search` with years and an empty-query short-circuit, options/Refresh art following the chosen id, the wrong entry never asked again, and the startup backfill filling from a pinned source; the suite's stub now serves `games/id` and per-id art) · `dotnet test tests/SaveLocker.Agent.Tests` **450/450** · `run-agent-tests` 47/47 · `run-linux-tests` in WSL **280 pass / 2 fail** — the 2 are the documented WSLg-injected-session pair; +9 permission checks, 4 of which fail against the pre-change Agent.Core (mutation-checked); run in `unshare -n` because a foreign daemon held :5187 · Windows agent build clean · `web` (`tsc -b && vite build`) + `oxlint` clean · `agent-ui` untouched · `openapi.json` + `web/src/api-types.ts` regenerated, additions only · migration `AddGameSteamGridDbSource` |
 | Games tab sorting & grouping (2026-10-12, `console-games-sort-group`, PR #69 review fixes) | new `run-organize-tests` **13/13** (`tests/run-organize-tests.ps1` + `organize-fixtures.cjs`: compiles the real `organize.ts` with the console's tsc and drives it in Node — size/date null-last both directions, name flips, rolling buckets, device overlap + the head uploader, a console through two emulators, source kinds in order, status headings matching each row's dot; the Size-ascending check fails against the PR's original `sortValueOf`) · runs in CI's `build-web` job · `web` `npm run build` + `npm run lint` clean |
+| Manifest path constraints + scheduled refresh, console-controlled (2026-10-14, `manifest-path-constraints`, not merged) | `dotnet test tests/SaveLocker.Agent.Tests` **571** (+19: `ManifestPathConstraintTests` 11 — traversal/link escapes and a hostile YAML entry, 4 of which flip with the guards removed; `ManifestRefreshTests` 8 — plausibility floor, size cap, stale/fresh window, failure keeps the cache, the console window + request bookkeeping, 3 of which flip with the guards removed) · `run-hardening-tests` **37/37 Windows** (+4: manifest traversal + link escape with a real junction, a clean-sibling control, escape target untouched; **2 fail against the pre-fix resolver**) · `run-agent-tests` **49/49** against a fresh scratch server (+2: hostile traversal entry refused with its target created, clean sibling still resolves); live wire check: `POST /api/settings/manifest` → `GET /api/settings` → heartbeat response carries `manifestRefreshDays`/`manifestRefreshRequestedAt`, 9999 refused 400 · detection harness unchanged (feed stays live — no pin) · `openapi.json` + `web/src/api-types.ts` regenerated, additions only · Server/Agent/Agent.Linux builds clean, `web` build + lint clean · **review fixes on the PR:** xunit **576/576** (`ManifestPathConstraintTests` 12 — a contained `..` now collapses and resolves; `ManifestRefreshTests` 12 — error-page wrap, attempt-gap `onStarted`, 304 window, clamp); a `YamlException` escaping the fire-and-forget task and a console press consumed with no download (mark-on-start, `!=` due stamps) fixed; download moved outside the manifest lock with an ETag conditional; the suites now pin the server's window (`Manifest__RefreshDays=0`) since the heartbeat's pushed value overrides the fixtures' agent-side `0`; the traversal fixtures re-targeted (agent-tests escapes to `C:\Users`, hardening asserts "never named"); `run-delta-upload-tests` 33/33, `run-local-api-tests` 128/128, `run-console-security-tests` **378/378**, `openapi.json` + `api-types.ts` regenerated (only change: `refreshDays` nullable; live: `{}` → 400, `5` → stored, `9999` → 400) |
 
 The two platforms differ by design — each suite skips the other's cases. The detection drop from
 99.0% is the install-directory guard and is deliberate ([[Backlog]] → file-level saves); `main` reads

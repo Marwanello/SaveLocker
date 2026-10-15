@@ -103,13 +103,10 @@ public static class Doctor
         // A NOTE, not a problem: scan's dedupe already prefers whichever duplicate actually resolves
         // a save dir (below), so this is frequently harmless — but it cannot always tell, and failing
         // doctor's exit code on a mere duplicate would report a working Deck as broken.
-        foreach (var g in shortcuts
-                     .GroupBy(x => ManifestLoader.NormalizeName(x.Shortcut.AppName))
-                     .Where(g => g.Key.Length > 0 &&
-                                 g.Select(x => x.Shortcut.AppId).Distinct().Count() > 1))
+        foreach (var g in SteamShortcuts.DuplicateNameGroups(shortcuts.Select(x => x.Shortcut)))
         {
-            Console.WriteLine($"  ! '{g.First().Shortcut.AppName}' has {g.Count()} shortcuts with " +
-                     $"different AppIDs ({string.Join(", ", g.Select(x => x.Shortcut.AppId ?? "none"))})" +
+            Console.WriteLine($"  ! '{g.Name}' has {g.Entries.Count} shortcuts with " +
+                     $"different AppIDs ({string.Join(", ", g.Entries.Select(x => x.AppId ?? "none"))})" +
                      " — Steam launches only ONE of them. If the wrong one gets tracked, its saves are" +
                      " never backed up. Remove the stale duplicate in Steam, or check which compatdata" +
                      " folder actually has recent files and map that one with --dir.");
@@ -395,7 +392,7 @@ public static class Doctor
         {
             Problem(string.IsNullOrEmpty(config.ApiKey)
                 ? "the server is reachable, but this machine is not enrolled. " +
-                  "Run: savelocker enroll --file <token file>"
+                  "Run: savelocker enroll --url <join link>"
                 : "the server is reachable, but it rejected this machine's API key. " +
                   "Re-enroll this device, or check that its machine record still exists.");
             return;

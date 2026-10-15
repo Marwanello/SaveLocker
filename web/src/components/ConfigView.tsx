@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
+import { renderSVG } from 'uqr';
 import { api, signIn, clearSession, errorText } from '../api';
 import type { GameSummary, Machine, Settings, Enrollment, EffectiveServerUrl, AgentHealth, AdminSession, ServerBuildInfo, BackupStatus } from '../types';
 import { fleetSkew, isNewerThanConsole, isTestBuild, normalizeVersion } from '../versionSkew';
@@ -37,6 +38,26 @@ interface Props {
 const field = `px-3 py-2 bg-panel text-fg border border-line rounded-lg text-[12.5px] min-w-0
   focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1`;
 
+/**
+ * Copy to the clipboard on every deployment, not only the secure ones: `navigator.clipboard` is
+ * undefined on a plain-http LAN console (not a secure context), which is exactly the deployment
+ * this console usually is — so the old optional-chained call silently copied nothing.
+ */
+function copyText(text: string) {
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch { /* nothing left to try */ }
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(text).catch(fallback);
+  else fallback();
+}
+
 function Toggle({ label, hint, checked, onChange, disabled }: {
   label: string; hint: ReactNode; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean;
 }) {
@@ -52,6 +73,18 @@ function Toggle({ label, hint, checked, onChange, disabled }: {
 }
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** The inline dropdown the Defaults & maintenance hints use for a value stored on the server. */
+function InlineSelect({ label, value, onChange, children }: {
+  label: string; value: string | number; onChange: (value: string) => void; children: ReactNode;
+}) {
+  return (
+    <select aria-label={label} value={value} onChange={e => onChange(e.target.value)}
+      className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+      {children}
+    </select>
+  );
+}
 
 const left = (t: string) => {
   const m = Math.max(0, Math.round((toMs(t) - Date.now()) / 60000));
@@ -169,27 +202,30 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
     else toast(`Released ${plural(gameIds.length, 'lease')} held by ${name}.`);
   }
 
-  // ── Enrollment ──
+  // ── Enrollment (join links — tasks/enrollment-options, option B) ──
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [enrollName, setEnrollName] = useState('');
   const [enrollTtl, setEnrollTtl] = useState('15');
   const [enrollServerUrl, setEnrollServerUrl] = useState('');
   const [minting, setMinting] = useState(false);
+  // The code and link come back exactly once (the server keeps only the hash), so the card holds
+  // them until the admin hides the panel or navigates away.
+  const [joinLink, setJoinLink] = useState<{ code: string; url: string; expiresAt: string } | null>(null);
 
   const loadEnrollments = useCallback(async () => {
     try { setEnrollments(await api.enrollments()); } catch { /* non-fatal */ }
   }, []);
   useEffect(() => { void loadEnrollments(); }, [loadEnrollments]);
 
-  // The URL the policy file will actually carry. Worth showing unprompted: the failure it prevents is
-  // silent — a file that works for the admin at the server and sends the Deck looking for itself.
+  // The URL the join link will carry. Worth showing unprompted: the failure it prevents is silent —
+  // a link that works for the admin at the server and sends the Deck looking for itself.
   const [effectiveUrl, setEffectiveUrl] = useState<EffectiveServerUrl | null>(null);
   useEffect(() => { api.effectiveServerUrl().then(setEffectiveUrl).catch(() => setEffectiveUrl(null)); }, []);
   // Only an INFERRED loopback address blocks minting. A configured or typed one is a deliberate
   // same-box setup (agent and server on one machine).
   const blockedByLoopback = effectiveUrl?.isLoopback === true && !effectiveUrl.fromConfig;
 
-  async function handleMintEnrollment() {
+  async function handleCreateJoinLink() {
     const ttl = parseInt(enrollTtl, 10);
     if (!Number.isFinite(ttl) || ttl < 1) { toastError('Enter an expiry in minutes (at least 1).'); return; }
     setMinting(true);
@@ -198,25 +234,17 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
         machineName: enrollName.trim() || null,
         ttlMinutes: ttl,
         serverUrl: enrollServerUrl.trim() || null,
-        gameIds: null, // every enabled game — the agent's reconcile would adopt them all anyway
       });
-      // The raw token is in this response and nowhere else: the server stored only its hash.
-      const blob = new Blob([JSON.stringify(res.policy, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `savelocker-enroll-${res.policy.machineName || 'machine'}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      setJoinLink({ code: res.code, url: res.joinUrl, expiresAt: res.expiresAt });
       setEnrollName('');
-      toast('Downloaded the enrollment file. It cannot be shown again.', 4000);
+      toast('Join link created — open it on the new machine.', 4000);
       await loadEnrollments();
-    } catch (e) { toastError('Could not create the enrollment file: ' + errorText(e)); }
+    } catch (e) { toastError('Could not create the join link: ' + errorText(e)); }
     finally { setMinting(false); }
   }
 
   async function handleRevokeEnrollment(e: Enrollment) {
-    try { await api.revokeEnrollment(e.id); await loadEnrollments(); toast(e.redeemedAt ? 'Removed it from the list.' : 'Revoked the enrollment file.'); }
+    try { await api.revokeEnrollment(e.id); await loadEnrollments(); toast(e.redeemedAt ? 'Removed it from the list.' : 'Revoked the join link — an agent still holding it cannot use it.'); }
     catch (err) { toastError('Could not revoke it: ' + errorText(err)); }
   }
 
@@ -277,6 +305,31 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
       toast(on ? 'The server checks GitHub for new agents again.' : 'The server no longer checks GitHub for new agents.');
       onRefresh();
     } catch (e) { toastError('Could not change auto-update: ' + errorText(e)); }
+  }
+
+  // ── Manifest refresh (save-detection data) ──
+  const manifestDays = settings.manifestRefreshDays;
+  const [savingManifest, setSavingManifest] = useState(false);
+  async function setManifestDays(days: number) {
+    setSavingManifest(true);
+    try {
+      const stored = await api.setManifestRefreshDays(days);
+      toast(stored.refreshDays === 0
+        ? 'Automatic manifest refresh is off. Refresh now still works.'
+        : `Each machine refreshes its save-detection data every ${plural(stored.refreshDays, 'day')}.`);
+      onRefresh();
+    } catch (e) { toastError('Could not change the manifest refresh window: ' + errorText(e)); }
+    finally { setSavingManifest(false); }
+  }
+  const [refreshingManifest, setRefreshingManifest] = useState(false);
+  async function refreshManifestNow() {
+    setRefreshingManifest(true);
+    try {
+      await api.refreshManifestNow();
+      toast('Refresh requested — every machine picks it up at its next heartbeat.');
+      onRefresh();
+    } catch (e) { toastError('Could not request a manifest refresh: ' + errorText(e)); }
+    finally { setRefreshingManifest(false); }
   }
 
   // ── Server card ──
@@ -384,8 +437,8 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
       head: '', label: 'Actions', end: true,
       cell: e => e.redeemedAt || toMs(e.expiresAt) <= Date.now()
         ? <Button size="sm" variant="quiet" onClick={() => void handleRevokeEnrollment(e)}>Remove</Button>
-        : <InlineConfirm label="Revoke" consequence="An agent still holding this file will not be able to use it."
-            confirmLabel="Revoke the file" onConfirm={() => handleRevokeEnrollment(e)} />,
+        : <InlineConfirm label="Revoke" consequence="An agent still holding this link will not be able to use it."
+            confirmLabel="Revoke the link" onConfirm={() => handleRevokeEnrollment(e)} />,
     },
   ];
 
@@ -480,22 +533,22 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
         <Card title="Enroll a machine" flush>
           <div className="px-4 py-[15px]">
             <p className="text-[13px] text-dim mb-3">
-              Creates a single-use file the agent reads on first run: the server URL and a token that expires —
-              never an API key. Copy it to the new machine and run <code className="font-mono text-[11.5px] text-fg">savelocker enroll --file &lt;file&gt;</code>.
-              It downloads once and cannot be shown again.
+              Creates a one-time join link. Open it on the new machine — the page installs the agent and enrolls it
+              in one pass, or run <code className="font-mono text-[11.5px] text-fg">savelocker enroll --url &lt;link&gt;</code>.
+              The code inside is shown once and expires on its own.
             </p>
             {effectiveUrl && (
               <p className={`text-xs mb-3 ${effectiveUrl.isLoopback ? 'text-watch-ink' : 'text-dim'}`}>
                 {blockedByLoopback
                   ? <><strong>This console was reached at {effectiveUrl.url}</strong>, which no other machine can use. Reopen it at the
                       server's LAN address, set <code className="font-mono">Server:PublicBaseUrl</code>, or type the address below.</>
-                  : <>The file will tell the agent to sync with <code className="font-mono text-fg">{effectiveUrl.url}</code>
+                  : <>The link will tell the agent to sync with <code className="font-mono text-fg">{effectiveUrl.url}</code>
                       {effectiveUrl.fromConfig ? ' (from Server:PublicBaseUrl).' : '.'} Override it below if the machine reaches the server differently.</>}
               </p>
             )}
             <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_110px]">
               <label className="flex flex-col gap-1">
-                <span className="text-[10px] tracking-[0.1em] uppercase text-faint">For (optional, binds the file)</span>
+                <span className="text-[10px] tracking-[0.1em] uppercase text-faint">For (optional, binds the link)</span>
                 <input value={enrollName} onChange={e => setEnrollName(e.target.value)} placeholder="steamdeck" className={field} />
               </label>
               <label className="flex flex-col gap-1">
@@ -510,42 +563,105 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             {(() => {
               const blocked = minting || (blockedByLoopback && !enrollServerUrl.trim());
               return (
-                <Button variant="primary" className="mt-3.5" onClick={() => void handleMintEnrollment()} disabled={blocked}
-                  title={blockedByLoopback && !enrollServerUrl.trim() ? "Enter the address agents should use, or reopen the console at this server's LAN address." : undefined}>
-                  {minting ? 'Creating…' : 'Create enrollment file'}
-                </Button>
+                <div className="flex items-center gap-2 flex-wrap mt-3.5">
+                  <Button variant="primary" onClick={() => void handleCreateJoinLink()} disabled={blocked}
+                    title={blockedByLoopback && !enrollServerUrl.trim() ? "Enter the address agents should use, or reopen the console at this server's LAN address." : undefined}>
+                    {minting ? 'Creating…' : 'Create join link'}
+                  </Button>
+                  {joinLink && <Button size="sm" variant="quiet" onClick={() => setJoinLink(null)}>Hide the link</Button>}
+                </div>
               );
             })()}
+
+            {joinLink && (
+              <div className="mt-4 rounded-xl border border-accent-line bg-accent-soft p-4">
+                <div className="grid gap-4 sm:grid-cols-[132px_minmax(0,1fr)] items-start">
+                  <div>
+                    {/* A QR must be dark-on-light to scan, whatever theme the console is in — hence
+                        the forced white tile and black modules rather than theme tokens. */}
+                    <div className="rounded-lg bg-white p-1.5 w-[132px] h-[132px]" style={{ color: 'black' }}
+                      dangerouslySetInnerHTML={{ __html: renderSVG(joinLink.url, { pixelSize: 4, border: 2, ecc: 'M', blackColor: 'currentColor', whiteColor: 'transparent' }) }} />
+                    <div className="text-[10.5px] text-dim text-center mt-1.5">scan to open on a phone</div>
+                  </div>
+                  <div className="min-w-0 flex flex-col gap-2.5">
+                    <div className="font-mono text-[25px] font-semibold tracking-[0.16em] text-center text-fg bg-tile border border-line rounded-[10px] px-3 py-2.5 select-all">
+                      {joinLink.code.slice(0, 4)}-{joinLink.code.slice(4)}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span title={`Valid until ${when(joinLink.expiresAt)} UTC`}>
+                        <Chip tone="warn">Valid · {left(joinLink.expiresAt)} left</Chip>
+                      </span>
+                      <Button size="sm" onClick={() => { copyText(joinLink.url); toast('Copied the join link.'); }}>Copy link</Button>
+                      <Button size="sm" variant="quiet" onClick={() => { copyText(joinLink.code); toast('Copied the code.'); }}>Copy code</Button>
+                    </div>
+                    <p className="text-xs text-dim">
+                      Open the link on the new machine; the page installs the agent and enrolls it in one pass —
+                      on Windows the installer asks for a paste of the same link. On a Steam Deck the pairing
+                      page gives a one-liner that does both over SSH.
+                    </p>
+                    <p className="text-[11px] text-faint">Shown once — create another any time.</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div className="border-t border-line">
-            <DataTable caption="Enrollment files" columns={enrollmentColumns} rows={enrollments} rowKey={e => e.id}
-              empty={<div className="px-4 py-5 text-[12.5px] text-dim">No enrollment files created yet.</div>} />
+            <DataTable caption="Join links" columns={enrollmentColumns} rows={enrollments} rowKey={e => e.id}
+              empty={<div className="px-4 py-5 text-[12.5px] text-dim">No join links created yet.</div>} />
           </div>
         </Card>
 
         <Card title="Defaults & maintenance">
           <Toggle label="Agent auto-update" checked={autoUpdateOn} onChange={v => void setAutoUpdate(v)}
             hint={autoUpdateOn ? 'Checks GitHub for a newer installer and hosts it for agents. Schedule: Agent updates, below.' : 'Off — upload installers by hand under Agent updates, below.'} />
+
+          <div className="flex items-center justify-between gap-4 py-2.5 border-b border-row">
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-fg">Manifest refresh</div>
+              <div className="text-xs text-dim mt-0.5">
+                The save-detection data used to find new games.
+                {savingManifest ? ' Saving…' : <> Each machine refreshes{' '}
+                  <InlineSelect label="Manifest refresh window" value={manifestDays}
+                    onChange={v => void setManifestDays(Number(v))}>
+                    {/* The stored value is anywhere from 0-365 (a config default included), so it is
+                        unioned in — a controlled select with no matching option renders blank. */}
+                    {[...new Set([1, 3, 7, 14, 30, 0, manifestDays])].map(d =>
+                      <option key={d} value={d}>
+                        {{ 0: 'never automatically', 1: 'every day', 3: 'every 3 days', 7: 'weekly', 14: 'every 14 days', 30: 'monthly' }[d] ?? `every ${d} days`}
+                      </option>)}
+                  </InlineSelect>.</>}
+                {settings.manifestRefreshRequestedAt && <> Last requested {ago(settings.manifestRefreshRequestedAt)}.</>}
+              </div>
+            </div>
+            <Button size="sm" variant="quiet" disabled={refreshingManifest} onClick={() => void refreshManifestNow()}>
+              {refreshingManifest ? 'Requesting…' : 'Refresh now'}
+            </Button>
+          </div>
+
           <Toggle label="Scheduled backup" checked={!!backup?.enabled} disabled={!backup}
             onChange={v => void setBackupSchedule({ enabled: v })}
             hint={backup
               ? <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-1">
                   The database and every game's latest save, zipped,
-                  <select aria-label="Backup frequency" value={backup.frequency ?? 'weekly'} onChange={e => void setBackupSchedule({ frequency: e.target.value })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                  <InlineSelect label="Backup frequency" value={backup.frequency ?? 'weekly'}
+                    onChange={v => void setBackupSchedule({ frequency: v })}>
                     <option value="daily">daily</option>
                     <option value="weekly">weekly</option>
-                  </select>
+                  </InlineSelect>
                   {(backup.frequency ?? 'weekly') === 'weekly' && <>on
-                    <select aria-label="Backup day" value={backup.dayOfWeek ?? 0} onChange={e => void setBackupSchedule({ dayOfWeek: Number(e.target.value) })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                    <InlineSelect label="Backup day" value={backup.dayOfWeek ?? 0}
+                      onChange={v => void setBackupSchedule({ dayOfWeek: Number(v) })}>
                       {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                    </select></>}
+                    </InlineSelect></>}
                   at
-                  <select aria-label="Backup hour (UTC)" value={backup.hourOfDay} onChange={e => void setBackupSchedule({ hourOfDay: Number(e.target.value) })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                  <InlineSelect label="Backup hour (UTC)" value={backup.hourOfDay}
+                    onChange={v => void setBackupSchedule({ hourOfDay: Number(v) })}>
                     {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00 UTC</option>)}
-                  </select>, keep
-                  <select aria-label="Backups to keep" value={backup.retentionCount} onChange={e => void setBackupSchedule({ retentionCount: Number(e.target.value) })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                  </InlineSelect>, keep
+                  <InlineSelect label="Backups to keep" value={backup.retentionCount}
+                    onChange={v => void setBackupSchedule({ retentionCount: Number(v) })}>
                     {[...new Set([2, 4, 8, 12, 26, 52, backup.retentionCount])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>. <a href="#backups" className="underline underline-offset-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Backups</a>
+                  </InlineSelect>. <a href="#backups" className="underline underline-offset-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Backups</a>
                 </span>
               : 'Reading the backup schedule…'} />
 

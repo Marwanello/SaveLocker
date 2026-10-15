@@ -1686,7 +1686,34 @@ entry (added once by an agent that updates itself); `savelocker pull` exits non-
 put new plugin submissions on hold until Playnite 11's new add-on database. The listing, the self-update proof and four
 unchecked surfaces are now their own Backlog tasks (`tasks/playnite-*`).
 <br>**Checkpoint UI closed as done (2026-10-04)**, merging with PR #54; the Group 9 `testenv` checklist is its own
-Backlog task now (`tasks/checkpoint-ui-group-9-check/`).
+Backlog task now (`tasks/checkpoint-ui-group-9-check/`). **That checklist was run through `testenv` on
+2026-10-14 (branch `backlog-plans-testenv-mockup`) and the task is closed**: every step passed, including
+the maintainer's 4.6/1.8; eight findings (F1–F8) — keep-count can't return to 7 once changed, revoking an
+enrollment removes its row, `-test` builds classify as releases so the Dev-build/Running chips don't show,
+and *Fetch from GitHub* defaults to the upstream repo — are recorded in
+`tasks/_done/checkpoint-ui-group-9-check/run-2026-10-14.md`, each a maintainer decision, none a blocker.
+
+**Duplicate-shortcut warnings outside doctor shipped (2026-10-14, this branch, PR #75) — reviewed the
+same day, every finding fixed.** The one detector (`SteamShortcuts.DuplicateNameGroups`/
+`DuplicatesFor`) now backs the `doctor` note and both scanners; `ScanCandidate.DuplicateShortcuts`
+rides the agent's wire (`CandidateDto`, additive/nullable; `agent-ui/src/api-types.ts` regenerated);
+agent-ui gained `DuplicateChip` (a ReleaseChip-style popover naming each same-named shortcut's own
+name/AppID and which one the scan follows) + a row note, and Game Mode a warning tile + ASCII caption.
+`Tracked` marks the AppID the scan actually follows, and no entry is marked when it follows none of
+them (a Windows save-root candidate that won the merge, or a MoonDeck shortcut reclassified as a
+genuinely installed game) — the copy says so rather than naming a loser. `DuplicateChip` and
+`ReleaseChip` share `usePopover` (hover/pin/outside/Esc, with a 150 ms leave grace for the 8 px
+chip→popover gap); the popover swallows clicks (an Add-games row is a `<label>`, so a click on it
+used to tick the game's checkbox) and `.sl-card:has(.sl-release__pop)` stops the card clipping it.
+<br>**Verified:** xunit **559/559** (+7 `DuplicateShortcutTests`; the tracked marker mutation-checked),
+Agent.Core/Windows Agent/Agent.Linux build clean, `agent-ui` build + lint clean,
+`run-appearance-consistency-tests` **50/50**, `run-linux-tests` **282/2** as root in `unshare -n`
+(the 2 are the documented WSLg-session pair; both duplicate-shortcut checks pass, now asserting the
+exact AppIDs/names/tracked flags rather than field presence), and both UI fixes proven in headless
+Chrome against the real CSS/DOM (the card clip and the label-tick each reproduced with their fix
+removed, including a real trusted click). **Not verified:** a live Deck/WebView2 pass of the chip.
+The 71-failure cascade the PR body first carried was this box's stray `~/SaveLocker` daemon holding
+:5187 — the netns run is the workaround; the task is ready to move to `tasks/_done/` on merge.
 <br>**v0.6.0 prepared (2026-10-04, branch `release-0.6.0`) — not yet tagged.** PR #54 is merged. Release notes in
 `web/src/releases/0.6.0.md` (covering everything since v0.5.12: the whole Checkpoint redesign, Groups 1–10, plus backup
 restore and the encrypted SteamGridDB key; three migrations). A minor bump, not 0.5.13, because of the redesign's size and
@@ -2154,6 +2181,170 @@ bindings now use `data-pad-action` attributes with the old text lookups as fallb
 page's LT/RT hints no longer advertise Push/Pull while a conflict card owns those buttons.
 `agent-ui` `tsc -b && vite build` and `oxlint` clean. **Not verified:** Gamepad API input and
 gamescope on a real Deck — Phase 7's checklist still owns that.
+
+---
+
+**Enrollment join links — option B implemented (2026-10-14, branch `enrollment-join-link`, worktree
+`.claude/worktrees/enrollment-mockups`; the three option mockups are committed on branch
+`enrollment-mockups` as `9ab48b7`, under `docs/tasks/enrollment-options/`).** Asked for directly: the
+enrollment file is disliked, replace it. Option B picked from the mockups — the console mints a short
+code (8 Crockford chars, `JoinCodes` in Shared) into `GET /join/{code}`, a self-contained pairing page:
+Windows tab starts the installer download and copies the link, Linux tab is a `curl …/install.sh | sh`
+one-liner, and an already-installed agent is reached by `127.0.0.1:5178/#enroll:<link>`. The agent
+side is `enroll --url` (CLI; `--code` + `--server` accepted as sugar) over `GET /join/{code}/policy` —
+the policy (games, effective excludes) is now built **at delivery**, not minted into a file — and
+`POST /api/join` on the local API, which the agent-UI Join card and the `#enroll:` deep link use
+(`AgentEnroller` is the one implementation both call). `enroll --file` and the JSON download are
+**removed**; the installer's enroll page now takes a pasted join link (`/ENROLL-URL` for silent), and
+`install.sh`/help/README/[[API Reference]]/[[Decisions]] were updated. Because 40 bits is short,
+`JoinThrottle` guards every lookup (15 failures / 15 min / client + a global backstop; only unknown
+codes count; a successful redeem resets) — that throttle is a security property, asserted end to end
+including 429 + `Retry-After`. Console card rewritten (code + link + QR via `uqr`, a new web dep).
+<br>**Verified:** `run-enrollment-tests` **25/25** (rewritten for links: pairing page, both enroll
+forms, single-use / revoked / forged, throttle against its own low-limit server), `run-local-api-tests`
+**128/128** (run with `SL_LOCALAPI_PORT=5197` — another worktree's tray held :5188; +3 `/api/join`
+checks), `run-server-bugbounty-tests` **216/216** (CS-06/CS-10 updated to the link shape; one
+transient CS-01 crash on the first attempt, not reproducible), `run-agent-tests` 47/47, `dotnet test`
+**552/552**, `run-appearance-consistency-tests` 50/50 (the QR's colours needed `currentColor` +
+keyword black — hex literals are banned in views), `web` and `agent-ui` build + lint clean, installer
+compiles (`installer/dist/SaveLocker-Agent-Setup-0.7.1.exe`). `openapi.json` + both `api-types.ts`
+regenerated against live scratch instances.
+<br>**Not verified (manual pass owed):** the real Windows wizard paste-round-trip against a real
+tray install, and a Steam Deck running the pairing page's one-liner — steps were given in the
+session's report (testenv walkthrough). `run-enrollment-tls-tests` is blocked on this box: the dev
+cert exists but is **untrusted** (`dotnet dev-certs https --trust` needs its dialog accepted).
+<br>**Session note:** for a while the headless tooling wrote edits into the **main checkout** instead
+of this worktree (opencode's default cwd); recovered with a stash move — builds/tests in a worktree
+must always be driven with the worktree's absolute paths. The implementation is committed on
+`enrollment-join-link` and in review as PR #76. A review pass then fixed the pairing page's script —
+inline under the dashboard's `script-src 'self'` it was silently blocked, so the page lost its Copy
+buttons and the Linux tab; it is now served same-origin as `/join.js` — plus `Cache-Control:
+no-store` on every `/join/*` response, a pwsh-only `Retry-After` read in the suite (the one Linux CI
+failure), a missed `--file` banner in `UiApp.cs`, two stale "file" strings, an empty `#enroll`
+banner, and the pre-seed's game-list writes now going through `MutateGames`. Release notes for the
+next tag must cover the enrollment-file removal (old agents/installers cannot enroll until updated —
+they can still `savelocker register`).
+<br>**Follow-up (2026-10-15, same branch) — Linux `.desktop` installer + `savelocker://`.** The pairing
+page's Linux tab now leads with **Download installer**: `GET /join/{code}/install.desktop`, a launcher
+(`JoinLinks.InstallLauncher` in Shared) whose `Exec=sh -c '…'` fetches and runs the same `install.sh`
+in a terminal — the Decky/EmuDeck pattern, single quotes because GLib and KDE both parse them; a URL
+needing any quoting gets no launcher (409). Fetching it does not spend the code. The installed menu
+entry now registers `x-scheme-handler/savelocker` (`Exec=… open %u`; install.sh runs `xdg-mime
+default`, and the daemon rewrites an entry *it* wrote that predates this — `DesktopEntry.OfferOnce`).
+`savelocker open savelocker://enroll?link=<join url>` opens the Join card pre-filled (only a
+well-formed join link is accepted, still one click to enroll), and `open` now starts the systemd
+unit when the daemon is down. The same session also found the pairing page's script blocked by the dashboard CSP and fixed it
+with a per-page hash; merging the review commit replaced that with its `/join.js` (the better fix — the
+dashboard policy stays as it is), carrying over only the tab switch for the Linux hand-off. **Verified:** `run-enrollment-tests` **31/31** (+6: launcher served,
+terminal + exec line, not spending the code, refused once spent, the Linux agent link, the script's tab switch),
+`run-console-security-tests` 378/378, `run-server-bugbounty-tests` 216/216, `JoinLinksTests` +
+`DesktopEntryTests` 25/25 (`dotnet test` **574/574** overall); the launcher parsed by GLib (`Gio.DesktopAppInfo`, WSL Ubuntu) to
+`sh -c <one script>`, and that script run against a scratch server shows the refusal for a bad code
+and runs `install.sh` for a good one; pairing page checked in the browser. **Not verified:** KDE
+on a real Deck (trust prompt, Konsole), the `savelocker://` link from a Deck browser (Flatpak
+Firefox/Chrome go through the portal), and the Windows agent has no `savelocker://` handler.
+<br>**Second follow-up (2026-10-15) — a release `.desktop` installer + `testenv flow`.** Releases now
+carry `SaveLocker-Installer.desktop` + `savelocker-install.sh` (rendered by build-linux.sh with the
+repo, attached by release.yml): double-clicked, it finds the tarball through `SHA256SUMS-linux.txt`,
+checks it, runs install.sh and opens the Join card — the EmuDeck pattern for installing without a join
+link. README and the install help lead with it. **`testenv.ps1 flow`** tests the fresh-install flow in
+throwaway HOMEs (`tests/testenv-flow.sh`, `tests/linux/run-desktop-launcher.py`): install.sh gained
+test-only `SAVELOCKER_INSTALL_SANDBOX=<port>` (never touches the user's systemd manager — `$HOME` does
+not separate it — and runs the daemon on that port), and both installers honour
+`SAVELOCKER_RELEASE_BASE` ([[Gotchas]]). WSL headless, Deck staged for double-clicking (or
+`-Headless`), Windows via a generated Windows Sandbox `.wsb`. `flow` refuses a Linux build without the
+sandboxed install.sh. CI's package-linux job now runs the release installer end to end through GLib,
+and its menu-entry check was updated for `open %u` (the previous commit would have failed it).
+**Verified:** `flow -Only linux` **10/10** against a separate console container (:5081, this branch)
+and a Linux build from a private WSL copy — the shared rig was in use by another worktree
+(`duplicate-shortcut-warnings`) and was not rebuilt; WSL's real `~/.local/share/SaveLocker` unchanged
+since 2026-09-22, no systemd unit touched. `flow -Only windows` built and hosted the installer and
+wrote the `.wsb`; the pairing page answered on the LAN URL. **Not verified:** Windows Sandbox itself
+(the feature is not enabled on this PC), the Deck target, and the CI workflow changes (not run).
+Testing through `flow` from a sandboxed shell: its writes under `%LOCALAPPDATA%` are invisible to WSL,
+so `-StateRoot` had to point into the session scratchpad.
+
+---
+
+**Manifest path constraints + scheduled refresh, console-controlled (2026-10-14, branch
+`manifest-path-constraints`, worktree `.claude/worktrees/manifest-path-constraints`, three commits —
+not merged).** The backlog item *Constrain manifest paths*, built after the maintainer revised the
+approach: the first plan pinned the manifest to an approved revision; the maintainer rejected the pin
+(a reliable live feed, and a pinned copy makes every game released after the pin undetectable) and the
+plan was re-cut to **constrain what an entry may resolve to** and to actually **refresh the feed on a
+schedule** — which the agent had never done (the cache was downloaded once and served forever unless
+someone ran `refresh-manifest`). The maintainer also asked for the window to be editable in the
+console with a "refresh now" button, which is where the server/dashboard/agent plumbing below
+comes from. Full write-up: `logs/2026-10-14_manifest-path-constraints.md`; decisions in
+[[Decisions]] (two new bullets: the live feed and the constrained paths).
+<br>**What shipped:** (1) `PathResolver` refuses any template that is not absolute, canonicalises
+before the token-root prefix check (the old check compared the RAW
+string, so `<winAppData>/../../../x` passed), and requires the link-resolved path — every symlink/
+junction component, via the new `Shared/RealPath.cs` — to stay under a link-resolved resolver root;
+the user-mapped path classes (`SavePathGuard`'s floor) are untouched. (2) `ManifestLoader.DownloadAsync`
+streams with a 64 MB cap and validates (parses, ≥ 5,000 games) before replacing the cache by a
+temp-file move; `Detection.RefreshManifestIfDueAsync` refreshes a stale cache in the background
+(attempt gap 1 h / 30 s forced, never throws, failure keeps the old copy), driven from `CommandPoller`
+on both hosts; `AgentConfig` carries `ManifestRefreshDays` (default 3), the pushed window, and the
+handled request timestamp. (3) Server: audited admin routes `POST /api/settings/manifest` (0–365,
+400 otherwise) and `POST /api/settings/manifest/refresh`; `AgentHeartbeatResponse` and
+`ServerSettingsDto` carry the window + requested-at (append-only, version-skew-safe — the appearance
+pattern); Configuration → Defaults & maintenance has the **Manifest refresh** row (window select +
+**Refresh now**, "Last requested … ago"). `openapi.json` + `web/src/api-types.ts` regenerated,
+additions only.
+<br>**Verified:** xunit **571** (`ManifestPathConstraintTests` 11, `ManifestRefreshTests` 8 — an
+`HttpListener` stub; guards removed flip 4 + 3 of them); `run-hardening-tests` **37/37 Windows** (+4,
+section 5: a real traversal entry and a real junction escape in a fake prefix, clean-sibling control —
+**both new checks FAIL against the pre-fix resolver** via a live mutation pass); `run-agent-tests`
+**49/49** against a fresh scratch server (+2; hostile entry refused with its target created); live wire
+check (`POST` window → `GET /api/settings` → heartbeat response carries both fields; 9999 → 400);
+Server/Agent/`Agent.Linux` builds clean, `web` build + lint clean. All fixture configs that point
+`ManifestCachePath` at a file now set `ManifestRefreshDays: 0` (five suites + two xunit fixtures) so
+no suite can download over its fixture.
+<br>**A real trap the mutation check caught:** the hardening fixture's first traversal target sat one
+directory above where six `..` segments actually land, so the check passed against BOTH fixed and
+mutated code — a vacuous test, invisible without the "must FAIL pre-fix" pass. Fixed and re-proven.
+<br>**Not verified:** `run-linux-tests` (WSL) and `run-winagent-tests` (interactive desktop) were not
+run; the console card was not eyeballed in a browser (it type-checks/builds; the wire was checked
+live); console-button → live-daemon download is covered by unit tests + wiring, not a live daemon.
+**Next actions:** merge when reviewed; next release notes need a line about the scheduled refresh +
+Configuration control; watch a real machine's log for "Manifest refreshed: N games." after the first
+window or a console press. Deliberately not done: `SavePathGuard.Canonicalize` still resolves only the
+leaf (an intermediate-link upgrade for user paths is a separate item), and the on-disk cache is not
+re-hashed at load.
+<br>**Reviewed at depth on 2026-10-14 (ten angles), every finding fixed on the branch.** The
+load-bearing fixes: a non-YAML body (a proxy HTML page — the `YamlException` that used to escape the
+fire-and-forget refresh task) is wrapped as `InvalidDataException`, so "never throws, keeps the
+cache" is real and logged; the console's "Refresh now" is marked handled only once an attempt
+actually starts (a press the 30 s gap refused used to be consumed with nothing downloaded), and the
+due check is "differs from", not "newer than", so a server clock step-back cannot strand a press;
+the download runs OUTSIDE the manifest lock (a first-ever reader used to wait out the whole transfer;
+it now serves the cached file immediately); one shared `HttpClient` with a 30-minute timeout instead
+of a fresh 100 s-default client per refresh (a ~17 MB manifest on a slow link could never finish
+while the console reported success); PID+Guid temp names (the fixed `.tmp` was shared across
+processes) plus a declared-vs-delivered length check; conditional GETs via an ETag stored beside the
+cache (a 304 restarts the window without re-downloading); `Detection` reloads its in-memory manifest
+when another process replaces the file (Game Mode and the daemon used to serve it forever); `..` is
+canonicalised-and-contained rather than flat-banned — the ban contradicted real entries
+(`<base>/cfg/../*.json`, the shape the detection harness itself collapses) — and `ManifestPathConstraintTests`
+now pins both the escape and the contained-collapse cases; `SetManifestRefreshRequest.RefreshDays`
+is nullable so `{}` is a 400 instead of silently meaning "never"; `ApplyManifestSettings(null)` keeps
+the last pushed window (an old server no longer clears it) and `TrySetServerUrl` clears the
+server-scoped window/handled stamps on an origin change; the effective window is clamped on read so
+a hand-edited config cannot overflow `TimeSpan.FromDays`. Test/suite fixes: the Linux, regression,
+concurrency and winagent suites pin the SERVER's window (`Manifest__RefreshDays=0`) — the fixtures'
+agent-side `0` never won, because the heartbeat's pushed value overrides it, so a daemon on a >3-day-old
+checkout would have replaced `tests/linux/manifest.yaml` with the live feed; the hardening "traversal
+target was never touched" check (unfailable — the suite created the target) is now "never named",
+with the section numbers and header counts corrected; run-agent-tests' traversal fixture escapes to
+`C:\Users` (exists on every box, under no root) instead of staying inside `<home>`, which the new
+containment deliberately allows. **Re-verified:** xunit **576/576** (`ManifestPathConstraintTests`
+12, `ManifestRefreshTests` 12), `run-agent-tests` **49/49**, `run-hardening-tests` **37/37 Windows**,
+`run-delta-upload-tests` 33/33, `run-local-api-tests` 128/128, `run-console-security-tests`
+378/378, `openapi.json` + `web/src/api-types.ts` regenerated (only schema change: `refreshDays`
+nullable; live wire: `{}` → 400, `5` → stored round-trip, `9999` → 400), `web` build + lint clean,
+`bash -n` on both Linux scripts. **Still not run:** `run-linux-tests` (WSL) and `run-winagent-tests`
+(interactive desktop), and the console row still has not been eyeballed in a browser.
 
 ---
 

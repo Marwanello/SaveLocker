@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SaveLocker — Enrollment option A · short code (clickable mockup)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* ============================================================================
+   Clickable mockup — "Enrollment by short code".
+   Not shipped code. Re-creates the real UI elements: console Checkpoint design
+   system (web/src/index.css, web/src/components/ui/*) and agent UI
+   (agent-ui/src/tokens.css + ui.css), at docs/tasks/enrollment-options/.
+   ========================================================================== */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0f0f10;--panel:#141416;--raise:#191a1c;--tile:#1b1c1f;--hover:#202124;
+  --fg:#f0eee9;--dim:#a09d97;--faint:#817e78;--line:#242427;--row:#1d1d20;
+  --safe:#7fa96a;--watch:#d9a63f;--info:#7b9fd0;--accent:#e0533c;--on-accent:#160f0e;
+  --accent-soft:color-mix(in oklab,var(--accent) 14%,var(--panel));
+  --accent-line:color-mix(in oklab,var(--accent) 42%,var(--panel));
+  --accent-ink:color-mix(in oklab,var(--accent) 80%,var(--fg));
+  --safe-soft:color-mix(in oklab,var(--safe) 14%,var(--panel));
+  --safe-line:color-mix(in oklab,var(--safe) 40%,var(--panel));
+  --safe-ink:color-mix(in oklab,var(--safe) 82%,var(--fg));
+  --watch-soft:color-mix(in oklab,var(--watch) 14%,var(--panel));
+  --watch-line:color-mix(in oklab,var(--watch) 40%,var(--panel));
+  --watch-ink:color-mix(in oklab,var(--watch) 82%,var(--fg));
+  --font-sans:'Archivo',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+  --ease:cubic-bezier(.2,.8,.25,1);color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --ink:#f5f3ef;--panel:#fffefc;--raise:#f0ede8;--tile:#ebe7e0;--hover:#e8e3dc;
+  --fg:#191719;--dim:#57534d;--faint:#79756f;--line:#e2ddd5;--row:#eeeae3;
+  --safe:#4c7b3e;--watch:#8a6212;--info:#3d6aa8;--accent:#c0432c;--on-accent:#fff8f6;color-scheme:light;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme]){
+    --ink:#f5f3ef;--panel:#fffefc;--raise:#f0ede8;--tile:#ebe7e0;--hover:#e8e3dc;
+    --fg:#191719;--dim:#57534d;--faint:#79756f;--line:#e2ddd5;--row:#eeeae3;
+    --safe:#4c7b3e;--watch:#8a6212;--info:#3d6aa8;--accent:#c0432c;--on-accent:#fff8f6;color-scheme:light;
+  }
+}
+body{background:var(--ink);color:var(--fg);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.muted{color:var(--dim);font-size:12px}
+.fine{color:var(--faint);font-size:11px}
+.mono{font-family:var(--mono)}
+b{font-weight:600}
+
+/* --- mockup chrome ---------------------------------------------------------- */
+.mockbar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px;background:var(--raise);border-bottom:1px solid var(--line);font-size:12px;color:var(--dim)}
+.mockbar b{color:var(--fg);font-weight:600}
+.mockbar .spacer{flex:1}
+.mockbar .seg{margin:0}
+
+/* --- layout ----------------------------------------------------------------- */
+.wrap{display:grid;grid-template-columns:300px minmax(0,1fr);gap:18px;padding:16px 18px 44px;max-width:1440px;margin:0 auto;align-items:start}
+@media (max-width:1080px){.wrap{grid-template-columns:1fr}.narr{position:static !important}}
+.narr{position:sticky;top:54px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.narr .head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.narr .head b{font-size:13px;letter-spacing:-.01em}
+.steplist{display:flex;flex-direction:column;gap:2px;list-style:none}
+.steplist li button{display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;align-items:start;width:100%;text-align:left;padding:9px 10px;border-radius:10px;transition:background-color .15s var(--ease)}
+.steplist li button:hover{background:var(--raise)}
+.steplist li button[aria-current="true"]{background:var(--tile);border:1px solid var(--line)}
+.steplist .n{display:grid;place-items:center;width:24px;height:24px;border-radius:8px;border:1px solid var(--line);background:var(--raise);font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+.steplist li.done .n{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.steplist .t{font-size:13px;font-weight:600;letter-spacing:-.01em}
+.steplist .s{display:block;font-size:11px;color:var(--dim);font-weight:400;margin-top:2px}
+.narrnav{display:flex;gap:8px}
+.narrnav .btn{flex:1;justify-content:center}
+.card-note{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:12px;color:var(--dim);line-height:1.55}
+.card-note b{color:var(--fg)}
+.card-note ul{margin:0 0 0 16px;padding:0;display:flex;flex-direction:column;gap:5px}
+.card-note .ttl{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-bottom:8px;font-weight:600}
+
+/* --- buttons / chips / seg --------------------------------------------------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-weight:500;font-size:13px;padding:8px 15px;border-radius:999px;border:1px solid var(--line);background:var(--raise);color:var(--fg);transition:background-color .15s var(--ease),transform .15s var(--ease),filter .15s var(--ease);white-space:nowrap}
+.btn:hover{background:var(--hover);transform:translateY(-1px)}
+.btn:active{transform:scale(.96)}
+.btn:disabled{opacity:.5;cursor:default;transform:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--dim)}
+.btn.quiet:hover{background:var(--hover);color:var(--fg)}
+.btn.sm{padding:5px 11px;font-size:12px}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;padding:7px;border-radius:999px;border:1px solid var(--line);background:var(--raise);color:var(--dim)}
+.iconbtn:hover{color:var(--fg);background:var(--hover)}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--raise);color:var(--dim);white-space:nowrap}
+.chip.ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.chip.warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.chip.crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.dotbase{display:inline-block;width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dotbase.ok{background:var(--safe)}.dotbase.warn{background:var(--watch)}.dotbase.crit{background:var(--accent)}.dotbase.idle{background:var(--faint)}
+.dotbase.live{animation:pulse 1.6s ease-in-out infinite}
+.seg{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:999px;padding:3px;gap:2px}
+.seg button{border-radius:999px;font-size:12.5px;font-weight:600;padding:7px 15px;color:var(--dim);transition:background-color .15s var(--ease),color .15s var(--ease)}
+.seg button:hover{color:var(--fg)}
+.seg button.is-on{background:var(--panel);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.22)}
+.seg.sm button{padding:5px 11px;font-size:11.5px;font-weight:500}
+
+/* --- console chrome ---------------------------------------------------------- */
+.frame{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--ink);min-width:0;animation:rise .3s var(--ease)}
+.frame--win{border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.4);max-width:940px;margin:0 auto;width:100%}
+.framebar{display:flex;align-items:center;gap:9px;padding:7px 12px;background:var(--raise);border-bottom:1px solid var(--line);font-size:11.5px;color:var(--dim)}
+.framebar .dots{display:flex;gap:5px}
+.framebar .dots i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.framebar .title{font-weight:600;color:var(--dim)}
+.devices{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.devices .lbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:600;margin-right:2px}
+.topbar{display:flex;flex-wrap:wrap;align-items:center;gap:13px;padding:9px 18px;min-height:62px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{display:inline-flex;align-items:center;gap:9px;font-size:17px;font-weight:700;letter-spacing:-.035em}
+.brand .accent{color:var(--accent)}
+.verpill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--raise);font-size:10.5px;font-family:var(--mono);color:var(--dim)}
+.verpill .dot{width:6px;height:6px;border-radius:50%;background:var(--safe)}
+.tabs{display:flex;flex-wrap:wrap;gap:3px}
+.tab{font-size:13px;padding:7px 13px;border-radius:999px;border:1px solid transparent;color:var(--dim);font-weight:500;transition:background-color .15s var(--ease),color .15s var(--ease)}
+.tab:hover{background:var(--raise);color:var(--fg)}
+.tab.is-current{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink);font-weight:600}
+.topright{margin-left:auto;display:flex;align-items:center;gap:9px;flex-wrap:wrap;position:relative}
+.page-canvas{display:flex;flex-direction:column;gap:14px;padding:20px 22px 30px}
+.pagehead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.pagehead h1{font-size:25px;font-weight:700;letter-spacing:-.035em;line-height:1.05}
+.pagehead .sub{margin-top:6px;font-size:11.5px;color:var(--dim)}
+.pagehead h2{font-size:21px;font-weight:700;letter-spacing:-.03em}
+.pagehead p.sl{margin-top:5px;font-size:12px;color:var(--dim)}
+.strip{border:1px dashed var(--line);border-radius:12px;padding:9px 14px;font-size:11.5px;color:var(--faint);text-align:center}
+
+/* --- card / table ------------------------------------------------------------ */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}
+.card>header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line)}
+.card>header h3{font-size:14px;font-weight:600;letter-spacing:-.02em}
+.card .pad{padding:15px 16px}
+.dt{width:100%;border-collapse:collapse}
+.dt th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:left;padding:8px 16px;border-bottom:1px solid var(--line);font-weight:500;white-space:nowrap}
+.dt td{padding:10px 16px;font-size:12.5px;color:var(--dim);border-bottom:1px solid var(--row)}
+.dt tr:last-child td{border-bottom:none}
+.dt td.k{color:var(--fg);font-weight:600}
+.dt .m{font-family:var(--mono);font-size:11.5px}
+.dt .end{text-align:right}
+.winwrap{overflow-x:auto}
+.empty{padding:26px 18px;text-align:center;color:var(--dim);font-size:12.5px}
+.empty b{display:block;color:var(--fg);font-size:14px;font-weight:600;margin-bottom:5px}
+.osbadge{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;vertical-align:-3px;margin-right:7px}
+
+/* --- console fields / code panel --------------------------------------------- */
+.fl{display:flex;flex-direction:column;gap:4px}
+.fl>span{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.inp{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--fg);font:inherit;font-size:12.5px;padding:8px 12px}
+.inp.mono{font-family:var(--mono)}
+.inp::placeholder{color:var(--faint)}
+.rowfields{display:grid;gap:10px;grid-template-columns:minmax(0,1fr) 110px;margin-top:12px}
+.codepanel{margin-top:14px;padding:14px;border:1px solid var(--accent-line);border-radius:12px;background:var(--accent-soft);animation:rise .25s var(--ease)}
+.codebig{font-family:var(--mono);font-weight:600;font-size:27px;letter-spacing:.18em;color:var(--fg);background:var(--tile);border:1px solid var(--line);border-radius:10px;padding:12px 16px;text-align:center;user-select:all}
+.codebig.sm{font-size:19px;padding:10px 14px;letter-spacing:.16em}
+.coderow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.linkpanel{margin-top:14px;display:grid;grid-template-columns:148px minmax(0,1fr);gap:16px;padding:14px;border:1px solid var(--accent-line);border-radius:12px;background:var(--accent-soft);align-items:start}
+.codebox{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:100%}
+.codebox code{font-family:var(--mono);font-size:11.5px;background:var(--tile);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--fg);overflow-wrap:anywhere}
+
+/* --- toast -------------------------------------------------------------------- */
+#toaster{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;align-items:center;gap:8px;max-width:92vw}
+.toast{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;font-size:13px;color:var(--fg);box-shadow:0 10px 30px rgba(0,0,0,.35);animation:toastin .25s var(--ease)}
+.controw{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;animation:rise .25s var(--ease)}
+
+/* --- agent UI chrome ----------------------------------------------------------- */
+.agent{display:flex;flex-direction:column;height:580px;background:var(--ink)}
+.agentbar{display:flex;align-items:center;gap:10px;padding:0 14px;height:50px;background:var(--panel);border-bottom:1px solid var(--line);flex-shrink:0}
+.agentbar .abrand{display:inline-flex;align-items:center;gap:8px;font-size:14.5px;font-weight:700;letter-spacing:-.03em}
+.agentbar .abrand .accent{color:var(--accent)}
+.agentbar .sub{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-left:2px}
+.spacer{flex:1}
+.agentbody{flex:1;display:flex;min-height:0}
+.aside{width:188px;border-right:1px solid var(--line);padding:10px 9px;display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.anav{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;font-size:13px;font-weight:500;color:var(--dim);border:1px solid transparent}
+.anav:hover{background:var(--raise);color:var(--fg)}
+.anav.cur{background:var(--tile);border-color:var(--line);color:var(--fg);font-weight:600}
+.acontent{flex:1;overflow:auto;padding:18px 20px}
+.sl-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.sl-card>header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.sl-card>header h3{font-size:13.5px;font-weight:600}
+.sl-card .body{padding:16px}
+.sl-stack{display:flex;flex-direction:column;gap:14px}
+.sl-field label{display:block;font-size:11.5px;color:var(--dim);margin-bottom:5px}
+.sl-input{width:100%;background:var(--raise);border:1px solid var(--line);border-radius:10px;color:var(--fg);font:inherit;font-size:13px;padding:8px 12px}
+.sl-input::placeholder{color:var(--faint)}
+.sl-input--mono{font-family:var(--mono);font-size:12px}
+.sl-inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sl-note{font-size:11.5px;color:var(--dim);line-height:1.5}
+.joinbox{border:1px solid var(--accent-line);background:var(--accent-soft);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.joinbox__head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--accent-ink)}
+.codeinput{max-width:180px;letter-spacing:.16em;font-weight:600;text-transform:uppercase;font-size:14px;text-align:center}
+.spinner{display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite;vertical-align:-2px}
+.banner{display:flex;align-items:center;gap:12px;padding:13px 15px;border-radius:12px;border:1px solid var(--line);flex-wrap:wrap;animation:rise .25s var(--ease)}
+.banner.safe{border-color:var(--safe-line);background:var(--safe-soft)}
+.banner .txt{font-size:12px;color:var(--dim);margin-top:3px}
+.banner .ttl{font-size:13.5px;font-weight:600;color:var(--safe-ink)}
+.progline{font-size:12px;color:var(--dim)}
+.seedlist{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.seedlist .row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim)}
+.minigames{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.minigames .row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim)}
+
+/* --- misc ---------------------------------------------------------------------- */
+.hl{animation:flash 1.4s var(--ease) 3;border-radius:12px}
+@keyframes flash{0%{box-shadow:0 0 0 0 var(--accent-line)}40%{box-shadow:0 0 0 3px var(--accent-line)}100%{box-shadow:0 0 0 0 rgba(0,0,0,0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes toastin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}}
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <b>Mockup</b><span>Enrollment option A · short code — docs/tasks/enrollment-options/option-a-code.html</span>
+  <span class="seg sm" role="group" aria-label="Theme">
+    <button data-act="theme:system">System</button>
+    <button data-act="theme:dark">Dark</button>
+    <button data-act="theme:light">Light</button>
+  </span>
+  <span class="spacer"></span>
+  <a class="btn quiet sm" href="index.html">All options</a>
+  <button class="btn quiet sm" data-act="reset">Reset</button>
+</div>
+
+<div class="wrap">
+  <aside class="narr" id="narr"></aside>
+  <main id="stage"></main>
+</div>
+<div id="toaster"></div>
+
+<script>
+/* ============================================================================
+   State. Everything a step shows is derived from this — no cosmetic toggles.
+   ========================================================================== */
+const S = {
+  step: 0, theme: 'system',
+  created: false, enrolled: false, codeLeft: 899, code: 'K7QM-4H2X',
+  agent: 'idle',            // idle | busy | done
+  busyLine: '',
+};
+let busyTimer = null;
+
+const STEPS = [
+  {
+    id: 1, device: 'console', title: 'Create a code on the console',
+    sub: 'Configuration → Enroll a machine',
+    notes: [
+      'The server renders today\u2019s single-use enrollment token as a typable code \u2014 Crockford base32, 8 characters (40 bits), stored hashed exactly like now, 15-minute TTL, redeemable once.',
+      'Redeem gets a per-client throttle so a short code stays unguessable.',
+      'Nothing travels between machines: no download, no file to copy, nothing to lose.',
+    ],
+  },
+  {
+    id: 2, device: 'agent', title: 'Type it on the new machine',
+    sub: 'Agent UI → Settings → Join with a code',
+    notes: [
+      'CLI keeps pace: <b>savelocker enroll --server http://livingroom:5080 --code K7QM-4H2X</b>.',
+      'Identical server call underneath (<b>POST /api/enroll</b>) \u2014 game seeding and the TOFU pin are unchanged.',
+      'On a Steam Deck the agent UI\u2019s gamepad keyboard types the code with a controller; no terminal needed.',
+    ],
+  },
+  {
+    id: 3, device: 'console', title: 'The machine appears',
+    sub: 'Machines \u00b7 new row, online',
+    notes: [
+      'The code list already shows Valid / Used / Expired / Revoked \u2014 no new lifecycle to learn.',
+      'Re-enrolling a wiped machine is the same motion: create a new code, type it.',
+      'Expired or lost codes cost nothing: they were never a file, and creating a new one is one click.',
+    ],
+  },
+];
+const BUILD_NOTES = [
+  '<b>Server</b> \u2014 render the existing token as base32; throttle <span class="mono">POST /api/enroll</span> per client.',
+  '<b>Agent</b> \u2014 a <span class="mono">--code</span> flag and one Settings block. The enroll, seed and pin paths are untouched.',
+  '<b>Trade-off</b> \u2014 best when a human sits at both machines (or can relay 8 characters). One typing step remains on the new device.',
+];
+
+/* ------------------------------------------------------------------------ */
+/* Icons — lucide 0.511.0 geometry, as used by the shipped UIs.              */
+const ICONS = {
+  check:[['path',{d:'M20 6 9 17l-5-5'}]],
+  'chevron-left':[['path',{d:'m15 18-6-6 6-6'}]],
+  'chevron-right':[['path',{d:'m9 18 6-6-6-6'}]],
+  'refresh-cw':[['path',{d:'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8'}],['path',{d:'M21 3v5h-5'}],['path',{d:'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16'}],['path',{d:'M8 16H3v5'}]],
+  plus:[['path',{d:'M5 12h14'}],['path',{d:'M12 5v14'}]],
+  monitor:[['rect',{width:'20',height:'14',x:'2',y:'3',rx:'2'}],['line',{x1:'8',x2:'16',y1:'21',y2:'21'}],['line',{x1:'12',x2:'12',y1:'17',y2:'21'}]],
+  'gamepad-2':[['line',{x1:'6',x2:'10',y1:'11',y2:'11'}],['line',{x1:'8',x2:'8',y1:'9',y2:'13'}],['line',{x1:'15',x2:'15.01',y1:'12',y2:'12'}],['line',{x1:'18',x2:'18.01',y1:'10',y2:'10'}],['path',{d:'M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z'}]],
+  bell:[['path',{d:'M10.268 21a2 2 0 0 0 3.464 0'}],['path',{d:'M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326'}]],
+  lock:[['rect',{width:'18',height:'11',x:'3',y:'11',rx:'2',ry:'2'}],['path',{d:'M7 11V7a5 5 0 0 1 10 0v4'}]],
+  folder:[['path',{d:'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'}]],
+  shield:[['path',{d:'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'}]],
+  copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
+  key:[['path',{d:'m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4'}],['path',{d:'m21 2-9.6 9.6'}],['circle',{cx:'7.5',cy:'15.5',r:'5.5'}]],
+  settings:[['path',{d:'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z'}],['circle',{cx:'12',cy:'12',r:'3'}]],
+  home:[['path',{d:'M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8'}],['path',{d:'M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'}]],
+  library:[['path',{d:'m16 6 4 14'}],['path',{d:'M12 6v14'}],['path',{d:'M8 8v12'}],['path',{d:'M4 4v16'}]],
+  'git-branch':[['line',{x1:'6',x2:'6',y1:'3',y2:'15'}],['circle',{cx:'18',cy:'6',r:'3'}],['circle',{cx:'6',cy:'18',r:'3'}],['path',{d:'M18 9a9 9 0 0 1-9 9'}]],
+  activity:[['path',{d:'M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2'}]],
+  'square-play':[['rect',{width:'18',height:'18',x:'3',y:'3',rx:'2'}],['path',{d:'m9 8 6 4-6 4Z'}]],
+};
+function icon(name,size=14,sw=2){
+  const n = ICONS[name]||ICONS.check;
+  const inner = n.map(([t,a]) => '<'+t+' '+Object.entries(a).map(([k,v]) => k+'="'+v+'"').join(' ')+'/>').join('');
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+sw+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" style="flex-shrink:0">'+inner+'</svg>';
+}
+function mark(size=30){
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 32 32" role="img" aria-label="SaveLocker">'
+    +'<rect x="12" y="3" width="8" height="4" fill="var(--accent)"/><rect x="8" y="7" width="4" height="5" fill="var(--accent)"/>'
+    +'<rect x="20" y="7" width="4" height="5" fill="var(--accent)"/><rect x="5" y="12" width="22" height="16" fill="var(--accent)"/>'
+    +'<rect x="14" y="16" width="4" height="4" fill="var(--on-accent)"/><rect x="15" y="20" width="2" height="5" fill="var(--on-accent)"/></svg>';
+}
+function winBadge(){return '<span class="osbadge" style="color:var(--info)"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2" y="4" width="9" height="7"/><rect x="13" y="4" width="9" height="7"/><rect x="2" y="13" width="9" height="7"/><rect x="13" y="13" width="9" height="7"/></svg></span>'}
+function deckBadge(){return '<span class="osbadge" style="color:var(--info)">'+icon('gamepad-2',14,2)+'</span>'}
+
+/* ------------------------------------------------------------------------ */
+function fmtCode(sec){const s=Math.max(0,sec);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+
+const stage = document.getElementById('stage');
+const narr = document.getElementById('narr');
+
+function renderNarr(){
+  const step = STEPS[S.step];
+  const items = STEPS.map((d,i) => {
+    const done = i < S.step;
+    return '<li class="'+(done?'done':'')+'"><button data-act="go:'+i+'" aria-current="'+(i===S.step)+'">'
+      +'<span class="n">'+(done?icon('check',12,2.6):d.id)+'</span>'
+      +'<span><span class="t">'+d.title+'</span><span class="s">'+d.sub+'</span></span></button></li>';
+  }).join('');
+  const devTabs = '<div class="devices"><span class="lbl">Step '+STEPS[S.step].id+' of '+STEPS.length+'</span>'
+    + STEPS.map((d,i)=>'<button class="chip '+(d.device==='console'?'':'')+'" style="'+(i===S.step?'border-color:var(--accent-line);color:var(--accent-ink);background:var(--accent-soft)':'')+'" data-act="go:'+i+'">'+(d.device==='console'?'Console':'New machine')+'</button>').join('')
+    +'</div>';
+  narr.innerHTML =
+    '<div class="head"><b>Walkthrough</b><span class="chip crit">Option A</span></div>'
+    +'<ol class="steplist">'+items+'</ol>'
+    +'<div class="narrnav">'
+    +'<button class="btn sm" data-act="back" '+(S.step===0?'disabled':'')+'>'+icon('chevron-left',12,2.4)+'Back</button>'
+    +'<button class="btn sm primary" data-act="next" '+(S.step===STEPS.length-1?'disabled':'')+'>Next'+icon('chevron-right',12,2.4)+'</button>'
+    +'</div>'
+    +'<div class="card-note"><div class="ttl">What happens here</div><ul>'+step.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul></div>'
+    +'<div class="card-note"><div class="ttl">Building it</div><ul>'+BUILD_NOTES.map(n=>'<li>'+n+'</li>').join('')+'</ul></div>';
+}
+
+/* --- console ----------------------------------------------------------------- */
+function enrollPanel(){
+  if(!S.created) return '';
+  const chip = S.enrolled
+    ? '<span class="chip ok">'+icon('check',11,2.4)+'Used \u00b7 gameroom-pc</span>'
+    : '<span class="chip warn"><span class="dotbase warn live"></span>Valid \u00b7 <span data-cd>'+fmtCode(S.codeLeft)+'</span> left</span>';
+  return '<div class="codepanel"><div class="codebig">'+S.code+'</div>'
+    +'<div class="coderow">'+chip
+    +'<button class="btn sm" data-act="copy-code">'+icon('copy',12,2.2)+'Copy</button>'
+    +(S.enrolled?'':'<button class="btn sm quiet" data-act="hide-code">Hide</button>')
+    +'</div>'
+    +'<p class="muted" style="margin-top:10px">'
+    +(S.enrolled
+      ? 'This code is used up. Create a new one any time for another machine.'
+      : 'Type it on the new machine: <b>Settings \u2192 Join with a code</b>. It expires by itself \u2014 create a new one any time.')
+    +'</p></div>';
+}
+function enrollRows(){
+  if(!S.created && !S.enrolled)
+    return '<tr><td colspan="4"><div class="empty" style="padding:16px">No enrollment codes created yet.</div></td></tr>';
+  const state = S.enrolled
+    ? '<span class="chip ok">Used \u00b7 gameroom-pc</span>'
+    : '<span class="chip warn"><span class="dotbase warn live"></span>Valid \u00b7 <span data-cd>'+fmtCode(S.codeLeft)+'</span> left</span>';
+  return '<tr>'
+    +'<td class="m">just now</td>'
+    +'<td class="k mono">'+S.code+'</td>'
+    +'<td>'+state+'</td>'
+    +'<td class="end">'+(S.enrolled?'<button class="btn quiet sm">Remove</button>':'<button class="btn quiet sm">Revoke</button>')+'</td></tr>';
+}
+function machinesCard(flash){
+  const body = S.enrolled
+    ? '<div class="winwrap"><table class="dt"><thead><tr><th>Machine</th><th>Platform</th><th>Agent</th><th>Last seen</th><th>Games</th></tr></thead><tbody>'
+      +'<tr><td class="k">'+winBadge()+'gameroom-pc <span class="chip ok" style="margin-left:6px">'+icon('check',10,2.4)+'Online</span></td>'
+      +'<td>Windows 11 (build 26100)</td><td class="m">v0.7.1</td><td><span class="chip ok">Online</span></td><td>4</td></tr>'
+      +'</tbody></table></div>'
+    : '<div class="empty"><b>No machines yet</b>Create a code above and type it on the new machine.</div>';
+  return '<div class="card '+(flash?'hl':'')+'"><header><h3>Machines</h3><span class="muted">agent health, versions and keys</span></header>'+body+'</div>';
+}
+function consolePage(){
+  const p = enrollPanel();
+  return '<div class="frame"><div class="topbar">'
+    +'<span class="brand">'+mark(26)+'<span>Save<span class="accent">Locker</span></span></span>'
+    +'<span class="verpill">v0.7.1 <span class="dot"></span></span>'
+    +'<nav class="tabs"><button class="tab">Games</button><button class="tab is-current">Configuration</button><button class="tab">Audit log</button><button class="tab">Backups</button><button class="tab">Help</button><button class="tab">What\u2019s new</button></nav>'
+    +'<div class="topright"><button class="btn primary sm">'+icon('refresh-cw',13,2.3)+'Sync all</button>'
+    +'<button class="iconbtn" aria-label="Notifications">'+icon('bell',15,2)+'</button></div></div>'
+    +'<div class="page-canvas">'
+    +'<div class="pagehead"><div><h1>Configuration</h1><div class="sub">server settings \u00b7 appearance \u00b7 enrollment \u00b7 storage</div></div><span class="chip ok">Connected as admin</span></div>'
+    +'<div class="strip">Server \u00b7 Appearance \u00b7 Defaults &amp; maintenance \u00b7 \u2026 other cards unchanged</div>'
+    +'<div class="card '+(S.step===0&&S.created?'hl':'')+'"><header><h3>Enroll a machine</h3><span class="muted">no file \u2014 a short code</span></header>'
+    +'<div class="pad">'
+    +'<p class="muted" style="max-width:76ch">Creates a short code the agent takes on first run \u2014 the server address and a one-time token, never an API key. Type it on the new machine under <b>Settings \u2192 Join with a code</b>. It expires in 15 minutes.</p>'
+    +'<div class="rowfields"><label class="fl"><span>For (optional, binds the code)</span><input class="inp" value="gameroom-pc" '+(S.created?'disabled':'')+'></label>'
+    +'<label class="fl"><span>Expires (min)</span><input class="inp mono" value="15" '+(S.created?'disabled':'')+'></label></div>'
+    +(p || '<button class="btn primary" style="margin-top:14px" data-act="create">'+icon('key',13,2.2)+'Create code</button>')
+    +(S.created?'<div class="controw"><span class="muted">'+(S.enrolled?'Done \u2014 the machine is in.':'Keep this page handy for the next step.')+'</span>'+(S.enrolled?'':'<button class="btn sm primary" data-act="next">Take it to the new machine'+icon('chevron-right',12,2.4)+'</button>')+'</div>':'')
+    +'</div>'
+    +'<div style="border-top:1px solid var(--line)"><div class="winwrap"><table class="dt"><thead><tr><th>Created</th><th>Code</th><th>State</th><th class="end"></th></tr></thead><tbody>'+enrollRows()+'</tbody></table></div></div>'
+    +'</div>'
+    + machinesCard(S.step===2)
+    +'</div></div>';
+}
+
+/* --- agent UI ---------------------------------------------------------------- */
+function joinBlock(){
+  if(S.agent==='done'){
+    return '<div class="banner safe">'+icon('shield',16,2.2)
+      +'<div style="flex:1;min-width:220px"><div class="ttl">Enrolled as gameroom-pc</div>'
+      +'<div class="txt">The machine key is stored in the agent\u2019s config file and never shown here. 4 games matched this machine and will start syncing.</div></div>'
+      +'<span class="chip ok">Pinned on first connect</span></div>'
+      +'<div class="minigames">'
+      +['Hades \u00b7 save folder found','Cyberpunk 2077 \u00b7 save folder found','Stardew Valley \u00b7 save folder found','Balatro \u00b7 save folder found'].map(g=>'<div class="row">'+icon('folder',13,2)+'<span>'+g+'</span></div>').join('')
+      +'</div>';
+  }
+  if(S.agent==='busy'){
+    return '<div class="joinbox"><div class="sl-inline"><span class="spinner"></span><b style="font-size:13px">Enrolling\u2026</b></div>'
+      +'<div class="progline">'+S.busyLine+'</div></div>';
+  }
+  return '<div class="joinbox"><div class="joinbox__head">'+icon('key',15,2.2)+'Join with a code</div>'
+    +'<p class="sl-note">Get a code from the console: <b>Configuration \u2192 Enroll a machine \u2192 Create code</b>.</p>'
+    +'<div class="sl-inline"><input class="sl-input sl-input--mono codeinput" value="'+S.code+'" aria-label="Enrollment code">'
+    +'<button class="btn primary" data-act="enroll">Enroll this machine</button></div></div>';
+}
+function agentPage(){
+  const reg = S.agent==='done';
+  const navItems = [['home','Overview'],['library','Games'],['git-branch','Conflicts'],['plus','Add games'],['activity','Activity'],['settings','Settings']];
+  const nav = navItems.map(([ic,label]) =>
+    '<div class="anav'+(label==='Settings'?' cur':'')+'">'+icon(ic,15,2)+'<span>'+label+'</span>'+(label==='Conflicts'?'':'')+'</div>').join('');
+  return '<div class="frame frame--win"><div class="framebar"><span class="dots"><i></i><i></i><i></i></span>'
+    +'<span class="title">SaveLocker \u2014 agent UI (WebView2, 900\u00d7600)</span><span class="spacer"></span>'
+    +'<span class="chip '+(reg?'ok':'warn')+'" style="padding:2px 8px">'+(reg?'Registered':'Not registered')+'</span></div>'
+    +'<div class="agent"><div class="agentbar">'+mark(20)+'<span class="abrand">Save<span class="accent">Locker</span></span><span class="sub">Settings</span><span class="spacer"></span>'
+    +(reg?'<span class="chip ok">'+icon('check',10,2.4)+'Enrolled</span>':'<span class="chip warn">No server key</span>')
+    +'</div><div class="agentbody"><nav class="aside">'+nav+'</nav>'
+    +'<div class="acontent"><div class="pagehead sl"><div><h2>Settings</h2><p class="sl">gameroom-pc \u00b7 http://livingroom:5080</p></div></div>'
+    +'<div class="sl-card" style="margin-top:14px"><header><h3>Connection</h3>'
+    +(reg?'<span class="chip ok">'+icon('check',10,2.4)+'Registered</span>':'<span class="chip warn">Not pinned yet</span>')
+    +'</header><div class="body sl-stack">'
+    +'<div class="sl-field"><label>Server URL</label><input class="sl-input sl-input--mono" value="http://livingroom:5080"></div>'
+    +'<div class="sl-field"><label>Machine name</label><input class="sl-input" value="gameroom-pc" style="max-width:280px"></div>'
+    + joinBlock()
+    +'<div class="sl-field"><label>Admin password</label><input class="sl-input" type="password" placeholder="only needed to re-register this name" style="max-width:280px"></div>'
+    +'<div class="sl-inline"><button class="btn primary" '+(S.agent==='busy'?'disabled':'')+'>Save</button><button class="btn" '+(S.agent==='busy'?'disabled':'')+'>Test connection</button><button class="btn" '+(S.agent==='busy'?'disabled':'')+'>Register / Re-register</button></div>'
+    +'<div class="sl-note">'+(reg?'Registered \u2014 this machine holds a key for the server. ':'Not registered yet. ')+'The key is kept in the agent\u2019s config file and never shown here. If it is ever exposed, use Register / Re-register to rotate it.</div>'
+    +(S.agent==='done'?'<div class="controw"><button class="btn sm primary" data-act="next">Continue \u2014 check the console'+icon('chevron-right',12,2.4)+'</button></div>':'')
+    +'</div></div></div></div></div></div>';
+}
+
+function render(){
+  renderNarr();
+  const step = STEPS[S.step];
+  stage.innerHTML = step.device==='console' ? consolePage() : agentPage();
+}
+
+/* --- actions ------------------------------------------------------------------ */
+function toast(msg){
+  const t=document.createElement('div');t.className='toast';t.textContent=msg;
+  const box=document.getElementById('toaster');box.appendChild(t);
+  while(box.children.length>3)box.removeChild(box.firstChild);
+  setTimeout(()=>{t.style.transition='opacity .25s';t.style.opacity='0';setTimeout(()=>t.remove(),260)},2600);
+}
+function copy(text,msg){try{navigator.clipboard.writeText(text)}catch(e){}toast(msg)}
+
+function enrollSteps(){
+  const seq=[['Contacting http://livingroom:5080\u2026',700],['Redeeming the code\u2026',900],['Storing the machine key\u2026',600],['Matching save folders on this machine\u2026',900]];
+  S.agent='busy';
+  let i=0;
+  const run=()=>{
+    if(i<seq.length){
+      S.busyLine=seq[i][0];render();
+      busyTimer=setTimeout(()=>{i++;run()},seq[i][1]);
+    }else{
+      S.agent='done';S.enrolled=true;render();toast('Enrolled \u2014 the code is used up and the machine key is stored.');
+    }
+  };
+  run();
+}
+function setTheme(t){
+  S.theme=t;
+  if(t==='system')document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme',t);
+  document.querySelectorAll('.mockbar [data-act^="theme:"]').forEach(b=>b.classList.toggle('is-on',b.dataset.act==='theme:'+t));
+}
+function reset(){
+  S.step=0;S.created=false;S.enrolled=false;S.agent='idle';S.busyLine='';S.codeLeft=899;
+  clearTimeout(busyTimer);
+  render();toast('Mockup reset.');
+}
+function act(a){
+  if(a==='create'){S.created=true;render();toast('Code created \u2014 type it on the new machine.');return}
+  if(a==='hide-code'){S.created=false;render();return}
+  if(a==='copy-code')return copy(S.code,'Copied the code.');
+  if(a==='enroll')return enrollSteps();
+  if(a==='next'){if(S.step<STEPS.length-1){S.step++;render()}return}
+  if(a==='back'){if(S.step>0){S.step--;render()}return}
+  if(a.startsWith('go:')){S.step=+a.split(':')[1];render();return}
+  if(a.startsWith('theme:'))return setTheme(a.split(':')[1]);
+  if(a==='reset')return reset();
+}
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act]');if(!el)return;
+  e.preventDefault();act(el.dataset.act);
+});
+/* live countdown */
+setInterval(()=>{
+  if(S.created&&!S.enrolled&&S.codeLeft>0){
+    S.codeLeft--;
+    document.querySelectorAll('[data-cd]').forEach(el=>el.textContent=fmtCode(S.codeLeft));
+  }
+},1000);
+setTheme('system');render();
+</script>
+</body>
+</html>

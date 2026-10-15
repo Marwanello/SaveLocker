@@ -578,6 +578,58 @@ public sealed class AgentApiServer : IDisposable
             }
         });
 
+        // Join this machine to a server from its join link (tasks/enrollment-options, option B) —
+        // what the Settings tab and a "#enroll:<link>" deep link call. The same AgentEnroller the
+        // CLI's `enroll --url` uses, so the two cannot drift; a bare code is accepted too, with the
+        // server addressed by this machine's saved one (or an explicit override).
+        app.MapPost("/api/join", async Task<Results<Ok<JoinResponse>, BadRequest<ErrorResponse>, InternalServerError<ErrorResponse>>>
+            (JoinRequest body) =>
+        {
+            string joinUrl;
+            if (!string.IsNullOrWhiteSpace(body.Url))
+            {
+                joinUrl = body.Url.Trim();
+            }
+            else
+            {
+                var normalized = JoinCodes.NormalizeJoinCode(body.Code);
+                if (normalized is null)
+                    return TypedResults.BadRequest(new ErrorResponse(
+                        "That does not look like a join code (8 letters and digits). Paste the whole join link, or the code with the server address."));
+                var serverUrl = !string.IsNullOrWhiteSpace(body.ServerUrl) ? body.ServerUrl.Trim()
+                    : _config.ServerUrl;
+                if (string.IsNullOrWhiteSpace(serverUrl))
+                    return TypedResults.BadRequest(new ErrorResponse(
+                        "Give the server address too, or paste the whole join link."));
+                joinUrl = serverUrl.TrimEnd('/') + "/join/" + normalized;
+            }
+
+            var previousIdentity = _config.CaptureIdentity();
+            var previousName = _config.MachineName;
+            try
+            {
+                var policy = await AgentEnroller.FetchPolicyAsync(joinUrl);
+                var outcome = await AgentEnroller.ApplyAsync(_config, policy, _detection, body.MachineName, AgentLogger.Log);
+                // The engine caches an ApiClient (base URL + key + pin); a new identity must reach it
+                // before any request that starts after this response — same rule as /api/register.
+                _onConnectionChanged?.Invoke();
+                return TypedResults.Ok(new JoinResponse(outcome.MachineName, outcome.MachineId, outcome.Mapped, outcome.Unmapped));
+            }
+            catch (Exception ex)
+            {
+                // A failed join must not leave a half-built identity — the key of a server that was
+                // never confirmed, a name from neither side. In-memory rollback, like /api/register.
+                _config.RestoreIdentity(previousIdentity);
+                _config.MachineName = previousName;
+                // A link the other end refused, an unreachable server, a timeout: all things the user
+                // can act on, and all carrying the server's own sentence — 400, so the UI shows it
+                // as a fixable input problem rather than a fault in this agent.
+                return ex is HttpRequestException or InvalidOperationException or TaskCanceledException or UriFormatException
+                    ? TypedResults.BadRequest(new ErrorResponse(ex.Message))
+                    : TypedResults.InternalServerError(new ErrorResponse(ex.Message));
+            }
+        }).Produces<JoinResponse>().Produces<ErrorResponse>();
+
         // HasSteamCloud is decided once, at enrollment (Enroller.EnrollAsync, from the candidate's
         // own ScanCandidate.HasSteamCloud) - not re-derived here from a name-only manifest lookup.
         // That lookup answers "does a Steam release of this TITLE have Steam Cloud", which is true
@@ -1934,7 +1986,8 @@ public sealed class AgentApiServer : IDisposable
             GameSources.SystemLabel(candidate.EmulatorSystem),
             candidate.Release?.Region,
             candidate.StatesOnly,
-            candidate.NoSaveYet)).ToArray();
+            candidate.NoSaveYet,
+            candidate.DuplicateShortcuts is { Count: > 0 } duplicates ? duplicates.ToArray() : null)).ToArray();
 
     private SwitchCopyDto[] SwitchCopyRows(TrackedGame game) =>
         SwitchCopies.List(_config, game).Select(r => new SwitchCopyDto(r.Emulator, r.User, r.Folder,
@@ -2087,7 +2140,10 @@ public sealed record CandidateDto(
     bool StatesOnly = false,
     /// <summary>A Switch ROM whose title has no save on this machine yet (<see cref="ScanCandidate.NoSaveYet"/>): adding it
     /// puts the fleet's save where its emulator will look for it.</summary>
-    bool NoSaveYet = false);
+    bool NoSaveYet = false,
+    /// <summary>Same-named Steam shortcuts under different AppIDs (<see cref="ScanCandidate.DuplicateShortcuts"/>):
+    /// one entry per AppID, <see cref="DuplicateShortcut.Tracked"/> on the one the scan uses. Null when not the shape.</summary>
+    DuplicateShortcut[]? DuplicateShortcuts = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the

@@ -20,6 +20,9 @@ public static class Tokens
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
+    // Join codes live in SaveLocker.Shared (JoinCodes.cs) — both the server and the agent
+    // normalize and format them, so the format cannot drift between the two.
+
     // PBKDF2 parameters are part of the ON-DISK format, so they travel WITH the hash:
     //   v2:{iterations}:{salt}:{hash}   — written today; the count lives in the string, so raising
     //                                     it later needs no new format and no migration

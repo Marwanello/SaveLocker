@@ -23,6 +23,12 @@ export interface Route {
   queue: boolean
   /** `#games:folders`: raise the "more save folders found" prompt. */
   folders?: boolean
+  /**
+   * `#enroll:<join link | code>`: the Settings tab's Join card, pre-filled. Set but empty
+   * (`#enroll`) means "show the card empty" — a person pasting a link by hand. The value may be
+   * URI-encoded (a link carries its own colons and slashes); the consumer decodes it.
+   */
+  join?: string | null
 }
 
 const VIEWS: readonly View[] = ['overview', 'games', 'addGames', 'conflicts', 'activity', 'settings']
@@ -45,6 +51,8 @@ export function parseRoute(hash: string): Route {
   const [base = '', rest = ''] = hash.replace(/^#/, '').split(/:(.*)/s)
 
   if (base === 'game' && rest) return { view: 'games', gameId: rest, queue: false }
+  // The pair page links here with the whole join link, filled in — see JoinCard.
+  if (base === 'enroll') return { view: 'settings', gameId: null, queue: false, join: rest }
   const view = (VIEWS as readonly string[]).includes(base) ? (base as View) : 'games'
   const route: Route = { view, gameId: null, queue: view === 'conflicts' && rest === 'queue' }
   if (view === 'games' && rest === 'folders') route.folders = true

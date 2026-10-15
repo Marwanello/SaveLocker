@@ -615,6 +615,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["JoinRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games": {
         parameters: {
             query?: never;
@@ -3547,6 +3604,7 @@ export interface components {
             statesOnly: boolean;
             /** @default false */
             noSaveYet: boolean;
+            duplicateShortcuts?: null | components["schemas"]["DuplicateShortcut"][];
         };
         CandidateLinksDto: {
             /** Format: int32 */
@@ -3695,6 +3753,11 @@ export interface components {
         };
         /** @enum {unknown} */
         DlcSendPolicy: "Ask" | "Auto" | "Never";
+        DuplicateShortcut: {
+            appId: null | string;
+            name: string;
+            tracked: boolean;
+        };
         EnrollFolderChoice: {
             /** Format: int32 */
             id: number;
@@ -3843,6 +3906,12 @@ export interface components {
         };
         GameSyncRequest: {
             mode: null | string;
+        };
+        JoinRequest: {
+            url?: null | string;
+            code?: null | string;
+            serverUrl?: null | string;
+            machineName?: null | string;
         };
         LaunchAnswerRequest: {
             questionId: string;

@@ -898,17 +898,8 @@ public sealed class ArtService
             if (!resp.IsSuccessStatusCode) return null;
             if (resp.Content.Headers.ContentLength > MaxImageBytes) return null;
 
-            await using var body = await resp.Content.ReadAsStreamAsync(ct);
-            using var buffer = new MemoryStream();
-            var chunk = new byte[81920];
-            int read;
-            while ((read = await body.ReadAsync(chunk, ct)) > 0)
-            {
-                // Counted as it arrives: Content-Length is only a claim, and absent on chunked replies.
-                if (buffer.Length + read > MaxImageBytes) return null;
-                buffer.Write(chunk, 0, read);
-            }
-            return buffer.ToArray();
+            // Counted as it arrives: Content-Length is only a claim, and absent on chunked replies.
+            return await HttpBodies.ReadAtMostAsync(resp.Content, MaxImageBytes, ct);
         }
         return null; // too many redirects
     }

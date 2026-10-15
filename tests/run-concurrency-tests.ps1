@@ -105,6 +105,10 @@ function Start-TestServer {
     $env:Storage__DbPath      = Join-Path $scratch "state/savelocker.db"
     $env:Storage__ArchiveRoot = Join-Path $scratch "state/archives"
     $env:Backup__Enabled      = "false"
+    # The agents' own ManifestRefreshDays: 0 does NOT win against the server's heartbeat (the
+    # console value overrides the local one), so pin the window at the source: these daemons share
+    # the machine's real state root, and a stale cache there must not be refreshed mid-suite.
+    $env:Manifest__RefreshDays = "0"
     $p = if ($onWindows) {
         Start-Process -FilePath $dotnet -ArgumentList $serverDll -PassThru -WindowStyle Hidden
     } else {
@@ -397,7 +401,8 @@ try {
 finally {
     if ($daemon -and -not $daemon.HasExited) { Stop-Process -Id $daemon.Id -Force -ErrorAction SilentlyContinue }
     if ($serverProc -and -not $serverProc.HasExited) { Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue }
-    Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, Env:Backup__Enabled -ErrorAction SilentlyContinue
+    Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, Env:Backup__Enabled, `
+                Env:Manifest__RefreshDays -ErrorAction SilentlyContinue
 }
 
 Write-Host ""

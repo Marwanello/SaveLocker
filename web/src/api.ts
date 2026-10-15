@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, ArtSource, SgdbGame, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineGameSource, GameContent, ContentTransfer, HandoverOverview, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
+import type { ArtKind, ArtOptionsPage, ArtSource, SgdbGame, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, ManifestRefreshSettings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineGameSource, GameContent, ContentTransfer, HandoverOverview, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -338,6 +338,18 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  /** How many days a machine may serve its cached save-detection data before refreshing (0 = never). */
+  setManifestRefreshDays: (refreshDays: number) =>
+    request<ManifestRefreshSettings>('/settings/manifest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshDays }),
+    }),
+
+  /** Ask every machine to re-download the manifest now; each acts on its next heartbeat. */
+  refreshManifestNow: () =>
+    request<ManifestRefreshSettings>('/settings/manifest/refresh', { method: 'POST' }),
+
   setAutoFetchSchedule: (schedule: AutoFetchSchedule) =>
     request<{ schedule: AutoFetchSchedule; nextRunAt: string | null }>('/settings/agent-update-auto-fetch', {
       method: 'POST',
@@ -418,13 +430,12 @@ export const api = {
   // token is single-use: finding out the URL was wrong afterwards costs the token too.
   effectiveServerUrl: () => request<EffectiveServerUrl>('/admin/enrollments/effective-url'),
 
-  // The raw token comes back exactly once, inside the policy — the server keeps only its hash.
-  // Whatever the caller does with this response is the only chance to hand it to the user.
+  // The join code comes back exactly once — the server keeps only its hash. Whatever the caller
+  // does with this response is the only chance to show the link to the user.
   createEnrollment: (body: {
     machineName: string | null;
     ttlMinutes: number;
     serverUrl: string | null;
-    gameIds: string[] | null;
   }) =>
     request<CreateEnrollmentResponse>('/admin/enrollments', {
       method: 'POST',

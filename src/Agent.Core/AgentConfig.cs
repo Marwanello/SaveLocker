@@ -105,6 +105,28 @@ public sealed class AgentConfig
     public AppearanceDto? LocalAppearance { get; set; }
 
     /// <summary>
+    /// How many days a cached Ludusavi manifest may serve before a background refresh is due. This
+    /// machine's own default; the console's value (<see cref="ConsoleManifestRefreshDays"/>) wins
+    /// once one has been pushed. <b>0 = never</b> refresh automatically — a manual refresh and the
+    /// console's button still work.
+    /// </summary>
+    public int ManifestRefreshDays { get; set; } = 3;
+
+    /// <summary>The refresh window the console last pushed on a heartbeat; null until one carried it
+    /// (an unregistered machine, or a server older than the setting), when the local value applies.</summary>
+    public int? ConsoleManifestRefreshDays { get; set; }
+
+    /// <summary>When the console's on-demand refresh was last acted on (UTC, by the SERVER's clock —
+    /// the same timestamp the console sent). Persisted so an agent restart does not re-run it.</summary>
+    public DateTime? ManifestRefreshHandledAt { get; set; }
+
+    /// <summary>The refresh window in force here: the console's value once pushed, else this machine's.
+    /// Clamped on read so a hand-edited config.json cannot overflow the due check's
+    /// <c>TimeSpan.FromDays</c>; a negative value reads as "never", an absurd one as the 365-day max.</summary>
+    [JsonIgnore]
+    public int EffectiveManifestRefreshDays => Math.Clamp(ConsoleManifestRefreshDays ?? ManifestRefreshDays, 0, 365);
+
+    /// <summary>
     /// The look this machine actually draws: the console's when following it, this machine's own
     /// otherwise, always a known-good value. Derived rather than stored so it can never disagree with
     /// the three fields above.
@@ -252,6 +274,11 @@ public sealed class AgentConfig
             ConsoleAppearance = onDisk.ConsoleAppearance;
             ConsoleAppearanceAt = onDisk.ConsoleAppearanceAt;
             LocalAppearance = onDisk.LocalAppearance;
+            // Same again for the manifest window and its handled request timestamp: both are written
+            // by the heartbeat through UpdateSettings, so a host holding a boot-time copy must not
+            // write that copy back.
+            ConsoleManifestRefreshDays = onDisk.ConsoleManifestRefreshDays;
+            ManifestRefreshHandledAt = onDisk.ManifestRefreshHandledAt;
             XeniaProfileAtLaunch = onDisk.XeniaProfileAtLaunch;
             DlcSend = onDisk.DlcSend;
 
@@ -304,6 +331,11 @@ public sealed class AgentConfig
             ApiKey = null;
             MachineId = null;
             ServerPin = null;
+            // The console's manifest guidance is also the previous server's: a window it pushed
+            // and a request it may have issued mean nothing here, and a stale handled stamp would
+            // silently swallow the first press on the new server.
+            ConsoleManifestRefreshDays = null;
+            ManifestRefreshHandledAt = null;
             identityCleared = true;
         }
 
@@ -361,6 +393,8 @@ public sealed class AgentConfig
         ConsoleAppearance = fresh.ConsoleAppearance;
         ConsoleAppearanceAt = fresh.ConsoleAppearanceAt;
         LocalAppearance = fresh.LocalAppearance;
+        ConsoleManifestRefreshDays = fresh.ConsoleManifestRefreshDays;
+        ManifestRefreshHandledAt = fresh.ManifestRefreshHandledAt;
         TotalSavesPushed = fresh.TotalSavesPushed;
         LastSyncTime = fresh.LastSyncTime;
         SentTodayBytes = fresh.SentTodayBytes;
@@ -424,6 +458,40 @@ public sealed class AgentConfig
         var after = EffectiveAppearance;
         if (after != before) AppearanceChanged?.Invoke(after);
     }
+
+    /// <summary>
+    /// The console's manifest refresh window, applied from a heartbeat. Runs on every ~20 s
+    /// heartbeat, so the unchanged case answers from memory and writes nothing.
+    /// <para>
+    /// Null means the server has no opinion — an older server without the field — and, like the
+    /// appearance it rides beside, it keeps the value last applied rather than clearing it: a fleet
+    /// rolled back to an older console would otherwise silently revert every machine's window to
+    /// the local default.
+    /// </para>
+    /// </summary>
+    public void ApplyManifestSettings(int? refreshDays)
+    {
+        if (refreshDays is not { } pushed) return;
+
+        var days = Math.Clamp(pushed, 0, 365);
+        if (ConsoleManifestRefreshDays == days) return;
+        UpdateSettings(c => c.ConsoleManifestRefreshDays = days);
+    }
+
+    /// <summary>
+    /// Is this on-demand refresh one this machine has not acted on yet? "Not equal", not "newer
+    /// than": both timestamps are the SERVER's, so the two machines' clocks never mix, and an
+    /// inequality cannot be defeated by a server whose clock stepped backwards (a VM restore, an
+    /// NTP correction) leaving a handled stamp no future press would ever exceed.
+    /// </summary>
+    public bool IsManifestRefreshDue(DateTime? requestedAt) =>
+        requestedAt is { } at && at != ManifestRefreshHandledAt;
+
+    /// <summary>Record that the console's outstanding on-demand refresh was acted on — attempted,
+    /// not necessarily succeeded: a failed download is not retried forever, and pressing the button
+    /// again is what retries it.</summary>
+    public void MarkManifestRefreshHandled(DateTime requestedAt) =>
+        UpdateSettings(c => c.ManifestRefreshHandledAt = requestedAt);
 
     /// <summary>Is this server game one this machine has opted out of tracking?</summary>
     public bool IsUntracked(Guid gameId) => UntrackedGameIds.Contains(gameId);

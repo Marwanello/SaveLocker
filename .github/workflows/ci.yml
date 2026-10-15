@@ -75,8 +75,10 @@ jobs:
           test -L "$fake_home/.local/bin/savelocker"              || { echo "symlink not created"; exit 1; }
           # The application-menu entry is rendered from a template; a placeholder left in it, or a
           # path that is not the installed binary, is a menu item that opens nothing.
-          grep -qx "Exec=$fake_home/.local/share/SaveLocker/savelocker open" "$fake_home/.local/share/applications/savelocker.desktop" \
+          grep -qx "Exec=$fake_home/.local/share/SaveLocker/savelocker open %u" "$fake_home/.local/share/applications/savelocker.desktop" \
             || { echo "the menu entry does not run the installed binary"; cat "$fake_home/.local/share/applications/savelocker.desktop"; exit 1; }
+          grep -qx "MimeType=x-scheme-handler/savelocker;" "$fake_home/.local/share/applications/savelocker.desktop" \
+            || { echo "the menu entry does not handle savelocker:// links"; exit 1; }
           test -f "$fake_home/.local/share/SaveLocker/artwork/icon.png" || { echo "the menu entry's icon was not installed"; exit 1; }
 
           # The installed binary must actually RUN — self-contained, on a box with no .NET runtime
@@ -130,6 +132,25 @@ jobs:
           kill "$daemon_pid"
           wait "$daemon_pid" || true
           trap - EXIT
+
+      # The release's double-click installer, end to end against this build: GLib parses the
+      # .desktop the way a desktop would, and the script it fetches finds the tarball through
+      # SHA256SUMS, checks it and installs it. SAVELOCKER_RELEASE_BASE points both at this folder
+      # instead of GitHub; SAVELOCKER_INSTALL_SANDBOX keeps install.sh off the runner's systemd.
+      - name: The release's .desktop installer installs this build
+        run: |
+          sudo apt-get install -y --no-install-recommends python3-gi gir1.2-glib-2.0 >/dev/null
+          (cd artifacts/linux && sha256sum savelocker-9.9.9-ci-linux-x64.tar.gz > SHA256SUMS-linux.txt)
+          sandbox="$(mktemp -d)"
+          HOME="$sandbox" XDG_DATA_HOME="$sandbox/.local/share" XDG_CONFIG_HOME="$sandbox/.config" \
+            SAVELOCKER_INSTALL_SANDBOX=5174 SAVELOCKER_RELEASE_BASE="file://$PWD/artifacts/linux" \
+            python3 tests/linux/run-desktop-launcher.py artifacts/linux/SaveLocker-Installer.desktop | tee "$sandbox/run.log"
+          test -x "$sandbox/.local/share/SaveLocker/savelocker" || { echo "the .desktop installer installed nothing"; exit 1; }
+          grep -q "Last step: join your server" "$sandbox/run.log" || { echo "the installer did not reach its end"; exit 1; }
+          grep -q "x-scheme-handler/savelocker=savelocker.desktop" "$sandbox/.config/mimeapps.list" \
+            || echo "::warning::xdg-mime is not on the runner, so the savelocker:// default was not written"
+          pkill -f "$sandbox/.local/share/SaveLocker/savelocker daemon" || true
+          rm artifacts/linux/SHA256SUMS-linux.txt
 
       - name: Serve the agent UI from the package
         run: |

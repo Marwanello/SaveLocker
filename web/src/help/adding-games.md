@@ -63,7 +63,9 @@ Two things that help, but are not required:
 
 If a game still shows no folder after all that, it is most likely absent from the Ludusavi manifest
 (common for very recent releases). Set the folder yourself with **Set save path**; nothing else about
-syncing is affected.
+syncing is affected. In the rare case where the manifest knows the game but the location it records
+only resolves through a link pointing outside the game's own folders, the agent ignores that entry on
+purpose — trusting it could sync (or restore) the wrong files — so set the folder yourself there too.
 
 ### Removing a game does not uninstall it
 

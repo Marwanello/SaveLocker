@@ -63,8 +63,8 @@ public sealed class ApiClient
     }
 
     /// <summary>
-    /// Spend an enrollment token for this machine's real API key. The only call the agent makes
-    /// before it has a key.
+    /// Spend an enrollment code for this machine's real API key. The only call the agent makes
+    /// before it has a key, besides the policy fetch below.
     /// </summary>
     public async Task<RedeemEnrollmentResponse> EnrollAsync(string token, string? machineName)
     {
@@ -72,6 +72,18 @@ public sealed class ApiClient
         if (!resp.IsSuccessStatusCode)
             throw new InvalidOperationException(await ReadErrorAsync(resp));
         return (await resp.Content.ReadFromJsonAsync<RedeemEnrollmentResponse>())!;
+    }
+
+    /// <summary>
+    /// Fetch the enrollment policy a join link points at (its <c>/policy</c> sibling). Absolute
+    /// URL because the caller derives it from the link — the base address here is only the origin.
+    /// </summary>
+    public async Task<EnrollmentPolicy> FetchPolicyAsync(string absolutePolicyUrl)
+    {
+        var resp = await _http.GetAsync(absolutePolicyUrl);
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException(await ReadErrorAsync(resp));
+        return (await resp.Content.ReadFromJsonAsync<EnrollmentPolicy>(WebJson))!;
     }
 
     public async Task<MachineRegisterResponse> RegisterAsync(string name, string? adminPassword = null)
@@ -355,24 +367,8 @@ public sealed class ApiClient
         var type = resp.Content.Headers.ContentType?.MediaType ?? "";
         if (!ArtContentTypes.Contains(type, StringComparer.OrdinalIgnoreCase)) return null;
         if (resp.Content.Headers.ContentLength > MaxArtBytes) return null;
-        var bytes = await ReadAtMostAsync(resp.Content, MaxArtBytes, budget.Token);
+        var bytes = await HttpBodies.ReadAtMostAsync(resp.Content, MaxArtBytes, budget.Token);
         return bytes is null ? null : (bytes, type);
-    }
-
-    /// <summary>The body, or null if it is longer than <paramref name="max"/> — read as it arrives, so a
-    /// body with no declared length is stopped at the cap rather than buffered whole.</summary>
-    private static async Task<byte[]?> ReadAtMostAsync(HttpContent content, int max, CancellationToken ct)
-    {
-        await using var stream = await content.ReadAsStreamAsync(ct);
-        using var ms = new MemoryStream();
-        var buffer = new byte[81920];
-        int read;
-        while ((read = await stream.ReadAsync(buffer, ct)) > 0)
-        {
-            if (ms.Length + read > max) return null;
-            ms.Write(buffer, 0, read);
-        }
-        return ms.ToArray();
     }
 
     public async Task<LeaseAcquireResponse> AcquireLeaseAsync(Guid gameId)

@@ -62,10 +62,14 @@ echo "Fixtures in ${scratch} (fake HOME=${HOME})"
 echo "==> Starting server on ${server_url}"
 server_state="${scratch}/server"
 mkdir -p "${server_state}/archives"
+# Manifest__RefreshDays=0 matters: the fixtures pin the AGENT's own ManifestRefreshDays at 0, but
+# the server's heartbeat pushes its window and the console's value wins, so a daemon would replace
+# tests/linux/manifest.yaml with the live ~17 MB feed once that fixture is older than 3 days.
 ASPNETCORE_URLS="${server_url}" \
 Storage__DbPath="${server_state}/savelocker.db" \
 Storage__ArchiveRoot="${server_state}/archives" \
 Storage__AgentInstallerRoot="${server_state}/agent-installer" \
+Manifest__RefreshDays="0" \
   dotnet run --project "${repo_root}/src/Server/SaveLocker.Server.csproj" \
     --no-launch-profile >"${scratch}/server.log" 2>&1 &
 server_pid=$!
@@ -92,6 +96,7 @@ cat >"${deck_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "SettleQuietSeconds": 3,
   "SettleMaxWaitSeconds": 60,
   "Games": []
@@ -174,6 +179,7 @@ cat >"${deck_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "SettleQuietSeconds": 3,
   "Games": []
 }
@@ -264,6 +270,7 @@ cat >"${deck_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "SettleQuietSeconds": 3,
   "Games": [
     { "GameId": "44444444-4444-4444-4444-444444444444", "Name": "UpdateSettingsGame",
