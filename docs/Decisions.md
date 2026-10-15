@@ -21,6 +21,37 @@ session can judge an edge case, not to reopen the choice.
   manifest" and is not the same answer as "no"** — that case keeps the old assumption, which is what
   makes the change purely additive. This does not reopen the scope decision below: installed Steam
   games are still out of the *default view*, just no longer out of it for a reason that was false.
+- **The manifest is a live feed, refreshed on a window — not pinned** (2026-10-14, tasks/manifest-path-constraints).
+  It is downloaded from upstream `master` (rewritten several times a day), **validated before it replaces
+  the cache** (it must parse — a non-YAML body such as a proxy error page is wrapped as
+  `InvalidDataException`, never surfaced as a `YamlException` fault — and carry at least
+  `ManifestLoader.MinPlausibleGames`, bounded by `MaxManifestBytes`), and refreshed in the background once
+  the cached copy is older than a window the console edits (default **3 days**, `0` = never). A console
+  "Refresh now" rides the heartbeat; each agent downloads once when the timestamp **differs** from the
+  request it last acted on (not "is newer than": a server clock step-back must not strand a press), and
+  "acted on" is stamped only once the attempt actually starts, so a press the attempt gap refuses stays
+  pending. **Why the heartbeat and not `AgentCommand`:** a command's type is a string enum on the wire, so
+  an agent older than a new command type throws deserializing the whole command poll — the heartbeat's
+  appended optional fields are read by old agents as absent, which is the ordering safety this one-shot
+  needs. **Pinning an approved revision was considered and rejected:** a pinned copy
+  makes every game released after the pin undetectable until the app ships a new pin, and the manifest's
+  commits are unsigned, so "verify a fresh copy" has nothing to verify against. The safety comes from
+  the next bullet — constraining what an entry may resolve to — not from freezing the feed. A failed or
+  implausible download never replaces a good cache; a first-ever download failing simply leaves detection
+  with fewer answers, never a broken agent.
+- **Manifest-expanded paths are constrained, not trusted** (2026-10-14, tasks/manifest-path-constraints).
+  A template must be an absolute path, and the path it yields must survive `WithinRealRoots`: its
+  link-resolved form (every symlink/junction component, via `Shared/RealPath.cs`) has to sit under the
+  link-resolved form of one of the resolver's own roots. A `..` segment is NOT refused by itself — the
+  community manifest contains real entries whose wildcard trim leaves one (`<base>/cfg/../*.json`), and a
+  flat ban silently drops them; `Path.GetFullPath` canonicalises the traversal away first, and containment
+  is what decides. This is the resolver-side counterpart of *"a pulled archive is hostile
+  input"*. The old check compared the raw string to a token root, so `<winAppData>/../../../../x` began
+  with a root's value, passed, and `Path.GetFullPath` collapsed it somewhere else — and a link inside a
+  Wine prefix could redirect an otherwise-contained path out of it. A refusal yields "no existing save
+  directory": the user is asked to pick, never handed a confident wrong path. User-mapped folders
+  (folder picker, typed paths, CLI `--dir`) never expand templates and keep their existing treatment —
+  `SavePathGuard` stays the trusted-user floor, unchanged.
 - **Conflict prevention: proactive lock/lease.** Server tracks a per-game checkout; the agent pulls
   before launch *where it has a real launch boundary* (see the next bullet); other machines are
   warned if leased elsewhere. Content-hash + parent-version lineage is the fallback detector.

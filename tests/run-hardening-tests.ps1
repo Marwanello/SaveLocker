@@ -1,4 +1,4 @@
-# Hardening (Linux agent Phase 6) - 34 checks on Linux / 33 on Windows. Runs on BOTH.
+# Hardening (Linux agent Phase 6) - 41 checks on Linux / 37 on Windows. Runs on BOTH.
 #
 # These are SECURITY tests: each one must prove the ATTACK FAILS, not merely that ordinary saves
 # still sync. Two of them delete-or-leak files outside the save folder if the fix regresses, so they
@@ -7,10 +7,17 @@
 #   1. Symlink escape (archive)  - a link inside a save folder must not drag its target INTO the archive.
 #   2. Symlink escape (RESTORE)  - the restore's delete pass must not reach THROUGH a link and delete
 #                                  files outside the save folder. This is the data-loss one.
-#   3. Zip-slip                  - a malicious archive with a `../` entry must not write outside the target.
-#   4. OneDrive regression guard - the fix must key on symlinks ONLY. OneDrive files-on-demand are also
+#   3. OneDrive regression guard - the fix must key on symlinks ONLY. OneDrive files-on-demand are also
 #                                  reparse points, and skipping every reparse point would silently stop
 #                                  archiving OneDrive saves (see Gotchas.md).
+#   4. Manifest path constraint  - a downloaded manifest entry that climbs with "..", or that only looks
+#                                  like it sits in a Wine prefix (a link), must resolve to nothing.
+#   5. Zip-slip                  - a malicious archive with a `../` entry must not write outside the target.
+#   6. Write through a link      - the restore's COPY pass must not overwrite a file outside the save
+#                                  folder through a link the save folder already contains.
+#   7. Archive exhaustion        - a zip bomb, and a flood of entries, are refused before they fill the disk.
+#   8. Prefix-root sanity        - `doctor` names a save path that is really a Wine prefix (Linux only).
+#   9. Too-deep save folder      - a save folder mapped one level deeper must be refused, not nested.
 #
 # Windows uses a JUNCTION (no admin needed; symlinks require elevation or Developer Mode) — which is
 # the Windows form of exactly this bug. Linux uses a symlink.
@@ -149,7 +156,59 @@ try {
     Check "ordinary nested files still sync"        (Test-Path (Join-Path $deckSave "profiles/slot1/slot.dat"))
 
     # =================================================================================
-    # 4. ZIP-SLIP: a malicious archive must not write outside the target
+    # 4. MANIFEST PATHS ARE CONSTRAINED (traversal and a link out of the prefix)
+    # =================================================================================
+    # The manifest is a downloaded document, so its templates are input to be constrained, not
+    # trusted: an entry that climbs with "..", or that only LOOKS like it sits in the prefix (a
+    # link), must resolve to nothing — the same answer as any entry the resolver cannot expand, so
+    # the user is asked to pick a folder. A clean sibling entry proves the guard blocks nothing real.
+    # The escape target EXISTS, so a resolver that followed either shape would have returned it.
+    $manifestCfg = Join-Path $scratch "manifest.json"
+    $fixtureManifest = Join-Path $scratch "harden-manifest.yaml"
+    @{ ServerUrl = $server; Games = @(); ManifestCachePath = $fixtureManifest; ManifestRefreshDays = 0 } |
+        ConvertTo-Json | Set-Content -Path $manifestCfg -Encoding utf8
+
+    # A fake Wine prefix: <winAppData> resolves to its steamuser AppData\Roaming.
+    $prefix  = Join-Path $scratch "prefix/12345"
+    $roaming = Join-Path $prefix "pfx/drive_c/users/steamuser/AppData/Roaming"
+    New-Item -ItemType Directory -Force (Join-Path $roaming "HardenClean") | Out-Null
+    # "<winAppData>/" + six ".." walks from Roaming to the compatdata dir, where MANIFEST_ESCAPE sits.
+    $manifestEscape = Join-Path $prefix "MANIFEST_ESCAPE"
+    New-Item -ItemType Directory -Force $manifestEscape | Out-Null
+    # A link inside the prefix pointing OUT of it — what a game, or anything, can leave behind.
+    New-DirLink (Join-Path $roaming "HardenLinked") $secrets
+
+    @(
+        "Harden Clean Game:",
+        "  files:",
+        "    <winAppData>/HardenClean:",
+        "      tags:",
+        "        - save",
+        "Harden Traversal Game:",
+        "  files:",
+        "    <winAppData>/../../../../../../MANIFEST_ESCAPE:",
+        "      tags:",
+        "        - save",
+        "Harden Linked Game:",
+        "  files:",
+        "    <winAppData>/HardenLinked:",
+        "      tags:",
+        "        - save"
+    ) -join "`n" | Set-Content -Path $fixtureManifest -Encoding utf8
+
+    $cleanOut = Agent resolve --config $manifestCfg --manifest "Harden Clean Game" --prefix $prefix
+    $traversalOut = Agent resolve --config $manifestCfg --manifest "Harden Traversal Game" --prefix $prefix
+    $linkedOut = Agent resolve --config $manifestCfg --manifest "Harden Linked Game" --prefix $prefix
+
+    Check "a clean manifest entry still resolves"     ("$cleanOut" -match "Resolved:")
+    Check "the traversal entry resolves to nothing"   ("$traversalOut" -match "no existing save directory")
+    Check "the link entry resolves to nothing"        ("$linkedOut" -match "no existing save directory")
+    # Not Test-Path on the target — the suite created it, so that could never fail. What must hold
+    # is that the resolver never NAMES the escape target in its answer.
+    Check "the traversal target was never named"      ("$traversalOut" -notmatch "MANIFEST_ESCAPE")
+
+    # =================================================================================
+    # 5. ZIP-SLIP: a malicious archive must not write outside the target
     # =================================================================================
     # This runs LAST on purpose: it force-uploads a hostile archive, which becomes the server head.
     # Any sync check placed after it would be testing against a poisoned head and fail for reasons
@@ -202,7 +261,7 @@ try {
     Check "zip-slip did not land in the save folder"  (-not (Test-Path (Join-Path $deckSave "ESCAPED.txt")))
 
     # =================================================================================
-    # 5. WRITE THROUGH A LINK ON THE COPY PASS (the restore's other half)
+    # 6. WRITE THROUGH A LINK ON THE COPY PASS (the restore's other half)
     # =================================================================================
     # The delete pass was made no-follow in Phase 6, but the COPY pass was not. If the save folder
     # already contains a symlinked directory and the archive carries a matching path, File.Copy
@@ -267,7 +326,7 @@ try {
     Check "the restore was refused, not silently skipped"        ("$throughOut" -match "REFUSED|symlink|junction")
 
     # =================================================================================
-    # 6. ARCHIVE EXHAUSTION (zip bomb) — refused BEFORE it fills the disk
+    # 7. ARCHIVE EXHAUSTION (zip bomb) — refused BEFORE it fills the disk
     # =================================================================================
     # A few KB of zip can expand to terabytes. On a Deck that fills the disk with nobody watching.
     # The limits are env-overridable, which is what makes this testable without writing a 2 GB
@@ -354,7 +413,7 @@ try {
     Check "a normal-sized archive still restores"       (-not ("$okOut" -match "REFUSED"))
 
     # =================================================================================
-    # 7. PREFIX-ROOT SANITY (doctor names the real mistake)
+    # 8. PREFIX-ROOT SANITY (doctor names the real mistake)
     # =================================================================================
     # Only the Linux agent has `doctor`. A save path that is really a Wine prefix must be NAMED as
     # such, not left to fail later as a baffling "your save is too big".
@@ -393,7 +452,7 @@ try {
     }
 
     # =================================================================================
-    # 8. A SAVE FOLDER MAPPED TOO DEEP MUST BE REFUSED, NOT NESTED
+    # 9. A SAVE FOLDER MAPPED TOO DEEP MUST BE REFUSED, NOT NESTED
     # =================================================================================
     # An archive stores paths relative to the save root of the machine that MADE it. Map the same
     # game one level deeper on a second machine and the restore recreates that level beneath itself

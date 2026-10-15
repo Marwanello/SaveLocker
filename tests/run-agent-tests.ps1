@@ -64,13 +64,13 @@ $manifest = Join-Path $fixtures "manifest.yaml"
 
 # Fresh agent configs pointing at local server and fixture manifest.
 foreach ($c in @($pcCfg, $lapCfg)) {
-    @{ ServerUrl = "http://localhost:5179"; ManifestCachePath = $manifest; Games = @() } |
+    @{ ServerUrl = "http://localhost:5179"; ManifestCachePath = $manifest; ManifestRefreshDays = 0; Games = @() } |
         ConvertTo-Json | Set-Content -Path $c -Encoding utf8
 }
 
 # Detect-config written to scratch so the ManifestCachePath resolves correctly.
 $detectCfg = Join-Path $scratch "detect-config.json"
-@{ ServerUrl = "http://localhost:5179"; MachineName = "DetectTest"; ManifestCachePath = $manifest; Games = @() } |
+@{ ServerUrl = "http://localhost:5179"; MachineName = "DetectTest"; ManifestCachePath = $manifest; ManifestRefreshDays = 0; Games = @() } |
     ConvertTo-Json | Set-Content -Path $detectCfg -Encoding utf8
 
 # ---- Detection: resolve a manifest game's save dir on this machine ----
@@ -110,6 +110,25 @@ if ($onWindows) {
         Remove-Item (Join-Path $publicRoot "Documents\Documents") -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item $publicExpected -Recurse -Force -ErrorAction SilentlyContinue
     }
+
+    # A manifest entry that climbs with ".." out of every root must resolve to nothing. The raw string
+    # begins with the token's value — which is exactly what the old textual root check saw, and it
+    # handed the collapsed answer back — and the destination (C:\Users) EXISTS on every Windows box,
+    # so this asserts the refusal itself, not a missing folder. The sibling entry proves the guard
+    # blocks nothing real.
+    $cleanSibling = Join-Path $env:APPDATA "LGSCleanSibling"
+    New-Item -ItemType Directory -Force $cleanSibling | Out-Null
+    try {
+        $traversalOut = Agent resolve --config $detectCfg --manifest "LGS Traversal Game"
+        $cleanSiblingOut = Agent resolve --config $detectCfg --manifest "LGS Clean Sibling Game"
+        Check "a manifest traversal entry resolves to nothing" `
+            (($traversalOut -join "`n") -like "*no existing save directory found*")
+        Check "a clean sibling entry still resolves" `
+            (($cleanSiblingOut -join "`n") -like "*$cleanSibling*")
+    }
+    finally {
+        Remove-Item $cleanSibling -Recurse -Force -ErrorAction SilentlyContinue
+    }
 } else {
     $detectOut = Agent resolve --config $detectCfg --manifest "LGS Test Game"
     Check "detection refuses to invent a host path for a Windows game" `
@@ -129,7 +148,7 @@ Set-Content -Path (Join-Path $canonSave "s.dat") -Value "x"
 $canonA = Join-Path $scratch "canon-a.json"
 $canonB = Join-Path $scratch "canon-b.json"
 foreach ($c in @($canonA, $canonB)) {
-    @{ ServerUrl = "http://localhost:5179"; ManifestCachePath = $manifest; Games = @() } |
+    @{ ServerUrl = "http://localhost:5179"; ManifestCachePath = $manifest; ManifestRefreshDays = 0; Games = @() } |
         ConvertTo-Json | Set-Content -Path $c -Encoding utf8
 }
 Agent register --config $canonA --name CanonA | Out-Null

@@ -101,10 +101,14 @@ mkdir -p "${server_state}/archives"
 # looked like a healthy boot right up to an unhandled UnauthorizedAccessException, and all 16
 # server-dependent checks below failed as though the agent were broken. Windows never saw it: there
 # the same default happily creates E:\data\.
+# Manifest__RefreshDays=0 matters: the fixtures pin the AGENT's own ManifestRefreshDays at 0, but
+# the server's heartbeat pushes its window and the console's value wins, so a daemon would replace
+# tests/linux/manifest.yaml with the live ~17 MB feed once that fixture is older than 3 days.
 ASPNETCORE_URLS="${server_url}" \
 Storage__DbPath="${server_state}/savelocker.db" \
 Storage__ArchiveRoot="${server_state}/archives" \
 Storage__AgentInstallerRoot="${server_state}/agent-installer" \
+Manifest__RefreshDays="0" \
   dotnet run --project "${repo_root}/src/Server/SaveLocker.Server.csproj" \
     --no-launch-profile >"${scratch}/server.log" 2>&1 &
 server_pid=$!
@@ -131,6 +135,7 @@ for c in "${deck_cfg}" "${other_cfg}"; do
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "SettleQuietSeconds": 3,
   "SettleMaxWaitSeconds": 60,
   "Games": []
@@ -923,6 +928,7 @@ cat >"${prefix_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "Games": []
 }
 EOF
@@ -1385,6 +1391,7 @@ ASPNETCORE_URLS="${alt_url}" \
 Storage__DbPath="${alt_state}/savelocker.db" \
 Storage__ArchiveRoot="${alt_state}/archives" \
 Storage__AgentInstallerRoot="${alt_state}/agent-installer" \
+Manifest__RefreshDays="0" \
 AgentUpdate__Linux__LatestVersion="9.9.9" \
 AgentUpdate__Linux__DownloadUrl="http://127.0.0.1:${foreign_port}/savelocker-9.9.9-linux-x64.tar.gz" \
   dotnet run --project "${repo_root}/src/Server/SaveLocker.Server.csproj" \
@@ -1537,6 +1544,7 @@ cat >"${noappid_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "Games": [
     { "GameId": "33333333-3333-3333-3333-333333333333", "Name": "Prefix Game No AppId",
       "SaveDirectory": "${PREFIX_SAVE}" }
@@ -1586,6 +1594,7 @@ cat >"${lo_cfg}" <<EOF
 {
   "ServerUrl": "${server_url}",
   "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "ManifestRefreshDays": 0,
   "Games": [
     { "GameId": "11111111-1111-1111-1111-111111111111", "Name": "Prefix Game",
       "SaveDirectory": "${PREFIX_SAVE}", "SteamAppId": "-1234567890" },

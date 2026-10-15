@@ -2481,6 +2481,54 @@
         }
       }
     },
+    "/api/settings/manifest": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetManifestRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestRefreshSettingsDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/manifest/refresh": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestRefreshSettingsDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/agent-update-auto-fetch": {
       "post": {
         "tags": [
@@ -4339,6 +4387,20 @@
                 "$ref": "#/components/schemas/AppearanceDto"
               }
             ]
+          },
+          "manifestRefreshDays": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "manifestRefreshRequestedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -6442,6 +6504,26 @@
           }
         }
       },
+      "ManifestRefreshSettingsDto": {
+        "required": [
+          "refreshDays",
+          "requestedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "refreshDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requestedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
       "RedeemEnrollmentRequest": {
         "required": [
           "token"
@@ -6757,6 +6839,18 @@
                 "$ref": "#/components/schemas/ServerStorageDto"
               }
             ]
+          },
+          "manifestRefreshDays": {
+            "type": "integer",
+            "format": "int32",
+            "default": 3
+          },
+          "manifestRefreshRequestedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -6937,6 +7031,21 @@
         "properties": {
           "url": {
             "type": "string"
+          }
+        }
+      },
+      "SetManifestRefreshRequest": {
+        "required": [
+          "refreshDays"
+        ],
+        "type": "object",
+        "properties": {
+          "refreshDays": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           }
         }
       },

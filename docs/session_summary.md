@@ -47,6 +47,99 @@ Standalone: the facts below do not need the rest of the vault.
 
 ---
 
+# Session summary — 2026-10-14 — Manifest path constraints + scheduled refresh, console-controlled (PR #74)
+
+Standalone: the facts below do not need the rest of the vault.
+
+**PR:** #74 on `Marwanello/SaveLocker`, *Constrain manifest paths + scheduled manifest refresh,
+console-controlled*. Branch `manifest-path-constraints` (worktree
+`.claude/worktrees/manifest-path-constraints`), base `main`, six commits. Open at the time of writing.
+
+## What was asked
+
+1. Explain the one-line Backlog item *Constrain manifest paths*.
+2. Create a full implementation plan — the first cut **pinned** the manifest to an approved revision.
+3. After pushback: revise so the manifest stays a **live feed** (no pin), what an entry may resolve
+   to is **constrained**, the feed actually **refreshes on a schedule** (which it never did), and the
+   window is **editable in the console** with a "Refresh now" button.
+4. Implement the revised plan in a worktree, open a PR, append the summary to `progress.md`, save
+   this standalone summary.
+
+## Decisions taken with the maintainer
+
+- **No pin.** The manifest is a reliable, well-maintained live feed (updated several times a day); a
+  pin makes every game released after it undetectable until an app update, and its commits are
+  unsigned, so a fresh copy has nothing to verify against. Safety comes from constraining resolved
+  paths instead.
+- **Refresh window default 3 days** (`0` = never), editable in Configuration → Defaults &
+  maintenance, fleet-wide, pushed on the heartbeat (the appearance pattern).
+- **"Refresh now" is a heartbeat timestamp**, not a command: each agent acts once when it is newer
+  than the request it last handled (persisted, so a restart does not re-run it). No per-machine
+  feedback; the console shows "Last requested … ago".
+- **Strict `..` rejection** (even a traversal that would stay inside a root), plus canonicalised
+  containment and per-segment link resolution under link-resolved roots.
+
+## What shipped
+
+**Containment** (`src/Shared/PathResolver.cs`, new `src/Shared/RealPath.cs`). A template must be an
+absolute path with no `..`; the expanded path is canonicalised before the token-root prefix check (the
+old check compared the RAW string, so `<winAppData>/../../../x` passed); the result must survive
+`WithinRealRoots` — every symlink/junction component resolved (OneDrive-style non-link reparse points
+stay ordinary), contained under a link-resolved resolver root. Applied at `ResolveConcrete`, the one
+choke point every caller funnels through. Refusal = "no existing save directory" (the user picks).
+User-mapped folders never expand templates and are untouched; `SavePathGuard` stays the trusted-user
+floor.
+
+**Refresh engine** (`ManifestLoader`, `Detection`, `AgentConfig`). `DownloadAsync`: 64 MB cap, parse +
+≥ 5,000 games (`MinPlausibleGames`), temp-file atomic cache swap — a failed or implausible download
+never replaces a good cache. `Detection.RefreshManifestIfDueAsync`: refreshes past the window, keeps
+the old copy on failure, 1 h/30 s attempt gaps, never throws; driven from `CommandPoller` on both
+hosts. Before this the agent never refreshed at all — the cache was served forever until someone ran
+`refresh-manifest` by hand.
+
+**Console control** (server + dashboard). Audited admin routes `POST /api/settings/manifest`
+(0–365 days, 400 otherwise) and `POST /api/settings/manifest/refresh`;
+`AgentHeartbeatResponse` + `ServerSettingsDto` carry the window and requested-at (append-only,
+version-skew-safe like appearance); Configuration → Defaults & maintenance gained the **Manifest
+refresh** row: window select (daily / 3 days / weekly / 14 days / monthly / never) + **Refresh now**.
+
+## Verified
+
+- xunit **571/571** (+19: `ManifestPathConstraintTests` 11 — traversal, hostile YAML entry, leaf and
+  chained link escapes, `<storeUserId>` child link, controls; `ManifestRefreshTests` 8 — floor, size
+  cap, stale/fresh/zero/forced refresh, failure keeps the cache, request bookkeeping).
+- `run-hardening-tests` **37/37** on Windows (+4; section 5: a real traversal entry and a real junction
+  escape inside a fake prefix, clean-sibling control, escape target asserted untouched).
+- `run-agent-tests` **49/49** against a fresh scratch server (+2).
+- **Mutation-checked:** removing the guards flips 4 + 3 unit checks; a live mutation pass through the
+  real agent makes both new hardening checks FAIL against the pre-fix resolver. That pass caught a
+  vacuous fixture (the traversal target sat one directory above where the `..`s actually land) —
+  fixed and re-proven.
+- Live wire check: `POST` window → `GET /api/settings` → heartbeat response carries
+  `manifestRefreshDays`/`manifestRefreshRequestedAt`; `9999` refused with 400.
+- Builds clean (Server, Windows agent, `Agent.Linux`); `web` build + lint clean; `openapi.json` +
+  `web/src/api-types.ts` regenerated, additions only. All fixture configs set `ManifestRefreshDays: 0`.
+
+## Not verified
+
+- `run-linux-tests` (WSL) and `run-winagent-tests` (needs an interactive desktop) were not run.
+- The console card was not eyeballed in a browser (it type-checks/builds; the wire was checked live).
+- Console button → live-daemon download is covered by unit tests + poller wiring, not a live daemon.
+
+## Files
+
+`src/Shared/{RealPath.cs (new),PathResolver.cs,ManifestLoader.cs,Contracts.cs}`,
+`src/Agent.Core/{Detection.cs,AgentConfig.cs,HealthReporter.cs,CommandPoller.cs}`,
+`src/Server/{Program.cs,Services/SettingsService.cs,Services/HealthService.cs,openapi.json}`,
+`web/src/{api.ts,api-types.ts,types.ts,components/ConfigView.tsx,help/cli-reference.md}`,
+`tests/{manifest.yaml,run-agent-tests.ps1,run-hardening-tests.ps1,cross-os/crossos.ps1}`,
+`tests/linux/{run-linux-tests.sh,run-linux-regression-tests.sh}`,
+`tests/SaveLocker.Agent.Tests/{ManifestPathConstraintTests.cs (new),ManifestRefreshTests.cs (new),LinkByHandTests.cs,FolderSuggestionsTests.cs}`,
+`docs/{Decisions,Gotchas,REPO_MAP,API Reference,Build and Run,CONTEXT,Backlog}.md`,
+`docs/logs/2026-10-14_manifest-path-constraints.md`, `docs/tasks/_done/manifest-path-constraints/`.
+
+---
+
 # Session summary — 2026-10-12 — Emulator saves Group E and the Xenia profile/DLC design (PR #68)
 
 Standalone: the facts below do not need the rest of the vault.

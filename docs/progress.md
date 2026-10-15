@@ -4072,3 +4072,71 @@ them as untracked strays. Fixed: `chown -R maro:maro ~/SaveLocker` (also caught 
 `tests/SaveLocker.Agent.Tests/DuplicateShortcutTests.cs`, `tests/linux/{run-linux-tests.sh,make-fixtures.py}`,
 `docs/tasks/duplicate-shortcut-warnings/`, `docs/tasks/interactive-setup-guide/`, `docs/tasks/_done/checkpoint-ui-group-9-check/`,
 `docs/tasks/decky-qam-scrolling/` (removed), `docs/{Backlog,CONTEXT}.md`, this entry, `session_summary.md`.
+
+---
+
+## 2026-10-14 — Manifest path constraints + scheduled refresh, console-controlled (`manifest-path-constraints`, PR #74)
+
+**Branch:** `manifest-path-constraints` (worktree `.claude/worktrees/manifest-path-constraints`). PR: https://github.com/Marwanello/SaveLocker/pull/74, base `main`. Open at the time of writing.
+
+### Request sequence
+
+1. Asked what the one-line Backlog item *Constrain manifest paths* (seed 2026-09-08) actually meant.
+2. Asked for a full implementation plan; the first cut **pinned** the manifest to an approved revision.
+3. The maintainer rejected the pin (the manifest is a reliable live feed, and a pinned copy makes every
+   game released after the pin undetectable) and asked for the refresh window to be **editable in the
+   console** with a "Refresh now" button. The plan was re-cut accordingly.
+4. Implement the revised plan in a worktree, then open a PR on the fork.
+
+### What was found
+
+- **The agent never refreshed the manifest at all.** `Detection.GetManifestAsync` downloads once (cache
+  miss) and serves that file forever unless someone runs `refresh-manifest` by hand — so "a game
+  released after I installed SaveLocker won't be picked up" was already true before this work, and the
+  pin would have made it worse.
+- **The containment gap was real.** `PathResolver.ResolveConcrete` prefix-matched the *raw* expanded
+  string against token roots, so `<winAppData>/../../../x` began with a root's value and passed;
+  `Path.GetFullPath` collapsed it downstream. Links were never resolved during manifest resolution —
+  only a mapped folder's leaf, later, via `SavePathGuard`.
+- `ManifestLoader.DownloadAsync` wrote the cache **before** parsing it, so an error page or a truncated
+  body could have become the cached manifest.
+
+### What shipped
+
+- **Containment** (`src/Shared/PathResolver.cs`, new `src/Shared/RealPath.cs`): strict refusal of
+  non-absolute and `..`-containing templates, canonicalisation before the root check, and per-segment
+  link resolution with containment under link-resolved roots — at the one choke point every caller
+  funnels through (the Wine case-insensitive and `<storeUserId>` branches included). Refusal is "no
+  existing save directory"; user-mapped paths are untouched and `SavePathGuard` stays their floor.
+- **Refresh engine** (`ManifestLoader`, `Detection`, `AgentConfig`): 64 MB cap, parse + 5,000-game
+  plausibility floor, temp-file cache swap (a failed or implausible download never replaces a good
+  cache); `RefreshManifestIfDueAsync` refreshes past the window (default 3 days, `0` = never), keeps
+  the old copy on failure, 1 h/30 s attempt gaps, never throws; `CommandPoller` calls it on both hosts.
+- **Console control**: audited admin routes `POST /api/settings/manifest` (0–365, 400 otherwise) and
+  `POST /api/settings/manifest/refresh`; the window + requested-at ride the heartbeat
+  (`AgentHeartbeatResponse`, append-only) and `ServerSettingsDto`; Configuration → Defaults &
+  maintenance has the **Manifest refresh** row (window select + **Refresh now**, "Last requested … ago").
+- Tests: `ManifestPathConstraintTests` 11, `ManifestRefreshTests` 8 (an `HttpListener` stub), hardening
+  section 5 (37/37 Windows, +4) with a real junction escape, agent-suite hostile entry (+2), every
+  fixture config opting out (`ManifestRefreshDays: 0`); `openapi.json` + `web/src/api-types.ts`
+  regenerated, additions only.
+
+### Verification
+
+- xunit **571/571**; `run-hardening-tests` **37/37** on Windows; `run-agent-tests` **49/49** against a
+  fresh scratch server; live wire check (`POST` window → `GET /api/settings` → heartbeat carries both
+  fields; `9999` → 400); Server/Agent/`Agent.Linux` builds clean; `web` build + lint clean.
+- **Mutation-checked:** removing the guards flips 4 + 3 unit checks; a live mutation pass through the
+  real agent makes both new hardening checks FAIL against the pre-fix resolver. That pass caught a
+  vacuous fixture of my own (the traversal target sat one directory above where the `..`s actually
+  land) — fixed and re-proven.
+
+### Not verified
+
+`run-linux-tests` (WSL) and `run-winagent-tests` (interactive desktop) were not run; the console card
+was not eyeballed in a browser (it type-checks/builds; the wire was checked live); console button →
+live-daemon download is covered by unit tests + poller wiring, not a live daemon.
+
+Full write-up: `logs/2026-10-14_manifest-path-constraints.md`; decisions in `Decisions.md` (*The
+manifest is a live feed…*, *Manifest-expanded paths are constrained…*); task moved to
+`tasks/_done/manifest-path-constraints/`.
