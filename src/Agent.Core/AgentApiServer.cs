@@ -1940,7 +1940,8 @@ public sealed class AgentApiServer : IDisposable
             candidate.NotSyncable,
             GameSources.SystemLabel(candidate.EmulatorSystem),
             candidate.Release?.Region,
-            candidate.StatesOnly)).ToArray();
+            candidate.StatesOnly,
+            candidate.DuplicateShortcuts is { Count: > 0 } duplicates ? duplicates.ToArray() : null)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -2086,7 +2087,10 @@ public sealed record CandidateDto(
     string? Region = null,
     /// <summary>Found by its save states alone, before the game's first in-game save here
     /// (<see cref="ScanCandidate.StatesOnly"/>).</summary>
-    bool StatesOnly = false);
+    bool StatesOnly = false,
+    /// <summary>Same-named Steam shortcuts under different AppIDs (<see cref="ScanCandidate.DuplicateShortcuts"/>):
+    /// one entry per AppID, <see cref="DuplicateShortcut.Tracked"/> on the one the scan uses. Null when not the shape.</summary>
+    DuplicateShortcut[]? DuplicateShortcuts = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the

@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add games — duplicate-shortcut warning (agent-ui mockup)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* ============================================================================
+   Clickable mockup of the planned duplicate-shortcut warning in agent-ui's
+   Add Games page. Not shipped code. Tokens and every `sl-` class below are
+   copied verbatim from agent-ui/src/tokens.css and agent-ui/src/ui.css; the
+   row markup mirrors agent-ui/src/components/AddGamesView.tsx.
+   ========================================================================== */
+:root {
+  color-scheme: dark;
+  --color-ink:#0f0f10; --color-panel:#141416; --color-raise:#191a1c; --color-tile:#1b1c1f; --color-hover:#202124;
+  --color-fg:#f0eee9; --color-dim:#a09d97; --color-faint:#817e78; --color-line:#242427; --color-row:#1d1d20;
+  --color-safe:#7fa96a; --color-watch:#d9a63f; --color-info:#7b9fd0; --color-accent:#e0533c; --color-on-accent:#160f0e;
+  --color-accent-soft:color-mix(in oklab,var(--color-accent) 14%,var(--color-panel));
+  --color-accent-line:color-mix(in oklab,var(--color-accent) 42%,var(--color-panel));
+  --color-accent-ink:color-mix(in oklab,var(--color-accent) 80%,var(--color-fg));
+  --color-safe-soft:color-mix(in oklab,var(--color-safe) 14%,var(--color-panel));
+  --color-safe-line:color-mix(in oklab,var(--color-safe) 40%,var(--color-panel));
+  --color-safe-ink:color-mix(in oklab,var(--color-safe) 82%,var(--color-fg));
+  --color-watch-soft:color-mix(in oklab,var(--color-watch) 14%,var(--color-panel));
+  --color-watch-line:color-mix(in oklab,var(--color-watch) 40%,var(--color-panel));
+  --color-watch-ink:color-mix(in oklab,var(--color-watch) 82%,var(--color-fg));
+  --font-sans:'Archivo',system-ui,sans-serif; --font-mono:'JetBrains Mono',monospace;
+  --ease:cubic-bezier(.2,.8,.25,1);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-ink:#f5f3ef; --color-panel:#fffefc; --color-raise:#f0ede8; --color-tile:#ebe7e0; --color-hover:#e8e3dc;
+  --color-fg:#191719; --color-dim:#57534d; --color-faint:#79756f; --color-line:#e2ddd5; --color-row:#eeeae3;
+  --color-safe:#4c7b3e; --color-watch:#8a6212; --color-info:#3d6aa8; --color-accent:#c0432c; --color-on-accent:#fff8f6;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --color-ink:#f5f3ef; --color-panel:#fffefc; --color-raise:#f0ede8; --color-tile:#ebe7e0; --color-hover:#e8e3dc;
+    --color-fg:#191719; --color-dim:#57534d; --color-faint:#79756f; --color-line:#e2ddd5; --color-row:#eeeae3;
+    --color-safe:#4c7b3e; --color-watch:#8a6212; --color-info:#3d6aa8; --color-accent:#c0432c; --color-on-accent:#fff8f6;
+  }
+}
+/* ---- ui.css base ---------------------------------------------------------- */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--color-ink);color:var(--color-fg);font-family:var(--font-sans);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+::-webkit-scrollbar{width:5px;height:5px} ::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--color-line);border-radius:3px} ::-webkit-scrollbar-thumb:hover{background:var(--color-faint)}
+input[type="checkbox"]{accent-color:var(--color-accent);width:14px;height:14px;cursor:pointer;flex-shrink:0}
+button:disabled{cursor:default}
+@keyframes sl-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes sl-toast-in{0%{opacity:0;transform:translateY(8px) scale(.97)}60%{opacity:1;transform:translateY(-2px) scale(1.01)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes sl-spin{to{transform:rotate(360deg)}}
+/* ---- shell ---------------------------------------------------------------- */
+.sl-app{height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--color-ink);font-family:var(--font-sans)}
+.sl-topbar{display:flex;align-items:center;gap:14px;flex:none;height:52px;padding:0 18px;background:var(--color-panel);border-bottom:1px solid var(--color-line)}
+.sl-brand{display:flex;align-items:center;gap:11px;min-width:0}
+.sl-brand__name{font-size:15px;font-weight:700;letter-spacing:-.03em;line-height:1.15}
+.sl-brand__sub{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-faint);line-height:1.3}
+.sl-topbar__tools{margin-left:auto;display:flex;align-items:center;gap:9px}
+.sl-body{flex:1;min-height:0;display:flex}
+.sl-content{flex:1;min-width:0;position:relative;overflow:hidden;background:var(--color-ink)}
+.sl-page{position:absolute;inset:0;overflow-y:auto;padding:22px 24px 28px;display:flex;flex-direction:column;gap:14px}
+.sl-page>*{flex-shrink:0;animation:sl-rise 260ms var(--ease) both}
+.sl-page>:nth-child(2){animation-delay:26ms} .sl-page>:nth-child(3){animation-delay:52ms}
+.sl-page>:nth-child(4){animation-delay:78ms} .sl-page>:nth-child(5){animation-delay:104ms}
+.sl-page>:nth-child(n+6){animation-delay:130ms}
+.sl-aside{width:196px;flex:none;display:flex;flex-direction:column;gap:3px;padding:14px 10px;background:var(--color-panel);border-right:1px solid var(--color-line)}
+.sl-nav{display:flex;align-items:center;gap:9px;width:100%;text-align:left;font:inherit;font-size:13.5px;padding:9px 12px;border-radius:10px;border:1px solid transparent;background:none;color:var(--color-dim);cursor:pointer;transition:background-color .15s var(--ease),color .15s var(--ease),transform .15s var(--ease)}
+.sl-nav:hover{background:var(--color-raise);color:var(--color-fg);transform:translateX(2px)}
+.sl-nav[aria-current="page"]{background:var(--color-tile);border-color:var(--color-line);color:var(--color-fg);font-weight:600}
+.sl-nav:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.sl-count{margin-left:auto;font-size:10px;font-weight:700;line-height:1.4;padding:1px 7px;border-radius:99px;background:var(--color-accent);color:var(--color-on-accent)}
+.sl-count--quiet{background:var(--color-tile);color:var(--color-dim);border:1px solid var(--color-line)}
+.sl-aside__foot{margin-top:auto;padding:10px 12px 0;border-top:1px solid var(--color-line);font-size:10.5px;line-height:1.6;color:var(--color-dim);overflow-wrap:anywhere}
+.sl-aside__foot b{display:block;font-weight:600;color:var(--color-fg)}
+.sl-hero{display:flex;align-items:center;gap:14px;flex:none;padding:13px 20px;background:var(--color-panel);border-bottom:1px solid var(--color-line)}
+.sl-hero__badge{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;flex:none;background:var(--color-raise);border:1px solid var(--color-line);color:var(--color-dim)}
+.sl-hero__badge--ok{background:var(--color-safe-soft);border-color:var(--color-safe-line);color:var(--color-safe-ink)}
+.sl-hero__main{flex:1;min-width:0}
+.sl-hero__title{font-size:18px;font-weight:700;letter-spacing:-.03em;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sl-hero__detail{font-size:11.5px;color:var(--color-dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sl-hero__right{margin-left:auto;display:flex;align-items:center;gap:8px;flex:none}
+/* ---- primitives ----------------------------------------------------------- */
+.sl-btn{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:500;line-height:1.2;padding:8px 15px;border-radius:99px;border:1px solid var(--color-line);background:var(--color-raise);color:var(--color-fg);cursor:pointer;white-space:nowrap;transition:background-color .15s var(--ease),transform .15s var(--ease),filter .15s var(--ease)}
+.sl-btn:hover:not(:disabled){background:var(--color-hover);transform:translateY(-1px)}
+.sl-btn:active:not(:disabled){transform:scale(.96)}
+.sl-btn:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.sl-btn:disabled{opacity:.5;cursor:default}
+.sl-btn--primary{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-on-accent);font-weight:600}
+.sl-btn--primary:hover:not(:disabled){background:var(--color-accent);filter:brightness(1.1)}
+.sl-btn--quiet{background:transparent;border-color:transparent;color:var(--color-dim)}
+.sl-btn--sm{padding:5px 11px;font-size:12px}
+.sl-chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;line-height:1.3;white-space:nowrap;padding:4px 10px;border-radius:99px;border:1px solid var(--color-line);color:var(--color-dim);background:var(--color-raise)}
+.sl-chip--ok{color:var(--color-safe-ink);border-color:var(--color-safe-line);background:var(--color-safe-soft)}
+.sl-chip--warn{color:var(--color-watch-ink);border-color:var(--color-watch-line);background:var(--color-watch-soft)}
+.sl-chip--crit{color:var(--color-accent-ink);border-color:var(--color-accent-line);background:var(--color-accent-soft)}
+.sl-card{background:var(--color-panel);border:1px solid var(--color-line);border-radius:14px;overflow:hidden}
+.sl-card>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 17px;border-bottom:1px solid var(--color-line)}
+.sl-card>header h3{font-size:14px;font-weight:600;letter-spacing:-.02em}
+.sl-seg{display:inline-flex;background:var(--color-raise);border:1px solid var(--color-line);border-radius:99px;padding:3px;gap:2px}
+.sl-seg button{font:inherit;font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:99px;border:0;cursor:pointer;background:transparent;color:var(--color-dim);transition:background-color .15s var(--ease),color .15s var(--ease)}
+.sl-seg button:hover{color:var(--color-fg)}
+.sl-seg button[aria-pressed="true"]{background:var(--color-panel);color:var(--color-fg);box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.sl-seg button:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.sl-search{flex:1;min-width:160px;max-width:320px;padding:7px 12px;font:inherit;font-size:12.5px;color:var(--color-fg);background:var(--color-raise);border:1px solid var(--color-line);border-radius:99px}
+.sl-search::placeholder{color:var(--color-dim)}
+.sl-search:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.sl-switch{width:42px;height:24px;border-radius:99px;border:1px solid var(--color-line);background:var(--color-tile);position:relative;cursor:pointer;flex:none;padding:0;transition:background-color .22s var(--ease),border-color .22s var(--ease)}
+.sl-switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--color-dim);transition:transform .26s cubic-bezier(.34,1.45,.5,1),background-color .22s}
+.sl-switch[aria-checked="true"]{background:var(--color-accent-soft);border-color:var(--color-accent-line)}
+.sl-switch[aria-checked="true"]::after{transform:translateX(18px);background:var(--color-accent)}
+.sl-switch:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+/* ---- page head / tools ---------------------------------------------------- */
+.sl-pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.sl-pagehead h2{font-size:22px;font-weight:700;letter-spacing:-.03em;line-height:1.15}
+.sl-pagehead p{font-size:12px;color:var(--color-dim);margin-top:5px}
+.sl-pagehead__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sl-inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sl-stack{display:flex;flex-direction:column;gap:14px}
+.sl-path{font-family:var(--font-mono);font-size:11.5px;color:var(--color-dim);overflow-wrap:anywhere}
+.sl-spin{animation:sl-spin 1.1s linear infinite}
+/* ---- Add Games ------------------------------------------------------------ */
+.sl-fchip{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11.5px;white-space:nowrap;cursor:pointer;padding:5px 11px;border-radius:99px;border:1px solid var(--color-line);background:transparent;color:var(--color-dim);transition:background-color .15s var(--ease),color .15s var(--ease)}
+.sl-fchip:hover{background:var(--color-raise);color:var(--color-fg)}
+.sl-fchip[aria-pressed="true"]{background:var(--color-tile);color:var(--color-fg);border-color:var(--color-fg);font-weight:600}
+.sl-fchip:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.sl-fchip b{font-family:var(--font-mono);font-size:10.5px;font-weight:500;color:var(--color-dim)}
+.sl-filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.sl-filters__label{font-size:11px;color:var(--color-dim);margin-right:2px}
+.sl-filters__toggle{margin-left:auto;display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--color-fg);cursor:pointer}
+.sl-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sl-check-row{display:flex;align-items:flex-start;gap:12px;padding:11px 17px;border-bottom:1px solid var(--color-row)}
+.sl-check-row:last-child{border-bottom:0}
+.sl-check-row:has(input:checked){background:var(--color-tile)}
+.sl-check-row input{margin-top:3px}
+.sl-check-row__main{flex:1;min-width:0}
+.sl-check-row__name{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;font-weight:600}
+.sl-check-row--enrolled,.sl-check-row--enrolled:has(input:checked){background:color-mix(in oklab,var(--color-safe) 7%,var(--color-panel))}
+.sl-check-row--enrolled input{cursor:default}
+.sl-check-row--enrolled .sl-check-row__title{color:color-mix(in oklab,var(--color-safe-ink) 70%,var(--color-dim))}
+.sl-check-row--enrolled .sl-path{color:var(--color-faint)}
+.sl-check-row__note{font-size:11.5px;color:var(--color-safe-ink)}
+.sl-check-row__why{display:block;margin-top:4px;font-size:11.5px;line-height:1.45;color:var(--color-watch-ink)}
+/* The duplicate-shortcut chip (planned): agent-ui's ReleaseChip pattern — hover shows the details, a click
+   keeps them open; amber, because this is a warning, and no tooltips anywhere. */
+.sl-release{position:relative;display:inline-flex}
+.sl-release__chip{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11.5px;line-height:1.3;white-space:nowrap;padding:4px 11px;border-radius:99px;border:1px solid var(--color-line);background:var(--color-raise);color:var(--color-fg);cursor:pointer;transition:background-color .15s var(--ease),filter .15s var(--ease)}
+.sl-release__chip:hover,.sl-release__chip[aria-expanded="true"]{background:var(--color-tile)}
+.sl-release__chip:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.sl-release__chip--warn{color:var(--color-watch-ink);border-color:var(--color-watch-line);background:var(--color-watch-soft)}
+.sl-release__chip--warn:hover,.sl-release__chip--warn[aria-expanded="true"]{background:var(--color-watch-soft);filter:brightness(1.06)}
+.sl-release__dot{width:4px;height:4px;border-radius:50%;background:var(--color-accent)}
+.sl-release__dot--warn{background:var(--color-watch)}
+.sl-release__pop{position:absolute;left:0;top:calc(100% + 8px);z-index:30;width:340px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;gap:10px;padding:12px 14px;font-size:12.5px;white-space:normal;background:var(--color-panel);border:1px solid var(--color-line);border-radius:14px;box-shadow:0 18px 40px -16px rgba(0,0,0,.55);animation:sl-rise 180ms var(--ease) both}
+.sl-release__title{font-size:13px;font-weight:600;text-wrap:balance}
+.sl-release__note{color:var(--color-dim);font-size:11.5px;border-top:1px solid var(--color-line);padding-top:8px}
+.sl-card--pop{overflow:visible}
+.dup-row{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border:1px solid var(--color-line);border-radius:10px;background:var(--color-raise)}
+.dup-row--tracked{border-color:var(--color-safe-line);background:var(--color-safe-soft)}
+.dup-row__head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dup-row__name{font-weight:600;font-size:12.5px;color:var(--color-fg)}
+.dup-row__id{font-family:var(--font-mono);font-size:11px;color:var(--color-dim)}
+.dup-row__sub{font-size:11px;color:var(--color-dim)}
+.sl-status{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;border-radius:6px}
+.sl-status--ok{background:var(--color-safe-soft);color:var(--color-safe-ink)}
+.sl-status--has{background:var(--color-tile);color:var(--color-fg)}
+.sl-status--warn{background:var(--color-watch-soft);color:var(--color-watch-ink)}
+.sl-empty{padding:26px 18px;text-align:center;color:var(--color-dim);font-size:12.5px}
+.sl-footbar{position:sticky;bottom:0;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:12px 16px;border:1px solid var(--color-line);border-radius:14px;background:var(--color-panel);box-shadow:0 -8px 20px -14px rgba(0,0,0,.6)}
+.sl-footbar__txt{font-size:12.5px;color:var(--color-dim);min-width:0}
+.sl-toast{position:fixed;right:20px;bottom:20px;z-index:50;max-width:min(420px,calc(100vw - 40px));background:var(--color-panel);border:1px solid var(--color-line);border-radius:12px;padding:12px 16px;font-size:13px;line-height:1.5;color:var(--color-fg);display:flex;align-items:center;gap:12px;box-shadow:0 10px 30px -12px rgba(0,0,0,.6);animation:sl-toast-in 340ms var(--ease) both}
+.sl-toast>span{min-width:0;overflow-wrap:anywhere}
+/* ---- mockup chrome (not part of agent-ui) ---------------------------------- */
+.mockbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px;background:var(--color-raise);border-bottom:1px solid var(--color-line);font-size:12px;color:var(--color-dim);font-family:var(--font-sans)}
+.mockbar b{color:var(--color-fg);font-weight:600}
+.mockbar .spacer{flex:1}
+.mockbar .hint{font-size:11px;color:var(--color-faint)}
+.mockbar .segwrap{display:inline-flex}
+.sl-app{height:calc(100vh - 45px)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <b>Mockup</b>
+  <span>Add games — duplicate-shortcut warning · docs/tasks/duplicate-shortcut-warnings/mockup.html</span>
+  <span class="segwrap"><span class="sl-seg" role="group" aria-label="Theme">
+    <button type="button" data-theme-btn="system" aria-pressed="false">System</button>
+    <button type="button" data-theme-btn="dark" aria-pressed="false">Dark</button>
+    <button type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+  </span></span>
+  <span class="spacer"></span>
+  <button class="sl-btn sl-btn--sm" id="warnToggle" aria-pressed="true">Duplicate warning: shown</button>
+  <span class="hint">Everything except the amber chip + its details popover is today's Add Games page, unchanged. The chip works like the emulator release chip: hover opens, click pins, Esc closes.</span>
+</div>
+
+<div class="sl-app">
+  <header class="sl-topbar">
+    <div class="sl-brand" id="brand"></div>
+    <div class="sl-topbar__tools"><span class="sl-chip sl-chip--ok">Connected</span></div>
+  </header>
+
+  <div class="sl-hero">
+    <span class="sl-hero__badge sl-hero__badge--ok" id="heroBadge"></span>
+    <div class="sl-hero__main">
+      <div class="sl-hero__title" role="status">Idle — nothing syncing right now.</div>
+      <div class="sl-hero__detail">LivingRoomPC · last push 12m ago · settle 10s</div>
+    </div>
+    <div class="sl-hero__right">
+      <span class="sl-chip sl-chip--ok">All clear</span>
+      <button class="sl-btn sl-btn--primary" data-act="sync-all" id="syncAllBtn"></button>
+    </div>
+  </div>
+
+  <div class="sl-body">
+    <aside class="sl-aside">
+      <nav aria-label="Sections" style="display:flex;flex-direction:column;gap:3px" id="nav"></nav>
+      <div class="sl-aside__foot">
+        <b>LivingRoomPC</b>
+        <span>localhost:5080</span>
+        <span style="display:block">agent v0.7.1</span>
+      </div>
+    </aside>
+    <main class="sl-content"><div class="sl-page" id="page"></div></main>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+/* ---- icons: lucide geometry, inlined as SVG (agent-ui uses lucide-react) ---- */
+const ICONS = {
+  check:[['path',{d:'M20 6 9 17l-5-5'}]],
+  'search-check':[['path',{d:'m8 11 2 2 4-4'}],['circle',{cx:'11',cy:'11',r:'8'}],['path',{d:'m21 21-4.3-4.3'}]],
+  'triangle-alert':[['path',{d:'m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'}],['path',{d:'M12 9v4'}],['path',{d:'M12 17h.01'}]],
+  'refresh-cw':[['path',{d:'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8'}],['path',{d:'M21 3v5h-5'}],['path',{d:'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16'}],['path',{d:'M8 16H3v5'}]],
+  'folder-search':[['path',{d:'M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1'}],['path',{d:'m21 21-1.9-1.9'}],['circle',{cx:'17',cy:'17',r:'3'}]],
+};
+function icon(name, size = 14, sw = 2) {
+  const n = ICONS[name] || ICONS.check;
+  const inner = n.map(([t, a]) => '<' + t + ' ' + Object.entries(a).map(([k, v]) => k + '="' + v + '"').join(' ') + '/>').join('');
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + sw + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0">' + inner + '</svg>';
+}
+/* The brand mark — agent-ui Mark.tsx (appearance.ts MARKS.pixel) in the live accent. */
+function markSvg(size) {
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 32 32" fill="none" role="img" aria-label="SaveLocker" style="flex-shrink:0;display:block">'
+    + '<rect x="12" y="3" width="8" height="4" fill="var(--color-accent)"/><rect x="8" y="7" width="4" height="5" fill="var(--color-accent)"/>'
+    + '<rect x="20" y="7" width="4" height="5" fill="var(--color-accent)"/><rect x="5" y="12" width="22" height="16" fill="var(--color-accent)"/>'
+    + '<rect x="14" y="16" width="4" height="4" fill="var(--color-on-accent)"/><rect x="15" y="20" width="2" height="5" fill="var(--color-on-accent)"/></svg>';
+}
+
+/* ---- mock data (agent-ui's Candidate shape, plus the planned DuplicateAppIds) ---- */
+const GAMES = [
+  { id:1, name:'HITMAN 3', source:'SteamShortcut', path:'C:\\steam\\steamapps\\compatdata\\1659040\\pfx\\drive_c\\users\\steamuser\\Documents\\IO Interactive\\HITMAN 3',
+    // planned: ScanCandidate.DuplicateShortcuts — one entry per same-named shortcut; Tracked = the dedupe winner
+    duplicates:[
+      { appId:'1659040', name:'HITMAN 3', tracked:true,  detail:'save folder found · 8 files, newest 3 days ago' },
+      { appId:'3823860', name:'Hitman 3', tracked:false, detail:'no save folder found' },
+    ] },
+  { id:2, name:'Cyberpunk 2077', source:'SteamInstalled', hasSteamCloud:true, path:'C:\\steam\\steamapps\\compatdata\\1091500\\pfx\\drive_c\\users\\steamuser\\Saved Games\\CD Projekt Red\\Cyberpunk 2077' },
+  { id:3, name:'Moving Out', source:'SteamShortcut', path:'C:\\steam\\steamapps\\compatdata\\996770\\pfx\\drive_c\\users\\steamuser\\AppData\\Local\\Moving Out' },
+  { id:4, name:'Minit', source:'SteamShortcut', path:'C:\\steam\\steamapps\\compatdata\\609490\\pfx\\drive_c\\users\\steamuser\\AppData\\Local\\Minit' },
+  { id:5, name:'A Short Hike', source:'SteamInstalled', path:null },
+  { id:6, name:'Chrono Trigger (USA)', source:'Emulator', emulatorName:'RetroArch', emulatorRom:'Chrono Trigger (USA)', statesOnly:true,
+    path:'C:\\Users\\maro\\emudeck\\Emulation\\saves\\retroarch\\snes' },
+  { id:7, name:'Hades', source:'SteamInstalled', path:'C:\\steam\\steamapps\\compatdata\\1145360\\pfx\\drive_c\\users\\steamuser\\Documents\\Saved Games\\Hades', enrolled:true },
+];
+const FILTERS = [
+  { id:'suggested', label:'Suggested', match:c => !c.hasSteamCloud },
+  { id:'all', label:'All', match:() => true },
+  { id:'steam', label:'Steam', match:c => c.source === 'SteamInstalled' },
+  { id:'shortcut', label:'Added to Steam', match:c => c.source === 'SteamShortcut' },
+];
+const PATH_MODES = [
+  { id:'all', label:'All', match:() => true },
+  { id:'has', label:'Detected', match:c => !c.enrolled && !!c.path },
+  { id:'missing', label:'Not detected', match:c => !c.enrolled && !c.path },
+  { id:'enrolled', label:'Enrolled', match:c => !!c.enrolled },
+];
+const NAV = ['Overview','Games','Add Games','Conflicts','Activity','Settings'];
+
+/* ---- state ------------------------------------------------------------------ */
+const S = { filter:'suggested', pathMode:'all', hideEnrolled:true, query:'', checked:new Set(), warning:true, theme:'system', syncing:false, dupOpen:null, dupPinned:false };
+
+/* ---- render ------------------------------------------------------------------ */
+const stage = document.getElementById('page');
+
+function statusMark(c) {
+  const s = c.enrolled ? { icon:'check', tone:'ok', label:'Enrolled on this machine' }
+    : !c.path ? { icon:'triangle-alert', tone:'warn', label:'Save folder not detected' }
+    : { icon:'search-check', tone:'has', label:'Save folder detected' };
+  return '<span class="sl-status sl-status--' + s.tone + '" role="img" aria-label="' + s.label + '" title="' + s.label + '">' + icon(s.icon, 13, 2.3) + '</span>';
+}
+
+function dupChip(c) {
+  const open = S.dupOpen === c.id;
+  return '<span class="sl-release" data-dup="' + c.id + '">'
+    + '<button type="button" class="sl-release__chip sl-release__chip--warn" aria-haspopup="dialog" aria-expanded="' + open + '"'
+    + ' aria-label="' + c.duplicates.length + ' shortcuts with different AppIDs — which one will be tracked"'
+    + ' data-act="dup:' + c.id + '">' + c.duplicates.length + ' shortcuts · different AppIDs'
+    + '<span class="sl-release__dot sl-release__dot--warn" aria-hidden="true"></span></button>'
+    + (open ? dupPop(c) : '') + '</span>';
+}
+/* The details, the way the emulator release chip shows them — real UI, not a tooltip. */
+function dupPop(c) {
+  return '<span class="sl-release__pop" role="dialog" aria-label="Shortcuts with different AppIDs">'
+    + '<span class="sl-release__title">' + c.name + ' — ' + c.duplicates.length + ' shortcuts with different AppIDs</span>'
+    + c.duplicates.map(d => '<span class="dup-row' + (d.tracked ? ' dup-row--tracked' : '') + '">'
+      + '<span class="dup-row__head"><span class="dup-row__name">' + d.name + '</span>'
+      + '<span class="dup-row__id">AppID ' + d.appId + '</span>'
+      + (d.tracked ? '<span class="sl-chip sl-chip--ok">Will be tracked</span>' : '<span class="sl-chip">Duplicate</span>')
+      + '</span><span class="dup-row__sub">' + d.detail + '</span></span>').join('')
+    + '<span class="sl-release__note">Steam launches only one of them. SaveLocker tracks the one whose save folder is found here; the rest are dead weight and can be removed in Steam.</span>'
+    + '</span>';
+}
+function rowHtml(c) {
+  const cls = c.enrolled ? 'sl-check-row sl-check-row--enrolled' : 'sl-check-row';
+  let chips = '<span class="sl-chip">' + c.source + '</span>';
+  if (c.emulatorName) chips += '<span class="sl-chip">' + c.emulatorName + '</span>';
+  if (c.emulatorRom && c.emulatorRom !== c.name) chips += '<span class="sl-chip">' + c.emulatorRom + '</span>';
+  if (c.hasSteamCloud) chips += '<span class="sl-chip">Steam Cloud</span>';
+  // The planned addition: a warn chip naming the situation, AppIDs in the tooltip.
+  if (S.warning && c.duplicates) {
+    chips += dupChip(c);
+  }
+
+  let detail;
+  if (c.enrolled) {
+    detail = '<div class="sl-inline" style="margin-top:4px">' + (c.path ? '<span class="sl-path">' + c.path + '</span>' : '')
+      + '<span class="sl-check-row__note">Already added on this machine</span></div>';
+  } else if (c.path) {
+    detail = '<div class="sl-inline" style="margin-top:4px"><span class="sl-path">' + c.path + '</span>'
+      + '<button class="sl-btn sl-btn--sm sl-btn--quiet" data-act="folder-change">Change</button></div>';
+  } else {
+    detail = '<div class="sl-inline" style="margin-top:6px"><span style="color:var(--color-watch-ink);font-size:12px">No save folder set</span>'
+      + '<button class="sl-btn sl-btn--sm" data-act="folder-change">' + icon('folder-search', 12, 1.75) + 'Set save folder</button></div>';
+  }
+  // The planned note line. Reuses .sl-check-row__why (watch ink) — the same tone the blocked row uses.
+  if (S.warning && c.duplicates) {
+    const tracked = c.duplicates.find(d => d.tracked);
+    detail += '<span class="sl-check-row__why">Steam launches only one of them. SaveLocker will track AppID ' + tracked.appId
+      + ' — if that is the stale shortcut, its saves are never backed up. Hover the chip for both shortcuts; '
+      + 'map the other with <code style="font-family:var(--font-mono)">--dir</code> to switch.</span>';
+  }
+  if (!c.enrolled && c.statesOnly) {
+    detail += '<span class="sl-check-row__note" style="display:block;margin-top:4px">Save states only so far. Its in-game saves sync too once the game makes one.</span>';
+  }
+
+  const checked = c.enrolled || S.checked.has(c.id);
+  return '<label class="' + cls + '">'
+    + '<input type="checkbox" aria-label="Add ' + c.name + '" ' + (checked ? 'checked ' : '') + (c.enrolled ? 'disabled ' : '')
+    + 'data-act="toggle:' + c.id + '">'
+    + '<div class="sl-check-row__main"><div class="sl-check-row__name">' + statusMark(c)
+    + '<span class="sl-check-row__title">' + c.name + '</span>' + chips + '</div>' + detail + '</div></label>';
+}
+
+function render() {
+  // topbar + hero
+  document.getElementById('brand').innerHTML = markSvg(30)
+    + '<div><div class="sl-brand__name">SaveLocker</div><div class="sl-brand__sub">Agent</div></div>';
+  document.getElementById('heroBadge').innerHTML = icon('check', 20, 1.9);
+  document.getElementById('syncAllBtn').innerHTML = icon('refresh-cw', 14) + (S.syncing ? 'Syncing…' : 'Sync all');
+
+  // nav
+  const listedNav = GAMES.filter(g => !g.enrolled);
+  const counts = { 'Add Games': listedNav.filter(g => !g.hasSteamCloud).length, 'Conflicts': 1 };
+  document.getElementById('nav').innerHTML = NAV.map((label, i) => {
+    const active = label === 'Add Games';
+    const badge = counts[label];
+    return '<button type="button" class="sl-nav" ' + (active ? 'aria-current="page"' : '') + ' data-act="nav:' + label + '">'
+      + '<span>' + label + '</span>'
+      + (badge ? '<span class="sl-count ' + (label === 'Conflicts' ? '' : 'sl-count--quiet') + '">' + badge + '</span>' : '') + '</button>';
+  }).join('');
+
+  // page
+  const base = GAMES.filter(g => FILTERS.find(f => f.id === S.filter).match(g))
+    .filter(g => !(S.hideEnrolled && g.enrolled))
+    .filter(g => PATH_MODES.find(p => p.id === S.pathMode).match(g))
+    .filter(g => !S.query || g.name.toLowerCase().includes(S.query.toLowerCase()));
+  const listed = GAMES.filter(g => !g.enrolled);
+  const suggested = listed.filter(g => !g.hasSteamCloud).length;
+
+  const filterChips = FILTERS.map(f => {
+    const count = GAMES.filter(g => !(S.hideEnrolled && g.enrolled) && f.match(g)).length;
+    return '<button type="button" class="sl-fchip" aria-pressed="' + (S.filter === f.id) + '" data-act="filter:' + f.id + '">'
+      + f.label + ' <b>' + count + '</b></button>';
+  }).join('');
+  const pathChips = PATH_MODES.filter(p => p.id !== 'enrolled' || !S.hideEnrolled).map(p => {
+    const count = GAMES.filter(g => !(S.hideEnrolled && g.enrolled) && p.match(g)).length;
+    return '<button type="button" class="sl-fchip" aria-pressed="' + (S.pathMode === p.id) + '" data-act="path:' + p.id + '">'
+      + (p.id === 'enrolled' ? icon('check', 12, 2.4) + ' ' : '') + p.label + (p.id !== 'all' ? ' <b>' + count + '</b>' : '') + '</button>';
+  }).join('');
+
+  const foot = S.checked.size === 0 ? 'Tick the games you want to sync.'
+    : S.checked.size + ' selected · they start syncing after the next time you quit each game';
+
+  stage.innerHTML =
+    '<div class="sl-pagehead"><div><h2>Add games</h2>'
+    + '<p>' + listed.length + ' found on this machine · ' + suggested + ' suggested</p></div>'
+    + '<div class="sl-pagehead__actions"><button class="sl-btn" data-act="rescan">' + icon('refresh-cw', 13, 1.9) + ' Rescan</button></div></div>'
+
+    + '<div class="sl-tools"><input type="search" class="sl-search" placeholder="Search by name or folder" aria-label="Search found games" value="' + S.query.replace(/"/g, '&quot;') + '" data-act="search"></div>'
+
+    + '<div class="sl-stack" style="gap:9px">'
+    +   '<div class="sl-filters"><span class="sl-filters__label">Filters</span>' + filterChips
+    +     '<label class="sl-filters__toggle"><button type="button" role="switch" class="sl-switch" aria-checked="' + S.hideEnrolled + '" aria-label="Hide enrolled games" data-act="hide-enrolled"></button> Hide enrolled</label>'
+    +   '</div>'
+    +   '<div class="sl-filters"><span class="sl-filters__label">Save folder</span>' + pathChips + '</div>'
+    +   '<div style="font-size:12px;color:var(--color-dim)">Showing ' + (S.filter === 'suggested' ? 'everything except games Steam Cloud already backs up' : 'every game found, including Steam Cloud titles') + '.</div>'
+    + '</div>'
+
+    + '<div class="sl-card' + (S.dupOpen !== null ? ' sl-card--pop' : '') + '">' + (base.length === 0
+        ? '<div class="sl-empty">Nothing matches that filter.</div>'
+        : base.map(rowHtml).join('')) + '</div>'
+
+    + '<div class="sl-footbar"><span class="sl-footbar__txt">' + foot + '</span>'
+    + '<div class="sl-inline"><button class="sl-btn sl-btn--sm sl-btn--quiet" data-act="clear"' + (S.checked.size === 0 ? ' disabled' : '') + '>Clear</button>'
+    + '<button class="sl-btn sl-btn--primary" data-act="add"' + (S.checked.size === 0 ? ' disabled' : '') + '>'
+    + (S.checked.size === 0 ? 'Add games' : 'Add ' + S.checked.size + ' game' + (S.checked.size === 1 ? '' : 's')) + '</button></div></div>';
+  document.querySelectorAll('[data-theme-btn]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.themeBtn === S.theme)));
+}
+
+/* ---- interactions ------------------------------------------------------------- */
+function toast(text, warn) {
+  const el = document.createElement('div');
+  el.className = 'sl-toast';
+  el.setAttribute('role', warn ? 'alert' : 'status');
+  el.innerHTML = '<span>' + text + '</span>';
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+function applyTheme() {
+  if (S.theme === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', S.theme);
+}
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act;
+  if (act.startsWith('toggle:')) {
+    const id = +act.split(':')[1];
+    if (e.target.tagName !== 'INPUT') { /* label click handles it */ }
+    S.checked.has(id) ? S.checked.delete(id) : S.checked.add(id);
+    setTimeout(render, 30); return;
+  }
+  if (act.startsWith('filter:')) { e.preventDefault(); S.filter = act.split(':')[1]; return render(); }
+  if (act.startsWith('path:')) { e.preventDefault(); S.pathMode = act.split(':')[1]; return render(); }
+  if (act.startsWith('dup:')) {
+    const id = +act.split(':')[1];
+    S.dupOpen = (S.dupOpen === id && S.dupPinned) ? null : id;
+    S.dupPinned = S.dupOpen !== null;
+    return render();
+  }
+  if (act === 'hide-enrolled') { e.preventDefault(); S.hideEnrolled = !S.hideEnrolled; if (S.hideEnrolled) S.pathMode = 'all'; return render(); }
+  if (act === 'clear') { S.checked.clear(); return render(); }
+  if (act === 'add') {
+    const names = GAMES.filter(g => S.checked.has(g.id)).map(g => g.name);
+    toast('Added ' + (names.length === 1 ? names[0] : names.length + ' games') + ' — the next time each game exits, its save uploads.');
+    S.checked.clear(); return render();
+  }
+  if (act === 'rescan') {
+    el.querySelector('svg')?.classList.add('sl-spin');
+    setTimeout(() => { toast('Nothing new found.'); el.querySelector('svg')?.classList.remove('sl-spin'); }, 900);
+    return;
+  }
+  if (act === 'sync-all') { S.syncing = true; render(); setTimeout(() => { S.syncing = false; toast('Synced 7 games · All clear', false); render(); }, 1200); return; }
+  if (act === 'folder-change') { e.preventDefault(); toast('The folder picker opens here (mockup).'); return; }
+  if (act.startsWith('nav:')) { e.preventDefault(); if (act.split(':')[1] !== 'Add Games') toast('This mockup only covers Add Games.'); return; }
+  if (act.startsWith('theme:')) { S.theme = act.split(':')[1]; applyTheme(); return render(); }
+  if (act.startsWith('folder-change')) return;
+});
+/* Hover/click behaviour copied from ReleaseChip: hover shows the details, a click pins them, Esc or a
+   click elsewhere closes. A null relatedTarget (the node was just re-rendered under the pointer) is
+   ignored so opening cannot immediately close itself. */
+const canHover = () => window.matchMedia?.('(hover: hover)').matches ?? true;
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest?.('[data-dup]');
+  if (!el || !canHover()) return;
+  const id = +el.dataset.dup;
+  if (S.dupOpen !== id) { S.dupOpen = id; S.dupPinned = false; render(); }
+});
+document.addEventListener('mouseout', e => {
+  const from = e.target.closest?.('[data-dup]');
+  if (!from || S.dupPinned || e.relatedTarget === null) return;
+  if (e.relatedTarget.closest?.('[data-dup]') !== from) { S.dupOpen = null; render(); }
+});
+document.addEventListener('mousedown', e => {
+  if (S.dupPinned && !e.target.closest?.('[data-dup]')) { S.dupOpen = null; S.dupPinned = false; render(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.dupOpen !== null) { S.dupOpen = null; S.dupPinned = false; render(); }
+});
+document.addEventListener('input', e => {
+  if (e.target.matches('[data-act="search"]')) { S.query = e.target.value; render(); e.target.focus(); }
+});
+document.getElementById('warnToggle').addEventListener('click', e => {
+  S.warning = !S.warning;
+  e.currentTarget.textContent = 'Duplicate warning: ' + (S.warning ? 'shown' : 'hidden');
+  e.currentTarget.setAttribute('aria-pressed', String(S.warning));
+  render();
+});
+
+applyTheme(); render();
+</script>
+</body>
+</html>

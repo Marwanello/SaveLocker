@@ -4050,3 +4050,131 @@ exception); DLC in every version makes Forza Horizon ~1 GB per version (~7 GB ke
 ### Not verified (manual pass owed)
 
 The Windows wizard paste round-trip and `/SILENT /ENROLL-URL`; a Deck running the one-liner (upload the new linux-x64 package first — the released agent predates `enroll --url`); the `#enroll:` hand-off clicked in a real WebView2 window; `run-enrollment-tls-tests` (dev cert untrusted on this box); a phone scanning the QR. Release notes for the next tag must cover the file's removal — agents/installers released before this cannot use join links until updated (they can still `savelocker register`).
+
+---
+
+## 2026-10-14 — Duplicate-shortcut warnings shipped (PR #75); Group 9 checklist closed; setup-guide mockups
+
+**Branch:** `duplicate-shortcut-warnings` (worktree `backlog-plans-testenv-mockup`, rebased onto `main` `3150f05`). **PR:** [#75](https://github.com/Marwanello/SaveLocker/pull/75) — open, MERGEABLE.
+
+### Request sequence
+
+1. Backlog session: plan the next items and mock them up before building (interactive setup guide; duplicate-shortcut
+   warnings), and run the pending Group 9 checklist through `testenv`.
+2. Build the approved duplicate-shortcut warning — chip + popover naming the AppID the scan follows, plus a Game Mode caption.
+3. Open a PR on the fork; explain the `testenv sync` "Permission denied" warnings; drop the `decky-qam-scrolling` task
+   (not needed); write this entry + `session_summary.md`.
+
+### What happened
+
+- **Group 9 checklist closed.** Run end-to-end through `testenv` (maintainer did 4.6/1.8); findings F1–F8 in
+  `tasks/_done/checkpoint-ui-group-9-check/run-2026-10-14.md` — each a maintainer decision, none a blocker. Task moved to
+  `_done/`, Backlog line removed, rig cleaned.
+- **Duplicate-shortcut warnings (the PR).** One detector (`SteamShortcuts.DuplicateNameGroups`/`DuplicatesFor`) backs the
+  doctor note and both scanners; `ScanCandidate.DuplicateShortcuts` rides the agent wire (`CandidateDto`, additive;
+  `api-types.ts` regenerated); agent-ui gained `DuplicateChip` + a row note and Game Mode a warning tile + ASCII caption.
+  `Tracked` marks the AppID the scan actually follows; none is marked when it follows none. Same-day review round
+  (`14c856c`, `edd2190`): `usePopover` shared with `ReleaseChip` (hover/pin/outside/Esc, 150 ms leave grace; the popover
+  swallows clicks so an Add-games row `<label>` isn't ticked), `.sl-card:has(.sl-release__pop)` stops the card clipping the
+  popover, `DuplicateShortcutTests` (+7, tracked marker mutation-checked).
+- **Interactive setup guide mocked** (not built): `mockup.html` (option 1, full-page checklist) + `mockup-options.html`
+  (wizard / handoff / guided tour on one shared state machine, built from real console + agent-ui markup),
+  Playwright-verified 21/21. No option picked yet.
+- **`decky-qam-scrolling` dropped** (`c9a767b`): the plan's premise check had already shown `doctor` left the QAM; the
+  remaining steppy block is the sync result, in the plugin repo. Not needed (maintainer's call). Folder + Backlog entry removed.
+
+### `testenv sync` note (not a script bug)
+
+The checkout (testenv.sh:347) warned `unable to unlink ... Permission denied` for two files under
+`docs/tasks/_done/checkpoint-ui-group-9-check/` — the folder was root-owned (an earlier session ran git in the WSL clone as
+root; `sync` runs as the normal user — `Invoke-Wsl` passes no `-u root`, testenv.ps1:911). Git warns and continues, leaving
+them as untracked strays. Fixed: `chown -R maro:maro ~/SaveLocker` (also caught a root-owned `.git/index`) + removing the strays.
+
+### Verification
+
+- `dotnet test` **559/559** (+7; the tracked marker mutation-checked); `run-linux-tests` **282/2** as root in `unshare -n`
+  (the 2 = documented WSLg pair; the duplicate-shortcut checks assert exact AppIDs/names/tracked flags — the 71-failure
+  cascade was this box's stray `~/SaveLocker` daemon holding :5187, the netns run being the workaround);
+  `run-appearance-consistency-tests` **50/50**; Agent.Core/Windows Agent/Agent.Linux build clean; `agent-ui` build + lint
+  clean (two pre-existing warnings).
+- Both agent-ui fixes reproduced without their fix in headless Chrome against the real CSS/DOM (card clip; label tick, incl.
+  a real trusted click). **Not verified:** a live Deck/WebView2 pass of the chip.
+- PR body refreshed at session end (QAM line dropped, stale numbers replaced) after the box's flaky router DNS — pushes
+  needed `-c http.curloptResolve=github.com:443:<ip>` at times.
+
+### Files
+
+`src/Agent.Core/{SteamShortcuts,ScanCandidate,AgentApiServer}.cs`, `src/Agent/GameScanner.cs`,
+`src/Agent.Linux/{Doctor,LinuxGameScanner}.cs`, `src/Agent.Linux/Ui/UiApp.cs`,
+`agent-ui/src/components/{DuplicateChip,AddGamesView,ReleaseChip}.tsx`, `agent-ui/src/{usePopover.ts,ui.css,api-types.ts}`,
+`tests/SaveLocker.Agent.Tests/DuplicateShortcutTests.cs`, `tests/linux/{run-linux-tests.sh,make-fixtures.py}`,
+`docs/tasks/duplicate-shortcut-warnings/`, `docs/tasks/interactive-setup-guide/`, `docs/tasks/_done/checkpoint-ui-group-9-check/`,
+`docs/tasks/decky-qam-scrolling/` (removed), `docs/{Backlog,CONTEXT}.md`, this entry, `session_summary.md`.
+
+---
+
+## 2026-10-14 — Manifest path constraints + scheduled refresh, console-controlled (`manifest-path-constraints`, PR #74)
+
+**Branch:** `manifest-path-constraints` (worktree `.claude/worktrees/manifest-path-constraints`). PR: https://github.com/Marwanello/SaveLocker/pull/74, base `main`. Open at the time of writing.
+
+### Request sequence
+
+1. Asked what the one-line Backlog item *Constrain manifest paths* (seed 2026-09-08) actually meant.
+2. Asked for a full implementation plan; the first cut **pinned** the manifest to an approved revision.
+3. The maintainer rejected the pin (the manifest is a reliable live feed, and a pinned copy makes every
+   game released after the pin undetectable) and asked for the refresh window to be **editable in the
+   console** with a "Refresh now" button. The plan was re-cut accordingly.
+4. Implement the revised plan in a worktree, then open a PR on the fork.
+
+### What was found
+
+- **The agent never refreshed the manifest at all.** `Detection.GetManifestAsync` downloads once (cache
+  miss) and serves that file forever unless someone runs `refresh-manifest` by hand — so "a game
+  released after I installed SaveLocker won't be picked up" was already true before this work, and the
+  pin would have made it worse.
+- **The containment gap was real.** `PathResolver.ResolveConcrete` prefix-matched the *raw* expanded
+  string against token roots, so `<winAppData>/../../../x` began with a root's value and passed;
+  `Path.GetFullPath` collapsed it downstream. Links were never resolved during manifest resolution —
+  only a mapped folder's leaf, later, via `SavePathGuard`.
+- `ManifestLoader.DownloadAsync` wrote the cache **before** parsing it, so an error page or a truncated
+  body could have become the cached manifest.
+
+### What shipped
+
+- **Containment** (`src/Shared/PathResolver.cs`, new `src/Shared/RealPath.cs`): strict refusal of
+  non-absolute and `..`-containing templates, canonicalisation before the root check, and per-segment
+  link resolution with containment under link-resolved roots — at the one choke point every caller
+  funnels through (the Wine case-insensitive and `<storeUserId>` branches included). Refusal is "no
+  existing save directory"; user-mapped paths are untouched and `SavePathGuard` stays their floor.
+- **Refresh engine** (`ManifestLoader`, `Detection`, `AgentConfig`): 64 MB cap, parse + 5,000-game
+  plausibility floor, temp-file cache swap (a failed or implausible download never replaces a good
+  cache); `RefreshManifestIfDueAsync` refreshes past the window (default 3 days, `0` = never), keeps
+  the old copy on failure, 1 h/30 s attempt gaps, never throws; `CommandPoller` calls it on both hosts.
+- **Console control**: audited admin routes `POST /api/settings/manifest` (0–365, 400 otherwise) and
+  `POST /api/settings/manifest/refresh`; the window + requested-at ride the heartbeat
+  (`AgentHeartbeatResponse`, append-only) and `ServerSettingsDto`; Configuration → Defaults &
+  maintenance has the **Manifest refresh** row (window select + **Refresh now**, "Last requested … ago").
+- Tests: `ManifestPathConstraintTests` 11, `ManifestRefreshTests` 8 (an `HttpListener` stub), hardening
+  section 5 (37/37 Windows, +4) with a real junction escape, agent-suite hostile entry (+2), every
+  fixture config opting out (`ManifestRefreshDays: 0`); `openapi.json` + `web/src/api-types.ts`
+  regenerated, additions only.
+
+### Verification
+
+- xunit **571/571**; `run-hardening-tests` **37/37** on Windows; `run-agent-tests` **49/49** against a
+  fresh scratch server; live wire check (`POST` window → `GET /api/settings` → heartbeat carries both
+  fields; `9999` → 400); Server/Agent/`Agent.Linux` builds clean; `web` build + lint clean.
+- **Mutation-checked:** removing the guards flips 4 + 3 unit checks; a live mutation pass through the
+  real agent makes both new hardening checks FAIL against the pre-fix resolver. That pass caught a
+  vacuous fixture of my own (the traversal target sat one directory above where the `..`s actually
+  land) — fixed and re-proven.
+
+### Not verified
+
+`run-linux-tests` (WSL) and `run-winagent-tests` (interactive desktop) were not run; the console card
+was not eyeballed in a browser (it type-checks/builds; the wire was checked live); console button →
+live-daemon download is covered by unit tests + poller wiring, not a live daemon.
+
+Full write-up: `logs/2026-10-14_manifest-path-constraints.md`; decisions in `Decisions.md` (*The
+manifest is a live feed…*, *Manifest-expanded paths are constrained…*); task moved to
+`tasks/_done/manifest-path-constraints/`.

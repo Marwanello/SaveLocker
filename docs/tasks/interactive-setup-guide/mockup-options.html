@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interactive setup guide — 3 options (console + agent UI)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* ============================================================================
+   Three walkthrough options for the interactive setup guide, on one shared
+   state machine so they can be compared at the same step:
+     Option 2 · Wizard   — a console modal, one step at a time
+     Option 3 · Handoff  — console and agent UI side by side, action where it happens
+     Option 4 · Tour     — coach marks over the real pages, both surfaces
+   Tokens and component looks are copied from web/src/index.css and
+   agent-ui/{tokens,ui}.css; not shipped code.
+   ========================================================================== */
+:root{
+  color-scheme:dark;
+  --ink:#0f0f10; --panel:#141416; --raise:#191a1c; --tile:#1b1c1f; --hover:#202124;
+  --fg:#f0eee9; --dim:#a09d97; --faint:#817e78; --line:#242427; --row:#1d1d20;
+  --safe:#7fa96a; --watch:#d9a63f; --info:#7b9fd0; --accent:#e0533c; --on-accent:#160f0e;
+  --accent-soft:color-mix(in oklab,var(--accent) 14%,var(--panel));
+  --accent-line:color-mix(in oklab,var(--accent) 42%,var(--panel));
+  --accent-ink:color-mix(in oklab,var(--accent) 80%,var(--fg));
+  --safe-soft:color-mix(in oklab,var(--safe) 14%,var(--panel));
+  --safe-line:color-mix(in oklab,var(--safe) 40%,var(--panel));
+  --safe-ink:color-mix(in oklab,var(--safe) 82%,var(--fg));
+  --watch-soft:color-mix(in oklab,var(--watch) 14%,var(--panel));
+  --watch-line:color-mix(in oklab,var(--watch) 40%,var(--panel));
+  --watch-ink:color-mix(in oklab,var(--watch) 82%,var(--fg));
+  --sans:'Archivo',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+  --ease:cubic-bezier(.2,.8,.25,1);
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --ink:#f5f3ef; --panel:#fffefc; --raise:#f0ede8; --tile:#ebe7e0; --hover:#e8e3dc;
+  --fg:#191719; --dim:#57534d; --faint:#79756f; --line:#e2ddd5; --row:#eeeae3;
+  --safe:#4c7b3e; --watch:#8a6212; --info:#3d6aa8; --accent:#c0432c; --on-accent:#fff8f6;
+}
+@media (prefers-color-scheme:light){ :root:not([data-theme]){
+  color-scheme:light;
+  --ink:#f5f3ef; --panel:#fffefc; --raise:#f0ede8; --tile:#ebe7e0; --hover:#e8e3dc;
+  --fg:#191719; --dim:#57534d; --faint:#79756f; --line:#e2ddd5; --row:#eeeae3;
+  --safe:#4c7b3e; --watch:#8a6212; --info:#3d6aa8; --accent:#c0432c; --on-accent:#fff8f6;
+}}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--ink);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+::-webkit-scrollbar{width:5px;height:5px} ::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.muted{color:var(--dim);font-size:12px}
+/* ---- mock bar -------------------------------------------------------------- */
+.mockbar{position:sticky;top:0;z-index:70;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;background:var(--raise);border-bottom:1px solid var(--line);font-size:12px;color:var(--dim)}
+.mockbar b{color:var(--fg);font-weight:600}
+.mockbar .spacer{flex:1}
+.mockbar .hint{font-size:11px;color:var(--faint)}
+.mockbar .demo button{font-size:11.5px;padding:4px 10px;border-radius:99px;border:1px dashed var(--line);color:var(--dim);margin-right:4px}
+.mockbar .demo button:hover{border-style:solid;border-color:var(--accent-line);color:var(--fg)}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:2px;gap:2px}
+.seg button{font-size:11.5px;font-weight:600;padding:4px 11px;border-radius:99px;color:var(--dim)}
+.seg button.is-on{background:var(--tile);color:var(--fg)}
+/* ---- console components (web/) --------------------------------------------- */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);background:var(--raise);color:var(--dim);white-space:nowrap}
+.chip.ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.chip.warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.chip.crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;flex:none}
+.dot.ok{background:var(--safe)} .dot.warn{background:var(--watch)} .dot.crit{background:var(--accent)} .dot.live{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-weight:500;font-size:13px;padding:8px 15px;border-radius:99px;border:1px solid var(--line);background:var(--raise);color:var(--fg);white-space:nowrap;transition:background-color .15s var(--ease),transform .15s var(--ease),filter .15s var(--ease)}
+.btn:hover{background:var(--hover);transform:translateY(-1px)}
+.btn:active{transform:scale(.96)}
+.btn:disabled{opacity:.5;cursor:default;transform:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--dim)}
+.btn.quiet:hover{background:var(--hover);color:var(--fg)}
+.btn.sm{padding:5px 11px;font-size:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}
+.card>header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line)}
+.card>header h3{font-size:14px;font-weight:600;letter-spacing:-.02em}
+.card .pad{padding:15px 16px}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px 18px;font-size:12.5px;align-items:center}
+.kv dt{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.kv dd{min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.path{display:inline-block;max-width:100%;font-family:var(--mono);font-size:11px;background:var(--tile);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.banner{display:flex;align-items:center;gap:13px;padding:13px 16px;border-radius:14px;border:1px solid var(--accent-line);background:var(--accent-soft);flex-wrap:wrap}
+.banner.warn{border-color:var(--watch-line);background:var(--watch-soft)}
+.banner.safe{border-color:var(--safe-line);background:var(--safe-soft)}
+.banner .body{flex:1;min-width:220px}
+.banner .ttl{font-size:13.5px;font-weight:600;color:var(--accent-ink)}
+.banner.warn .ttl{color:var(--watch-ink)} .banner.safe .ttl{color:var(--safe-ink)}
+.banner .txt{font-size:12px;color:var(--dim);margin-top:3px}
+.banner .acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.topbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 18px;min-height:56px;background:var(--panel);border-bottom:1px solid var(--line);flex:none}
+.brand{display:inline-flex;align-items:center;gap:9px;font-size:17px;font-weight:700;letter-spacing:-.03em}
+.brand .accent{color:var(--accent)}
+.verpill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);background:var(--raise);font-size:10.5px;font-family:var(--mono);color:var(--dim)}
+.tabs{display:flex;flex-wrap:wrap;gap:3px}
+.tab{font-size:13px;padding:7px 13px;border-radius:99px;border:1px solid transparent;color:var(--dim);font-weight:500}
+.tab.is-current{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink);font-weight:600}
+.topright{margin-left:auto;display:flex;align-items:center;gap:9px}
+.page{flex:1;min-height:0;overflow:auto;padding:20px 22px 26px}
+.pagehead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.pagehead h1{font-size:24px;font-weight:700;letter-spacing:-.035em}
+.pagehead .sub{margin-top:5px;font-size:11.5px;color:var(--dim)}
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+@media (max-width:900px){.cols{grid-template-columns:1fr}}
+.dt{width:100%;border-collapse:collapse}
+.dt th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:left;padding:8px 14px;border-bottom:1px solid var(--line);font-weight:500}
+.dt td{padding:9px 14px;font-size:12.5px;color:var(--dim);border-bottom:1px solid var(--row)}
+.dt tr:last-child td{border-bottom:none}
+.dt td.k{color:var(--fg);font-weight:600}
+.empty{padding:32px 18px;text-align:center;color:var(--dim);font-size:12.5px}
+.empty b{display:block;color:var(--fg);font-size:14.5px;font-weight:600;margin-bottom:6px}
+.rowline{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px}
+.waitline{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--dim)}
+.codebox{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+.codebox code{font-family:var(--mono);font-size:12px;background:var(--tile);border:1px solid var(--line);border-radius:8px;padding:8px 11px;color:var(--fg)}
+/* console shell / device frames */
+.console-shell{height:calc(100vh - 132px);min-height:520px;display:flex;flex-direction:column;background:var(--ink);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+/* ---- modal (wizard) --------------------------------------------------------- */
+.backdrop{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.45);backdrop-filter:blur(2px)}
+.modal{width:100%;max-width:560px;max-height:calc(100vh - 80px);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 24px 60px -20px rgba(0,0,0,.6);animation:rise .22s var(--ease)}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.modal__head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.modal__head h2{font-size:16px;font-weight:700;letter-spacing:-.03em;flex:1}
+.modal__body{padding:16px 18px;overflow:auto;font-size:12.5px;color:var(--dim);display:flex;flex-direction:column;gap:10px}
+.modal__body b{color:var(--fg);font-weight:600}
+.modal__foot{display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid var(--line)}
+.modal__foot .grow{flex:1;font-size:11.5px;color:var(--faint)}
+/* ---- handoff ---------------------------------------------------------------- */
+.stepper{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.step-chip{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;padding:5px 12px;border-radius:99px;border:1px solid var(--line);background:var(--panel);color:var(--dim)}
+.step-chip.ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.step-chip.now{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+.step-chip .n{display:grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--tile);font-family:var(--mono);font-size:9.5px}
+.frames{display:grid;grid-template-columns:minmax(0,1fr) 44px minmax(0,1fr);gap:12px;align-items:stretch}
+@media (max-width:1100px){.frames{grid-template-columns:1fr}.handoff-arrow{display:none}}
+.device{display:flex;flex-direction:column;min-width:0;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--ink);height:calc(100vh - 190px);min-height:460px;opacity:.45;filter:saturate(.4);transition:opacity .2s var(--ease),filter .2s var(--ease)}
+.device--active{opacity:1;filter:none;border-color:var(--accent-line)}
+.device__label{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);font-size:11px;color:var(--dim);flex:none}
+.device__body{flex:1;min-height:0;display:flex;flex-direction:column}
+.handoff-arrow{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--faint);font-size:10px;text-align:center}
+/* ---- tour ------------------------------------------------------------------- */
+.tour-pop{position:fixed;z-index:45;width:330px;max-width:92vw;background:var(--panel);border:1px solid var(--accent-line);border-radius:14px;padding:13px 15px;box-shadow:0 18px 44px -18px rgba(0,0,0,.65);display:flex;flex-direction:column;gap:8px;animation:rise .18s var(--ease)}
+.tour-pop .t{font-size:13.5px;font-weight:600}
+.tour-pop .b{font-size:12px;color:var(--dim);line-height:1.5}
+.tour-pop .s{font-size:11.5px}
+.tour-pop .acts{display:flex;gap:8px;justify-content:flex-end}
+.spotlight{position:fixed;z-index:40;pointer-events:none;border-radius:12px;box-shadow:0 0 0 9999px rgba(8,8,10,.62);outline:2px solid var(--accent);outline-offset:2px;transition:all .18s var(--ease)}
+/* ---- agent-ui components (agent-ui/) --------------------------------------- */
+.sl-app{height:100%;display:flex;flex-direction:column;background:var(--ink);font-family:var(--sans);min-height:0}
+.sl-topbar{display:flex;align-items:center;gap:12px;flex:none;height:48px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+.sl-brand{display:flex;align-items:center;gap:9px;min-width:0}
+.sl-brand__name{font-size:14px;font-weight:700;letter-spacing:-.03em;line-height:1.15}
+.sl-brand__sub{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.sl-topbar__tools{margin-left:auto;display:flex;align-items:center;gap:8px}
+.sl-hero{display:flex;align-items:center;gap:12px;flex:none;padding:11px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.sl-hero__badge{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;flex:none;background:var(--raise);border:1px solid var(--line);color:var(--dim)}
+.sl-hero__badge--ok{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.sl-hero__main{flex:1;min-width:0}
+.sl-hero__title{font-size:15.5px;font-weight:700;letter-spacing:-.03em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sl-hero__detail{font-size:11px;color:var(--dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sl-hero__right{margin-left:auto;display:flex;align-items:center;gap:8px;flex:none}
+.sl-body{flex:1;min-height:0;display:flex}
+.sl-aside{width:172px;flex:none;display:flex;flex-direction:column;gap:3px;padding:12px 9px;background:var(--panel);border-right:1px solid var(--line)}
+.sl-nav{display:flex;align-items:center;gap:9px;width:100%;text-align:left;font-size:12.5px;padding:8px 11px;border-radius:10px;border:1px solid transparent;color:var(--dim)}
+.sl-nav.is-current{background:var(--tile);border-color:var(--line);color:var(--fg);font-weight:600}
+.sl-count{margin-left:auto;font-size:10px;font-weight:700;line-height:1.4;padding:1px 7px;border-radius:99px;background:var(--accent);color:var(--on-accent)}
+.sl-aside__foot{margin-top:auto;padding:9px 11px 0;border-top:1px solid var(--line);font-size:10px;line-height:1.6;color:var(--dim);overflow-wrap:anywhere}
+.sl-aside__foot b{display:block;color:var(--fg);font-weight:600}
+.sl-content{flex:1;min-width:0;position:relative;overflow:hidden;background:var(--ink)}
+.sl-page{position:absolute;inset:0;overflow:auto;padding:16px 18px 20px;display:flex;flex-direction:column;gap:12px}
+.sl-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.sl-card>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 15px;border-bottom:1px solid var(--line)}
+.sl-card>header h3{font-size:13px;font-weight:600;letter-spacing:-.02em}
+.sl-card__body{padding:14px 15px}
+.sl-btn{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;padding:7px 14px;border-radius:99px;border:1px solid var(--line);background:var(--raise);color:var(--fg);white-space:nowrap}
+.sl-btn:hover{background:var(--hover)}
+.sl-btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.sl-btn--sm{padding:4px 10px;font-size:11.5px}
+.sl-btn--quiet{background:transparent;border-color:transparent;color:var(--dim)}
+.sl-chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);color:var(--dim);background:var(--raise);white-space:nowrap}
+.sl-chip--ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.sl-chip--warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.sl-chip--crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.sl-pagehead h2{font-size:19px;font-weight:700;letter-spacing:-.03em}
+.sl-pagehead p{font-size:11.5px;color:var(--dim);margin-top:4px}
+.sl-inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sl-stack{display:flex;flex-direction:column;gap:10px}
+.sl-path{font-family:var(--mono);font-size:11px;color:var(--dim);overflow-wrap:anywhere}
+.sl-check-row{display:flex;align-items:flex-start;gap:11px;padding:10px 15px;border-bottom:1px solid var(--row)}
+.sl-check-row:last-child{border-bottom:0}
+.sl-check-row.is-checked{background:var(--tile)}
+.sl-cbx{width:16px;height:16px;border-radius:5px;border:1px solid var(--line);background:var(--tile);display:grid;place-items:center;color:transparent;flex:none;margin-top:2px}
+.sl-check-row.is-checked .sl-cbx{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.sl-check-row__main{flex:1;min-width:0}
+.sl-check-row__name{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12.5px;font-weight:600}
+.sl-check-row__note{font-size:11.5px;color:var(--safe-ink)}
+.sl-status{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;border-radius:6px;background:var(--tile);color:var(--fg)}
+.sl-footbar{position:sticky;bottom:0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:11px 14px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+.sl-footbar__txt{font-size:12px;color:var(--dim)}
+.sl-toast{position:fixed;right:18px;bottom:18px;z-index:60;max-width:min(420px,calc(100vw - 36px));background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 15px;font-size:12.5px;box-shadow:0 10px 30px -12px rgba(0,0,0,.6);animation:toastin .3s var(--ease)}
+@keyframes toastin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <b>Mockups</b>
+  <span>interactive setup guide — 3 options (option 1 is the existing <span style="font-family:var(--mono)">mockup.html</span>)</span>
+  <span class="seg" id="optseg" role="group" aria-label="Option">
+    <button data-act="opt:wizard">2 · Wizard</button>
+    <button data-act="opt:handoff">3 · Handoff</button>
+    <button data-act="opt:tour">4 · Guided tour</button>
+  </span>
+  <span class="seg" id="themeseg" role="group" aria-label="Theme">
+    <button data-act="theme:system">System</button>
+    <button data-act="theme:dark">Dark</button>
+    <button data-act="theme:light">Light</button>
+  </span>
+  <span class="spacer"></span>
+  <span class="demo">
+    <button data-act="demo:enroll">Simulate: agent connects</button>
+    <button data-act="demo:push">Simulate: first push</button>
+    <button data-act="demo:deck">Add a Steam Deck</button>
+    <button data-act="reset">Reset</button>
+  </span>
+</div>
+<div id="stage"></div>
+<div id="toasts"></div>
+
+<script>
+/* ---- icons (lucide geometry, inlined) -------------------------------------- */
+const ICONS = {
+  check:[['path',{d:'M20 6 9 17l-5-5'}]],
+  'chevron-right':[['path',{d:'m9 18 6-6-6-6'}]],
+  'refresh-cw':[['path',{d:'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8'}],['path',{d:'M21 3v5h-5'}],['path',{d:'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16'}],['path',{d:'M8 16H3v5'}]],
+  plus:[['path',{d:'M5 12h14'}],['path',{d:'M12 5v14'}]],
+  file:[['path',{d:'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'}],['path',{d:'M14 2v4a2 2 0 0 0 2 2h4'}]],
+  x:[['path',{d:'M18 6 6 18'}],['path',{d:'m6 6 12 12'}]],
+  monitor:[['rect',{width:'20',height:'14',x:'2',y:'3',rx:'2'}],['line',{x1:'8',x2:'16',y1:'21',y2:'21'}],['line',{x1:'12',x2:'12',y1:'17',y2:'21'}]],
+  'gamepad-2':[['line',{x1:'6',x2:'10',y1:'11',y2:'11'}],['line',{x1:'8',x2:'8',y1:'9',y2:'13'}],['line',{x1:'15',x2:'15.01',y1:'12',y2:'12'}],['line',{x1:'18',x2:'18.01',y1:'10',y2:'10'}],['path',{d:'M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z'}]],
+  copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
+  'folder-search':[['path',{d:'M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1'}],['path',{d:'m21 21-1.9-1.9'}],['circle',{cx:'17',cy:'17',r:'3'}]],
+  'search-check':[['path',{d:'m8 11 2 2 4-4'}],['circle',{cx:'11',cy:'11',r:'8'}],['path',{d:'m21 21-4.3-4.3'}]],
+};
+function icon(name,size=14,sw=2){
+  const n=ICONS[name]||ICONS.check;
+  const inner=n.map(([t,a])=>'<'+t+' '+Object.entries(a).map(([k,v])=>k+'="'+v+'"').join(' ')+'/>').join('');
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+sw+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0">'+inner+'</svg>';
+}
+function markSvg(size){
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 32 32" role="img" aria-label="SaveLocker" style="flex-shrink:0">'
+   +'<rect x="12" y="3" width="8" height="4" fill="var(--accent)"/><rect x="8" y="7" width="4" height="5" fill="var(--accent)"/>'
+   +'<rect x="20" y="7" width="4" height="5" fill="var(--accent)"/><rect x="5" y="12" width="22" height="16" fill="var(--accent)"/>'
+   +'<rect x="14" y="16" width="4" height="4" fill="var(--on-accent)"/><rect x="15" y="20" width="2" height="5" fill="var(--on-accent)"/></svg>';
+}
+
+/* ---- shared state ----------------------------------------------------------- */
+const INIT = { option:'wizard', theme:'system', enrollment:'none', machines:[], games:[], latest:null, deckDone:false, selected:true, wizardAt:null, dismissed:false };
+let S = clone(INIT);
+function clone(o){return JSON.parse(JSON.stringify(o))}
+const ENROLL_FILE='savelocker-enroll-livingroompc.json';
+const LAUNCH_CMD='savelocker run -- %command%';
+const PC ={name:'LivingRoomPC', os:'Windows 11', platform:'Windows 11 (build 26100)', agent:'v0.7.1'};
+const DK ={name:'SteamDeck', os:'SteamOS', platform:'SteamOS 3.7 · Steam Deck', agent:'v0.7.1'};
+const gameName = () => 'Cyberpunk 2077';
+const saveFolder = 'C:\\Users\\maro\\AppData\\Local\\CD Projekt Red\\Cyberpunk 2077\\Saves';
+
+function steps(){
+  const list=[
+    {id:1,title:'Create an enrollment file', done:S.enrollment!=='none'},
+    {id:2,title:'Get the agent on a machine', done:S.machines.length>0},
+    {id:3,title:'Add your first game', done:S.games.length>0},
+    {id:4,title:'Confirm the first save landed', done:!!S.latest},
+  ];
+  if(S.machines.some(m=>m.os==='SteamOS')) list.push({id:5,title:"Set the Deck's launch options", done:S.deckDone, optional:true});
+  return list;
+}
+const currentId = () => (steps().find(s=>!s.done)||{}).id ?? null;
+const allDone = () => currentId()===null;
+
+/* ---- console pieces --------------------------------------------------------- */
+function consoleTopbar(tab){
+  return '<div class="topbar"><span class="brand">'+markSvg(26)+'<span>Save<span class="accent">Locker</span></span></span>'
+   +'<span class="verpill">v0.7.1 · dev</span>'
+   +'<nav class="tabs">'+['Games','Configuration','Audit log','Backups','Help'].map(t=>'<span class="tab'+(t===tab?' is-current':'')+'">'+t+'</span>').join('')+'</nav>'
+   +'<div class="topright"><span class="chip ok">Connected as admin</span></div></div>';
+}
+function consoleShell(page, tab){
+  return '<div class="console-shell">'+consoleTopbar(tab||'Configuration')+'<div class="page">'+page+'</div></div>';
+}
+function enrollCard(){
+  let body;
+  if(S.enrollment==='none'){
+    body='<p class="muted">A one-time file the agent reads on its first run to get its key. It downloads once and cannot be shown again.</p>'
+     +'<div class="rowline"><button class="btn primary" id="tour-enroll-btn" data-act="mint">'+icon('file',13)+'Create enrollment file</button>'
+     +'<span class="muted">Expires in 30 minutes.</span></div>';
+  } else if(S.enrollment==='waiting'){
+    body='<dl class="kv"><dt>File</dt><dd><span class="path">'+ENROLL_FILE+'</span></dd>'
+     +'<dt>State</dt><dd><span class="chip warn"><span class="dot warn live"></span>Valid · 29m left</span></dd></dl>'
+     +'<p class="waitline"><span class="dot warn live"></span>Waiting for a machine to connect — this advances by itself. <span class="muted">(Demo: “Simulate: agent connects”.)</span></p>';
+  } else {
+    body='<dl class="kv"><dt>File</dt><dd><span class="path">'+ENROLL_FILE+'</span></dd>'
+     +'<dt>Enrolled</dt><dd>'+S.machines[0].name+' · just now <span class="chip ok">'+icon('check',11,2.4)+'Used</span></dd></dl>';
+  }
+  return '<section class="card"><header><h3>Enroll a machine</h3></header><div class="pad">'+body+'</div></section>';
+}
+function machinesCard(){
+  const rows = S.machines.map(m=>'<tr><td class="k">'+(m.os==='SteamOS'?icon('gamepad-2',14):icon('monitor',14))+' '+m.name+'</td><td>'+m.platform+'</td><td><span class="chip ok">Online</span></td></tr>').join('');
+  const body = S.machines.length
+    ? '<table class="dt"><thead><tr><th>Machine</th><th>Platform</th><th>Last seen</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    : '<div class="empty">No machines yet. Create an enrollment file and run it on a machine.</div>';
+  return '<section class="card" id="tour-machines"><header><h3>Machines</h3></header>'+body+'</section>';
+}
+function cfgPage(){
+  return '<div class="pagehead"><div><h1>Configuration</h1><div class="sub">server settings · appearance · enrollment · storage</div></div></div>'
+   +'<div class="cols">'+enrollCard()+machinesCard()+'</div>';
+}
+function gamesPage(){
+  const body = S.games.length
+    ? '<div class="cols"><section class="card" id="tour-final"><header><h3>'+gameName()+' <span class="chip">Steam</span>'+(S.latest?' <span class="chip ok">'+icon('check',11,2.4)+'Synced</span>':'')+'</h3></header><div class="pad">'
+      +'<dl class="kv"><dt>Folder</dt><dd><span class="path">'+saveFolder+'</span></dd>'
+      +'<dt>Latest</dt><dd>'+(S.latest?'v1 · '+S.latest.size+' · '+S.latest.files+' files · '+S.latest.ago:'waiting for the first upload')+'</dd></dl></div></section>'
+      +machinesCard()+'</div>'
+    : '<div class="cols"><section class="card"><div class="empty"><b>No games yet</b>Once the setup guide adds one, it shows up here with its versions and save folders.</div></section>'+machinesCard()+'</div>';
+  return '<div class="pagehead"><div><h1>Games</h1><div class="sub">'+(S.games.length?'1 game tracked · art from SteamGridDB':'0 games tracked')+'</div></div></div>'+body;
+}
+
+/* ---- agent-ui pieces --------------------------------------------------------- */
+function agentShell(nav, page, pageId){
+  const connected = S.enrollment==='used' && S.machines.length>0;
+  return '<div class="sl-app">'
+   +'<div class="sl-topbar"><div class="sl-brand">'+markSvg(24)+'<div><div class="sl-brand__name">SaveLocker</div><div class="sl-brand__sub">Agent · LivingRoomPC</div></div></div>'
+   +'<div class="sl-topbar__tools">'+(connected?'<span class="sl-chip sl-chip--ok">Connected</span>':'<span class="sl-chip sl-chip--crit">Not connected</span>')+'</div></div>'
+   +'<div class="sl-hero"><span class="sl-hero__badge'+(connected?' sl-hero__badge--ok':'')+'">'+(connected?icon('check',18,1.9):icon('x',16,2))+'</span>'
+   +'<div class="sl-hero__main"><div class="sl-hero__title">'+(connected?'Idle — nothing syncing right now.':'Not connected to a server')+'</div>'
+   +'<div class="sl-hero__detail">'+(connected?'LivingRoomPC · last push 12m ago · settle 10s':'Enroll this machine to start syncing.')+'</div></div>'
+   +'<div class="sl-hero__right">'+(connected?'<span class="sl-chip sl-chip--ok">All clear</span><button class="sl-btn sl-btn--primary">'+icon('refresh-cw',13)+' Sync all</button>':'')+'</div></div>'
+   +'<div class="sl-body"><aside class="sl-aside"><nav aria-label="Sections" style="display:flex;flex-direction:column;gap:3px">'
+   +['Overview','Games','Add Games','Conflicts','Activity','Settings'].map(x=>'<span class="sl-nav'+(x===nav?' is-current':'')+'"'+(x==='Add Games'?' id="tour-agent-add"':'') +'><span>'+x+'</span>'+(x==='Add Games'&&!S.games.length?'<span class="sl-count">5</span>':'')+'</span>').join('')
+   +'</nav><div class="sl-aside__foot"><b>LivingRoomPC</b><span>localhost:5080</span><span style="display:block">agent v0.7.1</span></div></aside>'
+   +'<main class="sl-content"><div class="sl-page"'+(pageId?' id="'+pageId+'"':'')+'>'+page+'</div></main></div></div>';
+}
+function agentJoinPage(){
+  return '<div class="sl-pagehead"><h2>Join your server</h2><p>Install the agent (done), then point it at the enrollment file from the console.</p></div>'
+   +'<section class="sl-card"><header><h3>Enrollment file</h3></header><div class="sl-card__body sl-stack">'
+   +'<span class="sl-path">'+ENROLL_FILE+'</span>'
+   +'<div class="sl-inline"><button class="sl-btn sl-btn--primary" data-act="demo:enroll">'+icon('check',13)+'Enroll this machine</button>'
+   +'<span class="muted">(Demo: uses the file the console just minted.)</span></div></div></section>';
+}
+function agentOverviewPage(){
+  return '<div class="sl-pagehead"><h2>Overview</h2><p>LivingRoomPC is syncing with your server.</p></div>'
+   +'<div class="banner safe"><span class="dot ok"></span><div class="body"><div class="ttl">Connected.</div>'
+   +'<div class="txt">Next: add your first game in <b>Add Games</b> — SaveLocker finds its save folder.</div></div></div>';
+}
+function agentAddPage(){
+  const added=S.games.length>0;
+  return '<div class="sl-pagehead"><h2>Add games</h2><p>6 found on this machine · 5 suggested</p></div>'
+   +'<section class="sl-card">'
+   +'<label class="sl-check-row'+(added?' is-checked':'')+'"><span class="sl-cbx">'+icon('check',11,3)+'</span>'
+   +'<div class="sl-check-row__main"><div class="sl-check-row__name"><span class="sl-status">'+icon('search-check',12,2.2)+'</span>'
+   +'<span>'+gameName()+'</span><span class="sl-chip">SteamInstalled</span></div>'
+   +'<div class="sl-inline" style="margin-top:4px"><span class="sl-path">'+saveFolder+'</span><button class="sl-btn sl-btn--sm sl-btn--quiet">Change</button></div>'
+   +'</div></label>'
+   +'</section>'
+   +'<div class="sl-footbar"><span class="sl-footbar__txt">'+(added?'Added '+gameName()+'. First sync starts when the game next exits.':'Tick the games you want to sync.')+'</span>'
+   +'<div class="sl-inline"><button class="sl-btn sl-btn--sm sl-btn--quiet">Clear</button>'
+   +'<button class="sl-btn sl-btn--primary" id="tour-agent-add-btn" data-act="add-game" '+(added?'disabled':'')+'>'+icon('plus',13)+(added?'Added':'Add 1 game')+'</button></div></div>';
+}
+function agentGamePage(){
+  const pushed=!!S.latest;
+  return '<div class="sl-pagehead"><h2>'+gameName()+'</h2><p>'+(pushed?'1 version · latest just now':'waiting for the first upload')+'</p></div>'
+   +'<section class="sl-card"><header><h3>Save folder</h3></header><div class="sl-card__body sl-stack">'
+   +'<span class="sl-path">'+saveFolder+'</span>'
+   +'<div class="sl-inline"><button class="sl-btn sl-btn--sm">Push</button><button class="sl-btn sl-btn--sm">Pull</button></div></div></section>'
+   +(pushed
+     ? '<div class="banner safe" id="tour-agent-push"><span class="dot ok"></span><div class="body"><div class="ttl">Version 1 is on the server.</div>'
+       +'<div class="txt">v1 · '+S.latest.size+' · '+S.latest.files+' files. Every other machine can pull it now.</div></div></div>'
+     : '<section class="sl-card" id="tour-agent-push"><div class="sl-card__body sl-stack">'
+       +'<p class="muted">The agent pushes when the game exits — or do it now:</p>'
+       +'<div class="sl-inline"><button class="sl-btn sl-btn--primary" data-act="push">'+icon('refresh-cw',13)+'Push now</button>'
+       +'<span class="muted">(Demo: “Simulate: first push”.)</span></div></div></section>');
+}
+function agentDeckPage(){
+  return '<div class="sl-pagehead"><h2>Steam launch options</h2><p>The one step Steam will not let the agent set.</p></div>'
+   +'<section class="sl-card" id="tour-deck"><div class="sl-card__body sl-stack">'
+   +'<p class="muted">Put this in the Deck shortcut’s <b>Launch Options</b> — it is the most-missed step in the whole setup.</p>'
+   +'<div class="sl-inline"><code style="font-family:var(--mono);font-size:12px;background:var(--tile);border:1px solid var(--line);border-radius:8px;padding:7px 10px">'+LAUNCH_CMD+'</code>'
+   +'<button class="sl-btn sl-btn--sm" data-act="copy">'+icon('copy',12,2.2)+'Copy</button></div>'
+   +'<div class="sl-inline"><button class="sl-btn sl-btn--sm '+(S.deckDone?'sl-btn--primary':'')+'" data-act="deck-done">'+(S.deckDone?icon('check',12,2.5)+'Set':"I’ve set it")+'</button>'
+   +'<span class="muted">SaveLocker cannot check this one yet.</span></div></div></section>';
+}
+
+/* ---- Option 2 · Wizard -------------------------------------------------------- */
+function wizardModal(){
+  const list=steps(); const cur=currentId();
+  const at=S.wizardAt ?? cur ?? list[list.length-1].id;
+  const idx=list.findIndex(s=>s.id===at);
+  const st=list[idx];
+  const done=st?st.done:true;
+  const body = st ? wstepBody(st.id) : '';
+  if(allDone() && S.wizardAt===null){
+    return '<div class="backdrop"><div class="modal"><div class="modal__head"><h2>Set up SaveLocker</h2><span class="chip ok">'+icon('check',11,2.4)+'Complete</span></div>'
+     +'<div class="modal__body"><div class="banner safe"><span class="dot ok"></span><div class="body"><div class="ttl">All set.</div>'
+     +'<div class="txt">'+S.machines.length+' machine'+(S.machines.length===1?'':'s')+' · '+S.games.length+' game'+(S.games.length===1?'':'s')+' syncing. Re-run any time from Help.</div></div>'
+     +'<div class="acts"><button class="btn" data-act="finish">Done</button></div></div></div></div></div>';
+  }
+  const back = idx>0;
+  const nextDisabled = !done;
+  return '<div class="backdrop"><div class="modal">'
+   +'<div class="modal__head"><h2>Set up SaveLocker</h2><span class="chip'+(done?' ok':'')+'">'+(done?icon('check',11,2.4)+'Done ':'')+'Step '+(idx+1)+' of '+list.length+'</span>'
+   +'<button class="btn sm quiet" data-act="later">Decide later</button></div>'
+   +'<div class="modal__body">'+body+'</div>'
+   +'<div class="modal__foot"><span class="grow">'+(done?'Checked automatically.':st&&st.id>=3?'Waiting on the agent — this advances by itself.':'')+'</span>'
+   +(back?'<button class="btn sm" data-act="wizard-back">Back</button>':'')
+   +(st&&st.optional?'<button class="btn sm quiet" data-act="deck-done">Skip</button>':'')
+   +'<button class="btn primary" data-act="wizard-next" '+(nextDisabled?'disabled':'')+'>'+(done?(S.wizardAt!==null?'Next':'Next'):'Waiting…')+'</button>'
+   +'</div></div></div>';
+}
+function wstepBody(id){
+  if(id===1){
+    if(S.enrollment==='none') return '<p><b>Create the one-time file</b> the agent reads to get its key.</p>'
+      +'<div class="rowline"><button class="btn primary" data-act="mint">'+icon('file',13)+'Create enrollment file</button><span class="muted">Expires in 30 minutes.</span></div>';
+    if(S.enrollment==='waiting') return '<dl class="kv"><dt>File</dt><dd><span class="path">'+ENROLL_FILE+'</span></dd><dt>State</dt><dd><span class="chip warn"><span class="dot warn live"></span>Valid · 29m left</span></dd></dl>'
+      +'<p class="waitline"><span class="dot warn live"></span>Downloaded. Keep going — the file already has its key.</p>';
+    return '<dl class="kv"><dt>File</dt><dd><span class="path">'+ENROLL_FILE+'</span></dd><dt>Enrolled</dt><dd>'+S.machines[0].name+' · just now <span class="chip ok">Used</span></dd></dl>';
+  }
+  if(id===2){
+    if(!S.machines.length) return '<p><b>Install the agent</b> on the PC you want to sync, then hand it the file.</p>'
+      +'<p class="muted">On the machine: run the installer, open Setup, choose the enrollment file. The agent registers itself and starts watching saves.</p>'
+      +'<p class="waitline"><span class="dot warn live"></span>Waiting for a machine to connect… <span class="muted">(Demo: “Simulate: agent connects”.)</span></p>';
+    const m=S.machines[0];
+    return '<dl class="kv"><dt>Machine</dt><dd>'+icon(m.os==='SteamOS'?'gamepad-2':'monitor',14)+' '+m.name+'</dd>'
+      +'<dt>Platform</dt><dd>'+m.platform+'</dd><dt>Agent</dt><dd>'+m.agent+' <span class="chip ok">Online</span></dd></dl>'
+      +'<p class="muted">Connected. The Machines list on the console behind this window shows the same row.</p>';
+  }
+  if(id===3){
+    if(!S.games.length) return '<p><b>Add your first game in the agent</b> — the console cannot see this PC’s folders, the agent can.</p>'
+      +'<section class="sl-card" style="max-width:460px"><label class="sl-check-row is-checked"><span class="sl-cbx">'+icon('check',11,3)+'</span>'
+      +'<div class="sl-check-row__main"><div class="sl-check-row__name"><span class="sl-status">'+icon('search-check',12,2.2)+'</span><span>'+gameName()+'</span><span class="sl-chip">SteamInstalled</span></div>'
+      +'<div class="sl-inline" style="margin-top:4px"><span class="sl-path">'+saveFolder+'</span></div></div></label>'
+      +'<div class="sl-card__body"><button class="sl-btn sl-btn--primary" data-act="add-game">'+icon('plus',13)+'Add 1 game</button>'
+      +'<span class="muted" style="margin-left:8px">This is the agent’s Add games row.</span></div></section>';
+    return '<dl class="kv"><dt>Game</dt><dd>'+gameName()+' <span class="chip ok">Tracked</span></dd><dt>Folder</dt><dd><span class="path">'+saveFolder+'</span></dd></dl>'
+      +'<p class="muted">Added. The Games page behind this window now lists it.</p>';
+  }
+  if(id===4){
+    if(!S.latest) return '<p><b>The first upload.</b> The agent pushes when the game exits — or press “Push now” in the agent.</p>'
+      +'<p class="waitline"><span class="dot warn live"></span>Waiting for the first version… <span class="muted">(Demo: “Simulate: first push”.)</span></p>'
+      +'<div class="rowline"><button class="btn sm" data-act="push">'+icon('refresh-cw',12,2.2)+'Push now</button></div>';
+    return '<dl class="kv"><dt>Latest</dt><dd>v1 · '+S.latest.size+' · '+S.latest.files+' files · '+S.latest.ago+' <span class="chip ok">Synced</span></dd></dl>'
+      +'<p class="muted">That version lives on the server now; every other machine can pull it.</p>';
+  }
+  return '<p><b>Set the Deck’s launch options</b> — Steam rewrites its own, so the agent cannot.</p>'
+   +'<div class="codebox"><code>'+LAUNCH_CMD+'</code><button class="btn sm" data-act="copy">'+icon('copy',12,2.2)+'Copy</button></div>'
+   +'<div class="rowline"><button class="btn sm '+(S.deckDone?'primary':'')+'" data-act="deck-done">'+(S.deckDone?icon('check',12,2.5)+'Set':"I’ve set it")+'</button>'
+   +'<span class="muted">SaveLocker cannot check this one yet — it is the most-missed step.</span></div>';
+}
+function optWizard(){
+  const cur=currentId();
+  const behind = (S.wizardAt ?? cur ?? 4) <=2 ? cfgPage() : gamesPage();
+  const tab = (S.wizardAt ?? cur ?? 4) <=2 ? 'Configuration' : 'Games';
+  return consoleShell(behind, tab)
+   + (S.dismissed
+      ? '<div style="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:50">'
+        +'<div class="banner warn" style="max-width:640px"><span class="dot warn"></span><div class="body"><div class="ttl">Setup paused.</div>'
+        +'<div class="txt">Resume any time — the guide checks live state, so it knows where you stopped.</div></div>'
+        +'<div class="acts"><button class="btn sm" data-act="resume">Resume setup</button></div></div></div>'
+      : wizardModal());
+}
+
+/* ---- Option 3 · Handoff -------------------------------------------------------- */
+function stepChips(){
+  const list=steps(); const cur=currentId();
+  return '<div class="stepper">'+list.map((s,i)=>{
+    const cls = s.done?'ok':(s.id===cur?'now':'');
+    return '<span class="step-chip '+cls+'"><span class="n">'+(s.done?icon('check',10,3):(i+1))+'</span>'+s.title+'</span>';
+  }).join('')+'</div>';
+}
+function device(label, active, inner, extra){
+  return '<div class="device'+(active?' device--active':'')+'"><div class="device__label">'+label
+   +(active?' <span class="chip crit" style="font-size:9.5px">You are here</span>':'')
+   +(extra||'')+'</div><div class="device__body">'+inner+'</div></div>';
+}
+function optHandoff(){
+  const cur=currentId();
+  const consoleIsActing = cur===1;
+  const consolePage = cur<=2 ? cfgPage() : gamesPage();
+  const consoleTab = cur<=2 ? 'Configuration' : 'Games';
+  let agentNav='Overview', agentPage=agentOverviewPage(), arrow='';
+  if(cur===1){ agentNav='Overview'; agentPage=agentJoinPage(); arrow='the file enrolls this machine'; }
+  else if(cur===2){ agentPage=agentOverviewPage(); arrow='add your first game here'; }
+  else if(cur===3){ agentNav='Add Games'; agentPage=agentAddPage(); arrow='the push happens here'; }
+  else if(cur===4){ agentNav='Games'; agentPage=agentGamePage(); arrow=''; }
+  else if(cur===5){ agentNav='Settings'; agentPage=agentDeckPage(); arrow=''; }
+  else { agentNav='Games'; agentPage=agentGamePage(); }
+  const done = allDone();
+  const missingFrom = cur===2 ? 'waiting for the agent…' : '';
+  return stepChips()
+   +'<div class="frames">'
+   + device('Console — your server', consoleIsActing && !S.dismissed, '<div class="page" style="padding:0">'+consolePage+'</div>', done?' <span class="chip ok">'+icon('check',11,2.4)+'Syncing</span>':'')
+   + '<div class="handoff-arrow">'+(arrow?icon('chevron-right',18,2)+'<span>'+arrow+'</span>':'<span>—</span>')+'</div>'
+   + device('Agent UI — LivingRoomPC', !consoleIsActing && !done, agentShell(agentNav, agentPage))
+   +'</div>'
+   + (done?'<div class="banner safe" style="margin-top:12px"><span class="dot ok"></span><div class="body"><div class="ttl">All set.</div>'
+        +'<div class="txt">'+S.machines.length+' machine'+(S.machines.length===1?'':'s')+' · '+S.games.length+' game syncing. Re-run from Help any time.</div></div></div>':'');
+
+}
+
+/* ---- Option 4 · Guided tour ----------------------------------------------------- */
+const TOUR=[
+  {id:1, sel:'#tour-enroll-btn', page:'cfg', nav:null, title:'Create the enrollment file',
+   body:'A one-time file the agent reads to get its key. Press the highlighted button — it downloads and can never be shown again.',
+   done:()=>S.enrollment!=='none'},
+  {id:2, sel:'#tour-machines', page:'cfg', nav:null, title:'Wait for the machine to connect',
+   body:'Install the agent there and point it at the file. The row appears on its own. (Demo: “Simulate: agent connects”.)',
+   done:()=>S.machines.length>0},
+  {id:3, sel:'#tour-agent-add-btn', page:'agent-add', nav:'Add Games', title:'Add your first game',
+   body:'In the agent UI: tick the game, then Add. SaveLocker finds its save folder and remembers it across machines.',
+   done:()=>S.games.length>0},
+  {id:4, sel:'#tour-agent-push', page:'agent-game', nav:'Games', title:'Confirm the first save landed',
+   body:'“Push now” uploads version 1. Every other machine can pull it from there on.',
+   done:()=>!!S.latest},
+  {id:5, sel:'#tour-deck', page:'agent-deck', nav:'Settings', title:"Set the Deck's launch options",
+   body:'Steam rewrites its own launch options, so this is the one step the agent cannot do. Copy the command into the shortcut.',
+   done:()=>S.deckDone, optional:true},
+];
+function tourStep(){
+  const cur=currentId();
+  if(cur===null) return null;
+  return TOUR.find(s=>s.id===cur && (s.id!==5 || S.machines.some(m=>m.os==='SteamOS')))||null;
+}
+function optTour(){
+  if(S.dismissed) return consoleShell(gamesPage(),'Games')
+    +'<div class="tour-pop" style="right:18px;bottom:18px;left:auto;top:auto"><div class="t">Tour skipped</div>'
+    +'<div class="b">Press Reset in the bar above to run the walkthrough again.</div></div>';
+  const st=tourStep();
+  if(!st){
+    return consoleShell(gamesPage(),'Games')
+     +'<div class="spotlight"></div>'
+     +tourPopHtml('All set','Every machine can now sync. The guide is re-runnable from Help → “Setting up SaveLocker”.',true,false);
+  }
+  if(st.page==='cfg') return consoleShell(cfgPage(),'Configuration')+'<div class="spotlight"></div>'+tourPopHtml(st.title,st.body,st.done(),!!st.optional);
+  const page = st.page==='agent-add'?agentAddPage():st.page==='agent-game'?agentGamePage():agentDeckPage();
+  return '<div style="height:calc(100vh - 132px);min-height:520px;border:1px solid var(--line);border-radius:14px;overflow:hidden">'
+   +agentShell(st.nav,page)+'</div>'+'<div class="spotlight"></div>'+tourPopHtml(st.title,st.body,st.done(),!!st.optional);
+}
+function tourPopHtml(title,body,done,optional){
+  return '<div class="tour-pop">'
+   +'<span class="chip'+(done?' ok':'')+'">'+((tourStep()?('Setup tour · step '+tourStep().id+' of '+steps().length):'Setup tour · complete'))+'</span>'
+   +'<div class="t">'+title+'</div><div class="b">'+body+'</div>'
+   +'<div class="s" style="color:'+(done?'var(--safe-ink)':'var(--faint)')+'">'+(done?icon('check',12,2.4)+' Checked live — advancing.':'Waiting on live state — the demo controls above drive it.')+'</div>'
+   +'<div class="acts">'+(optional?'<button class="btn sm quiet" data-act="deck-done">Skip this step</button>':'')
+   +'<button class="btn sm quiet" data-act="later">Skip tour</button></div></div>';
+}
+const TOUR_TARGETS={1:'#tour-enroll-btn',2:'#tour-machines',3:'#tour-agent-add-btn',4:'#tour-agent-push',5:'#tour-deck'};
+function placeSpotlight(){
+  const pop=document.querySelector('.tour-pop');
+  const spot=document.querySelector('.spotlight');
+  if(!pop||!spot) return;
+  const st=tourStep();
+  const sel=st?TOUR_TARGETS[st.id]:'#tour-final';
+  const el=sel?document.querySelector(sel):null;
+  if(!el){ spot.style.display='none'; return; }
+  spot.style.display='';
+  const r=el.getBoundingClientRect();
+  spot.style.left=(r.left-6)+'px'; spot.style.top=(r.top-6)+'px';
+  spot.style.width=(r.width+12)+'px'; spot.style.height=(r.height+12)+'px';
+  const below=r.bottom+pop.offsetHeight+30<window.innerHeight;
+  pop.style.left=Math.min(Math.max(14,r.left),window.innerWidth-352)+'px';
+  pop.style.top=(below? r.bottom+14 : Math.max(14,r.top-pop.offsetHeight-14))+'px';
+  pop.style.right='auto'; pop.style.bottom='auto';
+}
+
+/* ---- render + actions ------------------------------------------------------------ */
+const stage=document.getElementById('stage');
+const RENDER={wizard:optWizard, handoff:optHandoff, tour:optTour};
+function render(){
+  stage.innerHTML=RENDER[S.option]();
+  document.querySelectorAll('#optseg button').forEach(b=>b.classList.toggle('is-on',b.dataset.act==='opt:'+S.option));
+  document.querySelectorAll('#themeseg button').forEach(b=>b.classList.toggle('is-on',b.dataset.act==='theme:'+S.theme));
+  if(S.option==='tour') placeSpotlight();
+}
+function toast(msg){
+  const t=document.createElement('div'); t.className='sl-toast'; t.textContent=msg;
+  const box=document.getElementById('toasts'); box.appendChild(t);
+  while(box.children.length>3) box.removeChild(box.firstChild);
+  setTimeout(()=>{t.style.transition='opacity .25s';t.style.opacity='0';setTimeout(()=>t.remove(),260)},3000);
+}
+function applyTheme(){ if(S.theme==='system') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme',S.theme); }
+function autoAdvance(){ if(allDone()||!S.wizardAt) return; const cur=currentId(); if(S.wizardAt<cur||allDone()) S.wizardAt=null; }
+function mut(fn){ fn(); autoAdvance(); render(); }
+
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act]'); if(!el||el.disabled) return;
+  const act=el.dataset.act;
+  if(act==='mint') return mut(()=>{S.enrollment='waiting'})||toast('Enrollment file created — it cannot be shown again.');
+  if(act.startsWith('opt:')){ S.option=act.split(':')[1]; return render(); }
+  if(act.startsWith('theme:')){ S.theme=act.split(':')[1]; applyTheme(); return render(); }
+  if(act==='add-game'){ if(S.games.length) return; return mut(()=>{S.games=[{name:gameName()}]})||toast('Added '+gameName()+' — first sync starts when the game exits.'); }
+  if(act==='push'){ if(!S.games.length) return toast('Add a game first.'); if(S.latest) return; return mut(()=>{S.latest={size:'3.2 MB',files:8,ago:'just now'}})||toast('Pushed version 1 · 3.2 MB · 8 files'); }
+  if(act==='deck-done'){ return mut(()=>{S.deckDone=!S.deckDone})||(S.deckDone&&toast('Nice — that’s the step most people miss.')); }
+  if(act==='copy'){ try{navigator.clipboard.writeText(LAUNCH_CMD)}catch(_){} return toast('Copied the launch options.'); }
+  if(act==='later'){ return mut(()=>{S.dismissed=true}); }
+  if(act==='resume'){ return mut(()=>{S.dismissed=false}); }
+  if(act==='finish'){ return mut(()=>{S.dismissed=true}); }
+  if(act==='wizard-next'){
+    const cur=currentId();
+    if(S.wizardAt!==null && S.wizardAt<cur){ S.wizardAt=(S.wizardAt+1>=cur)?null:S.wizardAt+1; return render(); }
+    return render();
+  }
+  if(act==='wizard-back'){
+    const cur=currentId()||steps().length;
+    S.wizardAt=Math.max(1,(S.wizardAt??cur)-1);
+    if(S.wizardAt===cur) S.wizardAt=null;
+    return render();
+  }
+  if(act.startsWith('demo:')) return demo(act.split(':')[1]);
+  if(act==='reset'){
+    const keep={option:S.option,theme:S.theme};
+    S=clone(INIT); S.option=keep.option; S.theme=keep.theme;
+    document.getElementById('toasts').innerHTML='';
+    applyTheme(); return render();
+  }
+  if(act.startsWith('toast:')) return toast(act.slice(6));
+});
+function demo(d){
+  if(d==='enroll'){
+    if(S.enrollment==='used') return toast('Already enrolled.');
+    if(S.enrollment!=='waiting') return toast('Create the enrollment file first.');
+    return mut(()=>{S.enrollment='used'; S.machines=[PC]})||toast('LivingRoomPC enrolled.');
+  }
+  if(d==='push'){
+    if(!S.games.length) return toast('Add a game first.');
+    if(S.latest) return toast('Already synced.');
+    return mut(()=>{S.latest={size:'3.2 MB',files:8,ago:'just now'}})||toast('LivingRoomPC pushed version 1.');
+  }
+  if(d==='deck'){
+    if(S.machines.some(m=>m.os==='SteamOS')) return toast('Deck already added.');
+    return mut(()=>{S.machines.push(DK)})||toast('SteamDeck enrolled — one manual step left.');
+  }
+}
+window.addEventListener('resize',()=>{ if(S.option==='tour') placeSpotlight(); });
+window.addEventListener('scroll',()=>{ if(S.option==='tour') placeSpotlight(); },true);
+
+applyTheme(); render();
+</script>
+</body>
+</html>

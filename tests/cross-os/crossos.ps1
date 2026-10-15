@@ -207,9 +207,10 @@ function Get-ServerHeadHash {
 
 function New-AgentConfig {
     @{
-        ServerUrl         = $serverUrl
-        ManifestCachePath = (Join-Path $root "tests/manifest.yaml")
-        Games             = @()
+        ServerUrl           = $serverUrl
+        ManifestCachePath   = (Join-Path $root "tests/manifest.yaml")
+        ManifestRefreshDays = 0
+        Games               = @()
     } | ConvertTo-Json | Set-Content -Path $config -Encoding utf8
 }
 

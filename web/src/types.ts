@@ -23,6 +23,7 @@ export type CancelCommandsResponse = NonNullable<Schemas['CancelCommandsResponse
 export type Settings = Schemas['ServerSettingsDto'];
 export type AppearanceSettings = Schemas['AppearanceSettingsDto'];
 export type SetAppearanceRequest = Schemas['SetAppearanceRequest'];
+export type ManifestRefreshSettings = Schemas['ManifestRefreshSettingsDto'];
 export type MachineSavePath = Schemas['MachineSavePathDto'];
 export type MachineGameSource = Schemas['MachineGameSourceDto'];
 export type GameContent = Schemas['GameContentDto'];

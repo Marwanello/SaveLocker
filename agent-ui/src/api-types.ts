@@ -3491,6 +3491,7 @@ export interface components {
             region?: null | string;
             /** @default false */
             statesOnly: boolean;
+            duplicateShortcuts?: null | components["schemas"]["DuplicateShortcut"][];
         };
         CandidateLinksDto: {
             /** Format: int32 */
@@ -3639,6 +3640,11 @@ export interface components {
         };
         /** @enum {unknown} */
         DlcSendPolicy: "Ask" | "Auto" | "Never";
+        DuplicateShortcut: {
+            appId: null | string;
+            name: string;
+            tracked: boolean;
+        };
         EnrollFolderChoice: {
             /** Format: int32 */
             id: number;

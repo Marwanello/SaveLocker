@@ -47,6 +47,7 @@ public sealed class FolderSuggestionsTests : IDisposable
     {
         var config = AgentConfig.Load(Path.Combine(_dir, "agent", "config.json"));
         config.ManifestCachePath = Path.Combine(_dir, "manifest.yaml");
+        config.ManifestRefreshDays = 0; // the fixture never refreshes over itself
         File.WriteAllText(config.ManifestCachePath, Manifest);
         var game = new TrackedGame
         {
