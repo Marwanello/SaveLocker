@@ -2016,6 +2016,12 @@ save in Yuzu** / **Keep Yuzu's and upload it**, forced, refused if it no longer 
 in** picker (switch keeping its save or taking the cloud's; not-installed and no-slot emulators explained, with **Tell me
 when … is ready**). New local route `vs-cloud`, actions `take-cloud`/`upload`/`tell-when-ready`/`stop-telling`. Agent
 tests **639**. Details: `tasks/emulator-saves/plan.md` → Group F follow-ups, 2026-10-15.
+<br>**2026-10-16, same PR:** a Switch game's folder keys now follow the server game's layout on join (a device save is
+`main` where the fleet has no `device` folder), which is why the Deck's Animal Crossing island never reached the PC's
+Eden — **remove the game and add it again** on machines enrolled before this. The picker moves the save to the emulator
+picked, shows each install (EmuDeck/Standalone) separately and always lists Eden, Citron, Yuzu and Ryujinx; the copies
+card is gone; the controller only drives a focused agent window. `api-types.ts` regenerated from a running agent (the
+`package-linux` CI check). Playthroughs (named save forks) added to the backlog.
 <br>**Next action for this item:** the rest of the testenv pass for Group F (`Build and Run` → *Testing emulator saves*,
 Group F steps 1–7, plus the emulator picker), then the Switch row of Group H on the Deck (Yuzu ↔ Ryujinx) and the PC (Eden).
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,

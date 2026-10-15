@@ -754,6 +754,24 @@ visible choice**, built on the Emulator settings page (`SwitchPlaysIn`):
   `SaveVsCloud.Of`'s six cases). Agent tests **639**. Checked by hand against a stand-in agent (every dialog, Escape,
   1280×800); not yet on the rig or the Deck.
 
+Follow-up, 2026-10-16 (maintainer, on the rig: the Deck's Yuzu island never reached the PC's Eden; two *Eden* cards; the
+copies card still there; the controller drove the agent UI while another app had focus):
+- **Folder keys meant different saves on two machines.** The Deck has only Animal Crossing's device save, so it synced
+  as `main`; the PC also has a stray account copy under Eden's user, so `main` was that copy and the real island was
+  `device`. The Deck's island was pulled into the stray copy and Eden kept loading the old one. Now a joining machine
+  lays its folders out as the server game has them (`SwitchEmulators.AlignToGameFolders`, in `Enroller` beside Xenia's
+  profile alignment): no `device` on the game → the device save is `main` here and the account copy is left alone; a
+  `device` on the game and only a device save here → it is `device`, and the current user's folder
+  (`ScanCandidate.SwitchAccountDir`, created empty) is `main`. A game enrolled before this has to be removed and added
+  again.
+- **Each install is its own choice:** rows carry `saves` and `install` (`EmuDeck`/`Standalone`); actions take `saves`.
+- **Picking an emulator moves the save to it:** the save played here when the cloud has nothing newer (copied in, made
+  the synced copy, uploaded), the cloud's when only it moved on, the user's pick when both changed, or the emulator's own
+  on request. The copies card is gone (keep-in-sync copies already set keep working in the background).
+- Eden, Citron, Yuzu and Ryujinx are always on the picker.
+- The controller drives the agent UI only while its window has focus (`pad.ts`).
+- Tests +3 (two installs of one emulator; a device save landing in the device save with either machine joining first).
+
 ### The other emulators — researched 2026-10-07
 
 The maintainer asked to add **Cemu, Azahar, Model 2, PPSSPP and the Switch family (Yuzu, Ryujinx and Citron
