@@ -15,10 +15,8 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 
 ## Medium priority
 
-- [Checkpoint UI Group 9: run the testenv checklist](tasks/checkpoint-ui-group-9-check/summary.md)
 - [Interactive setup guide](tasks/interactive-setup-guide/summary.md)
 - [Playnite plugin: prove the self-update against a real release](tasks/playnite-self-update-proof/summary.md)
-- [QAM left-stick scrolling](tasks/decky-qam-scrolling/summary.md)
 - [Duplicate-shortcut warnings outside doctor](tasks/duplicate-shortcut-warnings/summary.md)
 - [Linux agent: separate app files from mutable state](tasks/linux-agent-secrets/plan-split.md)
 - [One state owner (deferred)](tasks/linux-single-state-owner/summary.md)

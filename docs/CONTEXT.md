@@ -1686,7 +1686,34 @@ entry (added once by an agent that updates itself); `savelocker pull` exits non-
 put new plugin submissions on hold until Playnite 11's new add-on database. The listing, the self-update proof and four
 unchecked surfaces are now their own Backlog tasks (`tasks/playnite-*`).
 <br>**Checkpoint UI closed as done (2026-10-04)**, merging with PR #54; the Group 9 `testenv` checklist is its own
-Backlog task now (`tasks/checkpoint-ui-group-9-check/`).
+Backlog task now (`tasks/checkpoint-ui-group-9-check/`). **That checklist was run through `testenv` on
+2026-10-14 (branch `backlog-plans-testenv-mockup`) and the task is closed**: every step passed, including
+the maintainer's 4.6/1.8; eight findings (F1–F8) — keep-count can't return to 7 once changed, revoking an
+enrollment removes its row, `-test` builds classify as releases so the Dev-build/Running chips don't show,
+and *Fetch from GitHub* defaults to the upstream repo — are recorded in
+`tasks/_done/checkpoint-ui-group-9-check/run-2026-10-14.md`, each a maintainer decision, none a blocker.
+
+**Duplicate-shortcut warnings outside doctor shipped (2026-10-14, this branch, PR #75) — reviewed the
+same day, every finding fixed.** The one detector (`SteamShortcuts.DuplicateNameGroups`/
+`DuplicatesFor`) now backs the `doctor` note and both scanners; `ScanCandidate.DuplicateShortcuts`
+rides the agent's wire (`CandidateDto`, additive/nullable; `agent-ui/src/api-types.ts` regenerated);
+agent-ui gained `DuplicateChip` (a ReleaseChip-style popover naming each same-named shortcut's own
+name/AppID and which one the scan follows) + a row note, and Game Mode a warning tile + ASCII caption.
+`Tracked` marks the AppID the scan actually follows, and no entry is marked when it follows none of
+them (a Windows save-root candidate that won the merge, or a MoonDeck shortcut reclassified as a
+genuinely installed game) — the copy says so rather than naming a loser. `DuplicateChip` and
+`ReleaseChip` share `usePopover` (hover/pin/outside/Esc, with a 150 ms leave grace for the 8 px
+chip→popover gap); the popover swallows clicks (an Add-games row is a `<label>`, so a click on it
+used to tick the game's checkbox) and `.sl-card:has(.sl-release__pop)` stops the card clipping it.
+<br>**Verified:** xunit **559/559** (+7 `DuplicateShortcutTests`; the tracked marker mutation-checked),
+Agent.Core/Windows Agent/Agent.Linux build clean, `agent-ui` build + lint clean,
+`run-appearance-consistency-tests` **50/50**, `run-linux-tests` **282/2** as root in `unshare -n`
+(the 2 are the documented WSLg-session pair; both duplicate-shortcut checks pass, now asserting the
+exact AppIDs/names/tracked flags rather than field presence), and both UI fixes proven in headless
+Chrome against the real CSS/DOM (the card clip and the label-tick each reproduced with their fix
+removed, including a real trusted click). **Not verified:** a live Deck/WebView2 pass of the chip.
+The 71-failure cascade the PR body first carried was this box's stray `~/SaveLocker` daemon holding
+:5187 — the netns run is the workaround; the task is ready to move to `tasks/_done/` on merge.
 <br>**v0.6.0 prepared (2026-10-04, branch `release-0.6.0`) — not yet tagged.** PR #54 is merged. Release notes in
 `web/src/releases/0.6.0.md` (covering everything since v0.5.12: the whole Checkpoint redesign, Groups 1–10, plus backup
 restore and the encrypted SteamGridDB key; three migrations). A minor bump, not 0.5.13, because of the redesign's size and

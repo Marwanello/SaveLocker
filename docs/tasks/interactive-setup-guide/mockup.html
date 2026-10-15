@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SaveLocker — Set up SaveLocker (clickable mockup)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* ============================================================================
+   Clickable mockup of the "interactive setup guide" console surface.
+   Not shipped code. It re-creates the console's real UI elements: the token
+   values, component shapes and icon geometry are copied from the shipped
+   Checkpoint design system (web/src/index.css, web/src/components/ui/*,
+   web/src/appearance.ts).
+   ========================================================================== */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0f0f10; --panel:#141416; --raise:#191a1c; --tile:#1b1c1f; --hover:#202124;
+  --fg:#f0eee9; --dim:#a09d97; --faint:#817e78; --line:#242427; --row:#1d1d20;
+  --safe:#7fa96a; --watch:#d9a63f; --info:#7b9fd0; --accent:#e0533c; --on-accent:#160f0e;
+  --accent-soft:color-mix(in oklab,var(--accent) 14%,var(--panel));
+  --accent-line:color-mix(in oklab,var(--accent) 42%,var(--panel));
+  --accent-ink:color-mix(in oklab,var(--accent) 80%,var(--fg));
+  --safe-soft:color-mix(in oklab,var(--safe) 14%,var(--panel));
+  --safe-line:color-mix(in oklab,var(--safe) 40%,var(--panel));
+  --safe-ink:color-mix(in oklab,var(--safe) 82%,var(--fg));
+  --watch-soft:color-mix(in oklab,var(--watch) 14%,var(--panel));
+  --watch-line:color-mix(in oklab,var(--watch) 40%,var(--panel));
+  --watch-ink:color-mix(in oklab,var(--watch) 82%,var(--fg));
+  --font-sans:'Archivo',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+  --ease:cubic-bezier(.2,.8,.25,1);
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --ink:#f5f3ef; --panel:#fffefc; --raise:#f0ede8; --tile:#ebe7e0; --hover:#e8e3dc;
+  --fg:#191719; --dim:#57534d; --faint:#79756f; --line:#e2ddd5; --row:#eeeae3;
+  --safe:#4c7b3e; --watch:#8a6212; --info:#3d6aa8; --accent:#c0432c; --on-accent:#fff8f6;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme]){
+    --ink:#f5f3ef; --panel:#fffefc; --raise:#f0ede8; --tile:#ebe7e0; --hover:#e8e3dc;
+    --fg:#191719; --dim:#57534d; --faint:#79756f; --line:#e2ddd5; --row:#eeeae3;
+    --safe:#4c7b3e; --watch:#8a6212; --info:#3d6aa8; --accent:#c0432c; --on-accent:#fff8f6;
+    color-scheme:light;
+  }
+}
+body{background:var(--ink);color:var(--fg);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.console{display:flex;flex-direction:column;min-height:calc(100vh - 45px)}
+.muted{color:var(--dim);font-size:12px}
+
+/* --- mockup chrome (not part of the console) ------------------------------ */
+.mockbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px;background:var(--raise);border-bottom:1px solid var(--line);font-size:12px;color:var(--dim)}
+.mockbar b{color:var(--fg);font-weight:600;letter-spacing:.02em}
+.mockbar .spacer{flex:1}
+.mockbar .demo{display:inline-flex;gap:6px;flex-wrap:wrap}
+.mockbar .demo button{font-size:11.5px;padding:4px 10px;border-radius:999px;border:1px dashed var(--line);color:var(--dim)}
+.mockbar .demo button:hover{border-style:solid;border-color:var(--accent-line);color:var(--fg)}
+
+/* --- top bar (NavBar) ------------------------------------------------------ */
+.topbar{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line);padding:8px 20px;min-height:64px;display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+.brand{display:inline-flex;align-items:center;gap:9px;font-size:18px;font-weight:700;letter-spacing:-.035em}
+.brand .accent{color:var(--accent)}
+.verpill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--raise);font-size:10.5px;font-family:var(--mono);color:var(--dim)}
+.verpill .dot{width:6px;height:6px;border-radius:50%;background:var(--safe)}
+.tabs{display:flex;flex-wrap:wrap;gap:3px}
+.tab{font-size:13.5px;padding:8px 14px;border-radius:999px;border:1px solid transparent;color:var(--dim);font-weight:500;transition:background-color .15s var(--ease),color .15s var(--ease),transform .15s var(--ease)}
+.tab:hover{background:var(--raise);color:var(--fg)}
+.tab:active{transform:scale(.97)}
+.tab.is-current{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink);font-weight:600}
+.topright{margin-left:auto;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+
+/* --- buttons --------------------------------------------------------------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-weight:500;font-size:13px;padding:8px 15px;border-radius:999px;border:1px solid var(--line);background:var(--raise);color:var(--fg);transition:background-color .15s var(--ease),transform .15s var(--ease),filter .15s var(--ease);white-space:nowrap}
+.btn:hover{background:var(--hover);transform:translateY(-1px)}
+.btn:active{transform:scale(.96)}
+.btn:disabled{opacity:.5;cursor:default;transform:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--dim)}
+.btn.quiet:hover{background:var(--hover);color:var(--fg)}
+.btn.sm{padding:5px 11px;font-size:12px}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;padding:7px;border-radius:999px;border:1px solid var(--line);background:var(--raise);color:var(--dim)}
+.iconbtn:hover{color:var(--fg);background:var(--hover)}
+
+/* --- page ------------------------------------------------------------------ */
+.page{flex:1;min-width:0;overflow-y:auto}
+.page-canvas{display:flex;flex-direction:column;gap:16px;padding:22px 24px 40px;max-width:1060px}
+.pagehead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.pagehead h1{font-size:27px;font-weight:700;letter-spacing:-.035em;line-height:1.05}
+.pagehead .sub{margin-top:6px;font-size:11.5px;color:var(--dim)}
+.pagehead .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.progresswrap{display:flex;flex-direction:column;gap:6px;min-width:220px}
+
+/* --- card ------------------------------------------------------------------ */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}
+.card>header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line)}
+.card>header h3{font-size:14px;font-weight:600;letter-spacing:-.02em}
+.card .pad{padding:15px 16px}
+
+/* --- chip / dot / meter / banner ------------------------------------------ */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--raise);color:var(--dim);white-space:nowrap}
+.chip.ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.chip.warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.chip.crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.dotbase{display:inline-block;width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dotbase.ok{background:var(--safe)} .dotbase.warn{background:var(--watch)} .dotbase.crit{background:var(--accent)} .dotbase.idle{background:var(--faint)}
+.dotbase.live{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.meter{height:7px;border-radius:999px;background:var(--tile);overflow:hidden}
+.meter>i{display:block;height:100%;border-radius:999px;background:var(--safe);transition:width .55s cubic-bezier(.3,.9,.3,1)}
+.banner{display:flex;align-items:center;gap:13px;padding:13px 16px;border-radius:14px;border:1px solid var(--accent-line);background:var(--accent-soft);flex-wrap:wrap}
+.banner.watch{border-color:var(--watch-line);background:var(--watch-soft)}
+.banner.safe{border-color:var(--safe-line);background:var(--safe-soft)}
+.banner .body{flex:1;min-width:220px}
+.banner .ttl{font-size:13.5px;font-weight:600;color:var(--accent-ink)}
+.banner.watch .ttl{color:var(--watch-ink)}
+.banner.safe .ttl{color:var(--safe-ink)}
+.banner .txt{font-size:12px;color:var(--dim);margin-top:3px}
+.banner .acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* --- kv / path / code / table ---------------------------------------------- */
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px 18px;font-size:12.5px;align-items:center}
+.kv dt{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.kv dd{min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.path{display:inline-block;max-width:100%;font-family:var(--mono);font-size:11px;background:var(--tile);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.codebox{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+.codebox code{font-family:var(--mono);font-size:12px;background:var(--tile);border:1px solid var(--line);border-radius:8px;padding:8px 11px;color:var(--fg)}
+.dt{width:100%;border-collapse:collapse;margin-top:10px}
+.dt th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:left;padding:8px 16px;border-bottom:1px solid var(--line);font-weight:500}
+.dt td{padding:10px 16px;font-size:12.5px;color:var(--dim);border-bottom:1px solid var(--row)}
+.dt tr:last-child td{border-bottom:none}
+.dt td.k{color:var(--fg);font-weight:600}
+.dt .m{font-family:var(--mono);font-size:11.5px}
+.winwrap{overflow-x:auto}
+
+/* --- steps (the guide itself) ---------------------------------------------- */
+.steps{display:flex;flex-direction:column}
+.step{border-bottom:1px solid var(--line)}
+.step:last-child{border-bottom:none}
+.step-head{display:grid;grid-template-columns:34px minmax(0,1fr) auto 18px;align-items:center;gap:14px;width:100%;text-align:left;padding:14px 16px;transition:background-color .15s var(--ease)}
+.step-head:hover{background:var(--raise)}
+.step-n{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;border:1px solid var(--line);background:var(--raise);font-family:var(--mono);font-size:12px;color:var(--dim)}
+.step.done .step-n{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.step.waiting .step-n{background:var(--watch-soft);border-color:var(--watch-line);color:var(--watch-ink)}
+.step-title{font-size:14px;font-weight:600;letter-spacing:-.015em}
+.step-sub{display:block;font-size:11.5px;color:var(--dim);font-weight:400;margin-top:3px}
+.step-chev{color:var(--faint);transition:transform .2s var(--ease)}
+.step.open .step-chev{transform:rotate(180deg)}
+.step-body{display:none;padding:2px 18px 18px 64px;font-size:12.5px;color:var(--dim);max-width:760px}
+.step-body p{margin-bottom:10px}
+.step-body p:last-child{margin-bottom:0}
+.step-body b{color:var(--fg);font-weight:600}
+.step.open .step-body{display:block}
+.step.blocked{opacity:.55}
+.step.blocked .step-head{cursor:default}
+.act-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
+.waitline{display:flex;align-items:center;gap:8px}
+.installnote{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--raise);font-size:12.5px;color:var(--dim)}
+.cand{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--panel);width:100%;text-align:left;transition:background-color .15s var(--ease)}
+.cand:hover{background:var(--raise)}
+.cand+.cand{margin-top:8px}
+.cand .box{width:17px;height:17px;border-radius:5px;border:1px solid var(--line);background:var(--tile);display:grid;place-items:center;color:transparent;flex-shrink:0}
+.cand.on .box{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.cand .c-name{display:block;font-weight:600;font-size:13px;color:var(--fg)}
+.cand .c-sub{display:block;font-size:11.5px;color:var(--dim);margin-top:2px}
+
+/* --- seg -------------------------------------------------------------------- */
+.seg{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:999px;padding:3px;gap:2px}
+.seg button{border-radius:999px;font-size:12.5px;font-weight:600;padding:7px 15px;color:var(--dim);transition:background-color .15s var(--ease),color .15s var(--ease)}
+.seg button:hover{color:var(--fg)}
+.seg button.is-on{background:var(--panel);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.22)}
+.seg.sm button{padding:5px 11px;font-size:11.5px;font-weight:500}
+
+/* --- games ------------------------------------------------------------------ */
+.tile-wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
+.gtile{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;text-align:left;transition:background-color .15s var(--ease);display:block;width:100%}
+.gtile:hover{background:var(--raise)}
+.gtile .cover{height:96px;background:var(--accent-soft);border-bottom:1px solid var(--line);display:grid;place-items:center;color:var(--accent-ink)}
+.gtile .gbody{padding:12px 14px}
+.gtile .gname{font-size:14.5px;font-weight:600;letter-spacing:-.02em}
+.gtile .gsub{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:7px}
+.empty{padding:40px 20px;text-align:center;color:var(--dim);font-size:13px}
+.empty b{display:block;color:var(--fg);font-size:15px;font-weight:600;margin-bottom:6px}
+.empty .ea{margin-top:16px;display:flex;justify-content:center}
+.artlist{display:grid;grid-template-columns:240px minmax(0,1fr);gap:16px;align-items:start}
+.artlist .item{display:block;width:100%;text-align:left;padding:10px 12px;border-radius:11px;border:1px solid transparent;color:var(--dim);font-size:12.5px}
+.artlist .item:hover{background:var(--raise);color:var(--fg)}
+.artlist .item.cur{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink);font-weight:600}
+.prose p{margin-bottom:10px}
+.prose h2{font-size:15px;font-weight:600;letter-spacing:-.02em;margin:14px 0 8px;color:var(--fg)}
+.prose code{font-family:var(--mono);font-size:11.5px;background:var(--tile);border:1px solid var(--line);border-radius:6px;padding:1px 5px}
+
+/* --- toast ------------------------------------------------------------------ */
+#toaster{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;align-items:center;gap:8px;max-width:92vw}
+.toast{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;font-size:13px;color:var(--fg);box-shadow:0 10px 30px rgba(0,0,0,.35);animation:toastin .25s var(--ease)}
+@keyframes toastin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}}
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <b>Mockup</b><span>Set up SaveLocker — docs/tasks/interactive-setup-guide/mockup.html</span>
+  <span class="seg sm" role="group" aria-label="Theme">
+    <button data-act="theme:system" data-theme-btn="system">System</button>
+    <button data-act="theme:dark" data-theme-btn="dark">Dark</button>
+    <button data-act="theme:light" data-theme-btn="light">Light</button>
+  </span>
+  <span class="spacer"></span>
+  <span class="demo">
+    <button data-act="demo:enroll">Simulate: agent connects</button>
+    <button data-act="demo:push">Simulate: first push</button>
+    <button data-act="demo:deck">Add a Deck machine</button>
+    <button data-act="reset">Reset</button>
+  </span>
+</div>
+
+<div class="console">
+  <header class="topbar">
+    <a class="brand" href="#" data-act="tab:guide" aria-label="SaveLocker"><svg width="30" height="30" viewBox="0 0 32 32" role="img" aria-label="SaveLocker" style="flex-shrink:0"><rect x="12" y="3" width="8" height="4" fill="var(--accent)"/><rect x="8" y="7" width="4" height="5" fill="var(--accent)"/><rect x="20" y="7" width="4" height="5" fill="var(--accent)"/><rect x="5" y="12" width="22" height="16" fill="var(--accent)"/><rect x="14" y="16" width="4" height="4" fill="var(--on-accent)"/><rect x="15" y="20" width="2" height="5" fill="var(--on-accent)"/></svg><span>Save<span class="accent">Locker</span></span></a>
+    <button class="verpill" data-act="toast:Not part of this mockup.">v0.7.1 <span class="dot"></span></button>
+    <nav class="tabs" aria-label="Console">
+      <button class="tab" data-tab="games" data-act="tab:games">Games</button>
+      <button class="tab" data-tab="config" data-act="tab:config">Configuration</button>
+      <button class="tab" data-tab="audit" data-act="tab:audit">Audit log</button>
+      <button class="tab" data-tab="backups" data-act="tab:backups">Backups</button>
+      <button class="tab" data-tab="help" data-act="tab:help">Help</button>
+      <button class="tab" data-tab="whatsnew" data-act="tab:whatsnew">What's new</button>
+    </nav>
+    <div class="topright">
+      <button class="btn primary sm" data-act="toast:Sync all is not part of this mockup."><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg> Sync all</button>
+      <button class="iconbtn" data-act="toast:Notifications are not part of this mockup." aria-label="Notifications"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg></button>
+    </div>
+  </header>
+  <main id="stage" class="page"></main>
+</div>
+<div id="toaster"></div>
+
+<script>
+/* ---------------------------------------------------------------------------
+   State model. The guide's step statuses are DERIVED from this state — the
+   same shape the real page would derive from /api/overview + machines, so a
+   step can never read "done" unless the state behind it does.
+--------------------------------------------------------------------------- */
+const INIT = {
+  view:'guide', theme:'system',
+  enrollment:'none',            // none | waiting | used
+  installTab:'windows',         // windows | linux | steamdeck
+  machines:[],                  // {name, os, platform, agent}
+  games:[],                     // {name, folder}
+  latest:null,                  // {size, files, ago}
+  deckDone:false,
+  open:1,                       // open step id (0 = all collapsed)
+  selected:['Cyberpunk 2077'],
+};
+let S = clone(INIT);
+function clone(o){return JSON.parse(JSON.stringify(o))}
+
+const ENROLL_FILE='savelocker-enroll-4f3a.json';
+const SAVE_FOLDER='C:\\Users\\maro\\AppData\\Local\\CD Projekt Red\\Cyberpunk 2077\\Saves';
+const LAUNCH_CMD='savelocker run -- %command%';
+const PC  = {name:'LivingRoomPC', os:'Windows 11', platform:'Windows 11 (build 26100)', agent:'v0.7.0'};
+const DK  = {name:'SteamDeck',    os:'SteamOS',    platform:'SteamOS 3.7 · Steam Deck',  agent:'v0.7.0'};
+const CANDIDATES=[
+  {name:'Cyberpunk 2077', sub:'Steam · save folder found · 8 files'},
+  {name:'Hades',          sub:'Steam · save folder found · 12 files'},
+];
+
+/* ---------------------------------------------------------------------------
+   Icons — lucide 0.511.0 geometry, copied from web/src/components/ui/Icon.tsx
+--------------------------------------------------------------------------- */
+const ICONS = {
+  check:[['path',{d:'M20 6 9 17l-5-5'}]],
+  'chevron-down':[['path',{d:'m6 9 6 6 6-6'}]],
+  'chevron-right':[['path',{d:'m9 18 6-6-6-6'}]],
+  'refresh-cw':[['path',{d:'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8'}],['path',{d:'M21 3v5h-5'}],['path',{d:'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16'}],['path',{d:'M8 16H3v5'}]],
+  plus:[['path',{d:'M5 12h14'}],['path',{d:'M12 5v14'}]],
+  file:[['path',{d:'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'}],['path',{d:'M14 2v4a2 2 0 0 0 2 2h4'}]],
+  monitor:[['rect',{width:'20',height:'14',x:'2',y:'3',rx:'2'}],['line',{x1:'8',x2:'16',y1:'21',y2:'21'}],['line',{x1:'12',x2:'12',y1:'17',y2:'21'}]],
+  'gamepad-2':[['line',{x1:'6',x2:'10',y1:'11',y2:'11'}],['line',{x1:'8',x2:'8',y1:'9',y2:'13'}],['line',{x1:'15',x2:'15.01',y1:'12',y2:'12'}],['line',{x1:'18',x2:'18.01',y1:'10',y2:'10'}],['path',{d:'M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z'}]],
+  bell:[['path',{d:'M10.268 21a2 2 0 0 0 3.464 0'}],['path',{d:'M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326'}]],
+  lock:[['rect',{width:'18',height:'11',x:'3',y:'11',rx:'2',ry:'2'}],['path',{d:'M7 11V7a5 5 0 0 1 10 0v4'}]],
+  folder:[['path',{d:'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'}]],
+  shield:[['path',{d:'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'}]],
+  'square-play':[['rect',{width:'18',height:'18',x:'3',y:'3',rx:'2'}],['path',{d:'m9 8 6 4-6 4Z'}]],
+  copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
+  library:[['path',{d:'m16 6 4 14'}],['path',{d:'M12 6v14'}],['path',{d:'M8 8v12'}],['path',{d:'M4 4v16'}]],
+};
+function icon(name,size=14,sw=2){
+  const n = ICONS[name]||ICONS.check;
+  const inner = n.map(([t,a]) => '<'+t+' '+Object.entries(a).map(([k,v]) => k+'="'+v+'"').join(' ')+'/>').join('');
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+sw+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" style="flex-shrink:0">'+inner+'</svg>';
+}
+/* The brand mark — web/src/appearance.ts MARKS.pixel, drawn in the live accent. */
+function markHtml(size=30){
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 32 32" role="img" aria-label="SaveLocker">'
+    +'<rect x="12" y="3" width="8" height="4" fill="var(--accent)"/><rect x="8" y="7" width="4" height="5" fill="var(--accent)"/>'
+    +'<rect x="20" y="7" width="4" height="5" fill="var(--accent)"/><rect x="5" y="12" width="22" height="16" fill="var(--accent)"/>'
+    +'<rect x="14" y="16" width="4" height="4" fill="var(--on-accent)"/><rect x="15" y="20" width="2" height="5" fill="var(--on-accent)"/></svg>';
+}
+
+/* ---------------------------------------------------------------------------
+   Steps — status derived from state
+--------------------------------------------------------------------------- */
+function hasDeck(){return S.machines.some(m => m.os === 'SteamOS')}
+function steps(){
+  return [
+    {id:1, title:'Create an enrollment file', sub:'A one-time file the agent reads to get its key',
+     status:() => S.enrollment==='none' ? 'todo' : S.enrollment==='waiting' ? 'waiting' : 'done',
+     body:body1},
+    {id:2, title:'Enroll your first machine', sub:'Install the agent and point it at the file',
+     status:() => S.machines.length ? 'done' : S.enrollment==='waiting' ? 'waiting' : 'blocked',
+     body:body2},
+    {id:3, title:'Add your first game', sub:'SaveLocker finds the save folder itself',
+     status:() => S.games.length ? 'done' : S.machines.length ? 'todo' : 'blocked',
+     body:body3},
+    {id:4, title:'Confirm the first save landed', sub:'Version 1 reaches the server',
+     status:() => S.latest ? 'done' : S.games.length ? 'waiting' : 'blocked',
+     body:body4},
+    {id:5, title:"Set the Deck's launch options", sub:'The step Steam cannot do for us', optional:true,
+     status:() => hasDeck() ? (S.deckDone ? 'done' : 'todo') : 'hidden',
+     body:body5},
+  ];
+}
+const visibleSteps = () => steps().filter(d => d.status() !== 'hidden');
+const doneCount    = () => visibleSteps().filter(d => d.status() === 'done').length;
+const allDone      = () => visibleSteps().every(d => d.status() === 'done');
+
+/* --- step bodies ----------------------------------------------------------- */
+function body1(){
+  if(S.enrollment === 'none') return ''
+    +'<p>A one-time file the enrolling agent reads to get its key. It is shown and downloaded exactly once.</p>'
+    +'<div class="act-row"><button class="btn primary" data-act="mint">'+icon('file',13)+'Create enrollment file</button>'
+    +'<span class="muted">Expires 30 minutes after it is created.</span></div>';
+  if(S.enrollment === 'waiting') return ''
+    +'<dl class="kv"><dt>File</dt><dd><span class="path">'+ENROLL_FILE+'</span></dd>'
+    +'<dt>Status</dt><dd><span class="chip warn"><span class="dotbase warn live"></span>Valid · 29m left</span></dd></dl>'
+    +'<p class="waitline" style="margin-top:12px"><span class="dotbase warn live"></span>Waiting for a machine to connect — leave this page open; it advances by itself.</p>'
+    +'<p class="muted">Demo: press “Simulate: agent connects” in the bar above.</p>';
+  return ''
+    +'<dl class="kv"><dt>File</dt><dd><span class="path">'+ENROLL_FILE+'</span></dd>'
+    +'<dt>Enrolled</dt><dd>LivingRoomPC · just now <span class="chip ok">'+icon('check',11,2.4)+'Used</span></dd></dl>';
+}
+function body2(){
+  if(!S.machines.length){
+    const note = S.installTab==='windows' ? 'Run the SaveLocker installer, then open its Setup screen and choose the enrollment file. The agent registers and starts watching saves.'
+      : S.installTab==='linux' ? 'Install the agent on the Linux box or Steam Deck (Desktop Mode), then register it with the enrollment file — the agent takes the path and does the rest.'
+      : 'On a Steam Deck: install in Desktop Mode. SaveLocker keeps itself and its Decky plugin updated afterwards — you will set the launch options at the end of this guide.';
+    return ''
+      +'<p>Install the agent on the PC you want to sync, and point it at the enrollment file.</p>'
+      +'<div class="seg sm" role="tablist">'
+      +['windows','linux','steamdeck'].map(t => '<button data-act="install-tab:'+t+'" class="'+(S.installTab===t?'is-on':'')+'">'+(t==='windows'?'Windows':t==='linux'?'Linux':'Steam Deck')+'</button>').join('')
+      +'</div>'
+      +'<div class="installnote">'+note+'</div>'
+      +'<p class="waitline" style="margin-top:12px"><span class="dotbase warn live"></span>Waiting for a machine to appear… <span class="muted">(Demo: “Simulate: agent connects”.)</span></p>';
+  }
+  return '<p>Machines appear here as they enroll; this guide advances the moment the first one does.</p>'
+    +'<div class="winwrap">'+machinesTable()+'</div>'
+    +'<div class="act-row"><button class="btn sm" data-act="toast:Adding another machine is not part of this mockup.">'+icon('plus',12)+'Add another machine</button></div>';
+}
+function machinesTable(){
+  return '<table class="dt"><thead><tr><th>Machine</th><th>Platform</th><th>Agent</th><th>Last seen</th></tr></thead><tbody>'
+    + S.machines.map(m => '<tr><td class="k">'+(m.os==='SteamOS'?icon('gamepad-2',14):icon('monitor',14))+' '+m.name+'</td>'
+      +'<td>'+m.platform+'</td><td class="m">'+m.agent+'</td>'
+      +'<td><span class="chip ok">'+icon('check',11,2.4)+'Online</span></td></tr>').join('')
+    +'</tbody></table>';
+}
+function body3(){
+  if(S.games.length){
+    return '<dl class="kv"><dt>Game</dt><dd>'+S.games[0].name+' <span class="chip ok">'+icon('check',11,2.4)+'Tracked</span></dd>'
+      +'<dt>Folder</dt><dd><span class="path">'+S.games[0].folder+'</span></dd></dl>'
+      +'<p style="margin-top:12px">Only the saves move — the game itself is never touched, and the folder is remembered for every machine.</p>';
+  }
+  return '<p>Pick the game you play most. SaveLocker finds its save folder and remembers it across machines.</p>'
+    + CANDIDATES.map((c,i) => '<button class="cand '+(S.selected.includes(c.name)?'on':'')+'" data-act="cand:'+i+'">'
+      +'<span class="box">'+icon('check',11,3)+'</span>'
+      +'<span><span class="c-name">'+c.name+'</span><span class="c-sub">'+c.sub+'</span></span></button>').join('')
+    + '<div class="act-row"><button class="btn primary" data-act="add-game"'+(S.selected.length?'':' disabled')+'>'
+      +icon('plus',13)+'Add '+S.selected.length+' game'+(S.selected.length===1?'':'s')+'</button>'
+      +'<span class="muted">Nothing else on your PC is read.</span></div>';
+}
+function body4(){
+  if(S.latest){
+    return '<dl class="kv"><dt>Game</dt><dd>Cyberpunk 2077 <span class="chip ok">'+icon('check',11,2.4)+'Synced</span></dd>'
+      +'<dt>Folder</dt><dd><span class="path">'+SAVE_FOLDER+'</span></dd>'
+      +'<dt>Latest</dt><dd>v1 · '+S.latest.size+' · '+S.latest.files+' files · '+S.latest.ago+'</dd></dl>'
+      +'<p style="margin-top:12px">That version now lives on the server. Any other machine can pull it — and the next save here becomes version 2, uploading only what changed.</p>';
+  }
+  return '<p>The agent is uploading its first save now — this becomes version 1 of the game.</p>'
+    +'<p class="waitline"><span class="dotbase warn live"></span>Uploading…</p>'
+    +'<div class="act-row"><button class="btn sm" data-act="push">'+icon('refresh-cw',12,2.2)+'Push now</button>'
+    +'<span class="muted">Demo: press to land the first version.</span></div>';
+}
+function body5(){
+  return '<p>Steam rewrites its own launch options, so the agent cannot set this one for you. Put this in the Deck shortcut’s <b>Launch Options</b>:</p>'
+    +'<div class="codebox"><code>'+LAUNCH_CMD+'</code><button class="btn sm" data-act="copy">'+icon('copy',12,2.2)+'Copy</button></div>'
+    +'<div class="act-row"><button class="btn sm '+(S.deckDone?'primary':'')+'" data-act="deck-done">'
+    +(S.deckDone ? icon('check',12,2.5)+'Set' : "I've set it")+'</button>'
+    +'<span class="muted">SaveLocker cannot check this one yet — it is the most-missed step in the whole setup.</span></div>';
+}
+
+/* ---------------------------------------------------------------------------
+   Views
+--------------------------------------------------------------------------- */
+const stage = document.getElementById('stage');
+
+function renderGuide(){
+  const vis = visibleSteps(), total = vis.length, done = doneCount(), pct = total ? Math.round(done/total*100) : 0;
+  const banner = allDone()
+    ? '<div class="banner safe"><span class="dotbase ok"></span><div class="body"><div class="ttl">All set.</div>'
+      +'<div class="txt">'+S.machines.length+' machine'+(S.machines.length===1?'':'s')+' · '+S.games.length+' game'+(S.games.length===1?'':'s')+' syncing. New games can be added under Games any time.</div></div>'
+      +'<div class="acts"><button class="btn primary sm" data-act="tab:games">Open Games</button>'
+      +'<button class="btn quiet sm" data-act="dismiss">Dismiss guide</button></div></div>'
+    : '';
+  return ''
+  +'<div class="page-canvas">'
+  + '<div class="pagehead"><div><h1>Set up SaveLocker</h1>'
+  + '<div class="sub">From an empty server to a syncing game — this page checks the live state as you go, so a step can never read “done” unless it is.</div></div>'
+  + '<div class="actions"><div class="progresswrap"><span class="chip '+(allDone()?'ok':'')+'">'+done+' of '+total+' steps done</span>'
+  + '<div class="meter" role="progressbar" aria-label="Setup progress"><i style="width:'+pct+'%"></i></div></div></div></div>'
+  + banner
+  + '<div class="card"><header><h3>Steps</h3><span class="muted">Re-runnable any time from Help · resumable — leave and come back.</span></header>'
+  + '<div class="steps">' + vis.map(stepHtml).join('') + '</div></div>'
+  + '</div>';
+}
+function stepHtml(d){
+  const st = d.status(), open = S.open === d.id;
+  const chip = st==='done' ? '<span class="chip ok">'+icon('check',11,2.4)+'Done</span>'
+    : st==='waiting' ? '<span class="chip warn"><span class="dotbase warn live"></span>Waiting</span>'
+    : st==='blocked' ? '<span class="chip">Locked</span>'
+    : '<span class="chip">'+(d.optional?'Optional':'To do')+'</span>';
+  const body = st==='blocked'
+    ? '<p>Unlocks when the step above is done — it checks itself, so there is nothing to press here.</p>'
+    : d.body();
+  return '<div class="step '+st+(open?' open':'')+'">'
+    +'<button class="step-head" data-act="open:'+d.id+'" aria-expanded="'+open+'">'
+    +'<span class="step-n">'+(st==='done'?icon('check',13,2.6):d.id)+'</span>'
+    +'<span class="step-title">'+d.title+'<span class="step-sub">'+d.sub+'</span></span>'
+    +chip+'<span class="step-chev">'+icon('chevron-down',16,2)+'</span></button>'
+    +'<div class="step-body">'+body+'</div></div>';
+}
+
+function renderHelp(){
+  const articles=['Setting up SaveLocker','Getting the agent on a Steam Deck','Conflicts and what they mean','Database backups (snapshots)','Exclude patterns','CLI reference'];
+  return '<div class="page-canvas">'
+  + '<div class="pagehead"><div><h1>Help</h1><div class="sub">'+articles.length+' articles · ships with the console, works offline</div></div></div>'
+  + '<div class="artlist">'
+  + '<div class="card"><div class="pad">'+articles.map((a,i)=>'<button class="item '+(i===0?'cur':'')+'" data-act="'+(i===0?'tab:guide':'toast:Only “Set up SaveLocker” is part of this mockup."')+'">'+a+'</button>').join('')+'</div></div>'
+  + '<div class="card"><header><h3>Setting up SaveLocker</h3></header><div class="pad prose">'
+  + '<p>Setting up SaveLocker is four steps: create an enrollment file, enroll a machine, add your first game, and confirm the first save reaches the server. A Steam Deck adds a fifth — its launch options.</p>'
+  + '<p>The setup guide walks them in order and checks the real state behind each one, so it will not claim a step you have not done, and it remembers where you stopped. You can leave it and come back.</p>'
+  + '<h2>Open the guide</h2>'
+  + '<div class="act-row"><button class="btn primary" data-act="tab:guide">'+icon('square-play',13)+'Open the setup guide</button>'
+  + '<span class="muted">Also offered automatically on a brand-new console.</span></div>'
+  + '</div></div></div></div>';
+}
+
+function renderGames(){
+  if(!S.games.length){
+    return '<div class="page-canvas">'
+    + '<div class="pagehead"><div><h1>Games</h1><div class="sub">0 games tracked</div></div></div>'
+    + '<div class="card"><div class="empty"><b>No games yet</b>Once the setup guide adds one, it shows up here with its versions and save folders.'
+    + '<div class="ea"><button class="btn primary" data-act="tab:guide">Set up SaveLocker</button></div></div></div></div>';
+  }
+  return '<div class="page-canvas">'
+  + '<div class="pagehead"><div><h1>Games</h1><div class="sub">1 game tracked · art from SteamGridDB</div></div>'
+  + '<div class="actions"><button class="btn" data-act="toast:Add games is not part of this mockup.">'+icon('plus',13)+'Add game</button></div></div>'
+  + '<div class="tile-wall"><button class="gtile" data-act="toast:The game page is not part of this mockup.">'
+  + '<span class="cover">'+icon('square-play',30,1.6)+'</span>'
+  + '<span class="gbody"><span class="gname">Cyberpunk 2077</span>'
+  + '<span class="gsub"><span class="chip">Steam</span><span class="chip ok">'+icon('check',11,2.4)+'Latest · just now</span></span></span></button></div>'
+  + '<div class="card"><header><h3>Recent activity</h3></header><div class="pad">'
+  + '<p class="muted">Pushed version 1 · 3.2 MB · 8 files · just now</p></div></div></div>';
+}
+
+function renderPlaceholder(name){
+  return '<div class="page-canvas">'
+  + '<div class="pagehead"><div><h1>'+name+'</h1><div class="sub">Not part of this mockup</div></div></div>'
+  + '<div class="banner watch"><span class="dotbase warn"></span><div class="body"><div class="ttl">This page is unchanged by the setup guide.</div>'
+  + '<div class="txt">Only the setup guide, Help and Games are live in this mockup.</div></div>'
+  + '<div class="acts"><button class="btn sm" data-act="tab:guide">Open the setup guide</button></div></div></div>';
+}
+
+const PLACEHOLDER_NAMES={config:'Configuration',audit:'Audit log',backups:'Backups',whatsnew:"What's new"};
+function render(){
+  document.querySelectorAll('[data-tab]').forEach(t => {
+    const cur = (t.dataset.tab==='help' && (S.view==='guide'||S.view==='help')) || t.dataset.tab===S.view;
+    t.classList.toggle('is-current', cur);
+  });
+  document.querySelectorAll('[data-theme-btn]').forEach(b => b.classList.toggle('is-on', b.dataset.themeBtn===S.theme));
+  stage.innerHTML = S.view==='guide' ? renderGuide()
+    : S.view==='help' ? renderHelp()
+    : S.view==='games' ? renderGames()
+    : renderPlaceholder(PLACEHOLDER_NAMES[S.view]||S.view);
+}
+
+/* ---------------------------------------------------------------------------
+   Actions
+--------------------------------------------------------------------------- */
+function toast(msg){
+  const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
+  const box=document.getElementById('toaster'); box.appendChild(t);
+  while(box.children.length>3) box.removeChild(box.firstChild);
+  setTimeout(()=>{t.style.transition='opacity .25s';t.style.opacity='0';setTimeout(()=>t.remove(),260)},2600);
+}
+function autoAdvance(){
+  const vis=visibleSteps();
+  const cur=vis.find(d=>d.id===S.open);
+  if(cur && cur.status()==='done'){ const next=vis.find(d=>d.status()!=='done'); S.open=next?next.id:0; }
+}
+function mut(fn){fn(); autoAdvance(); render();}
+function applyTheme(){
+  if(S.theme==='system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme',S.theme);
+}
+
+function act(a){
+  if(a==='mint') return mut(()=>{ S.enrollment='waiting'; }) || toast('Enrollment file created — it cannot be shown again.');
+  if(a.startsWith('install-tab:')) return mut(()=>{ S.installTab=a.split(':')[1]; });
+  if(a.startsWith('cand:')){ const c=CANDIDATES[+a.split(':')[1]].name;
+    return mut(()=>{ S.selected.includes(c) ? S.selected=S.selected.filter(x=>x!==c) : S.selected.push(c); }); }
+  if(a==='add-game'){ if(!S.selected.length) return; return mut(()=>{ S.games=[{name:'Cyberpunk 2077',folder:SAVE_FOLDER}]; }) || toast('Added Cyberpunk 2077 — first sync starting…'); }
+  if(a==='push'){ if(!S.games.length) return toast('Add a game first.'); return mut(()=>{ S.latest={size:'3.2 MB',files:8,ago:'just now'}; }) || toast('Pushed version 1 · 3.2 MB · 8 files'); }
+  if(a==='deck-done'){ return mut(()=>{ S.deckDone=!S.deckDone; }) || toast("Nice — that's the step most people miss."); }
+  if(a==='copy'){ try{navigator.clipboard.writeText(LAUNCH_CMD)}catch(e){} return toast('Copied the launch options.'); }
+  if(a==='dismiss') return mut(()=>{ S.view='games'; });
+  if(a.startsWith('open:')){ const id=+a.split(':')[1]; S.open = S.open===id ? 0 : id; return render(); }
+  if(a.startsWith('tab:')){ const v=a.split(':')[1]; return mut(()=>{ S.view = v==='guide' ? 'guide' : v; }); }
+  if(a.startsWith('theme:')){ S.theme=a.split(':')[1]; applyTheme(); return render(); }
+  if(a.startsWith('toast:')) return toast(a.slice(6));
+  if(a.startsWith('demo:')) return demo(a.split(':')[1]);
+  if(a.startsWith('reset')) return reset();
+}
+function demo(d){
+  if(d==='enroll'){
+    if(S.enrollment==='used') return toast('Already enrolled.');
+    if(S.enrollment!=='waiting') return toast('Create the enrollment file first.');
+    return mut(()=>{ S.enrollment='used'; S.machines=[PC]; }) || toast('LivingRoomPC enrolled.');
+  }
+  if(d==='push'){
+    if(!S.games.length) return toast('Add a game first.');
+    if(S.latest) return toast('Already synced.');
+    return mut(()=>{ S.latest={size:'3.2 MB',files:8,ago:'just now'}; }) || toast('LivingRoomPC pushed version 1.');
+  }
+  if(d==='deck'){
+    if(hasDeck()) return toast('Deck already added.');
+    return mut(()=>{ S.machines.push(DK); S.open=5; }) || toast('SteamDeck enrolled — one manual step left.');
+  }
+}
+function reset(){ S=clone(INIT); applyTheme(); render(); toast('Mockup reset.'); }
+
+document.addEventListener('click', (e)=>{
+  const el=e.target.closest('[data-act]'); if(!el) return;
+  e.preventDefault(); act(el.dataset.act);
+});
+
+applyTheme(); render();
+</script>
+</body>
+</html>
