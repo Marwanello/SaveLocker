@@ -181,6 +181,16 @@ function poll() {
     emit({ connected: true, controller: pad.id, detected: detectGlyphSet(pad.id) })
   }
 
+  // The browser reports a pad to every window, focused or not: input meant for a game or another app
+  // must not drive this one. What is held meanwhile is recorded as already pressed, so focusing the
+  // window with a button down doesn't fire it.
+  if (!document.hasFocus()) {
+    for (const [index, action] of BUTTONS) prev[action] = pad.buttons[index]?.pressed ?? false
+    stickDir = null
+    lastFrame = 0
+    return
+  }
+
   const now = performance.now()
   const dt = lastFrame === 0 ? 16 : Math.min(64, now - lastFrame)
   lastFrame = now

@@ -187,8 +187,8 @@ export const api = {
   xeniaProfile: (id: string) => req<XeniaProfile>(`/api/games/${id}/xenia-profile`),
   switchCopies: (id: string) => req<SwitchCopy[]>(`/api/games/${id}/switch-copies`),
   vsCloud: (id: string) => req<SaveVsCloud>(`/api/games/${id}/vs-cloud`),
-  switchCopyAction: (id: string, emulator: string, action: string) =>
-    post<SwitchCopy[]>(`/api/games/${id}/switch-copies/${encodeURIComponent(emulator)}`, { action }),
+  switchCopyAction: (id: string, emulator: string, action: string, saves?: string | null) =>
+    post<SwitchCopy[]>(`/api/games/${id}/switch-copies/${encodeURIComponent(emulator)}`, { action, saves: saves ?? null }),
   setGameProfileAtLaunch: (id: string, profileAtLaunch: XeniaProfile['policy'] | null) =>
     fetch(`/api/games/${id}/xenia-profile`, {
       method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ profileAtLaunch }),

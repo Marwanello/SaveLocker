@@ -171,7 +171,11 @@ public sealed record ScanCandidate(
     /// one. One entry per distinct AppID; <see cref="DuplicateShortcut.Tracked"/> marks the shortcut
     /// this scan resolved. Null unless the shape was actually seen (and never an empty list).
     /// </summary>
-    IReadOnlyList<DuplicateShortcut>? DuplicateShortcuts = null)
+    IReadOnlyList<DuplicateShortcut>? DuplicateShortcuts = null,
+    /// <summary>A Yuzu fork's title found with only its device save (<see cref="SuggestedSaveDir"/>): the current user's
+    /// folder for it, where an account save would go when the server's game keeps one
+    /// (<see cref="SwitchEmulators.AlignToGameFolders"/>). Null for everything else.</summary>
+    string? SwitchAccountDir = null)
 {
     /// <summary>
     /// What a scanner merges duplicates on: the normalised name, so one game found by two sources is one

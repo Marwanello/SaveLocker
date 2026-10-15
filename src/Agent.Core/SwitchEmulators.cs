@@ -72,7 +72,8 @@ public static partial class SwitchEmulators
     /// Where one title's save is, or would go, in one setup. <see cref="Dir"/> is the account save (the device save when the
     /// title has only that); <see cref="DeviceDir"/> the device save beside an account one. <see cref="Exists"/>: it has files.
     /// </summary>
-    public sealed record TitleSave(Setup Setup, string TitleId, string Dir, string? DeviceDir, string? UserName, bool Exists, DateTime WrittenUtc);
+    public sealed record TitleSave(Setup Setup, string TitleId, string Dir, string? DeviceDir, string? UserName, bool Exists, DateTime WrittenUtc,
+        string? AccountDir = null);
 
     // ---------------------------------------------------------------- finding the emulators
 
@@ -283,18 +284,50 @@ public static partial class SwitchEmulators
         var currentUser = users.FirstOrDefault()?.Id;
         var accountDir = saved.OrderByDescending(d => currentUser is not null && d.Contains(currentUser, StringComparison.OrdinalIgnoreCase))
                              .ThenByDescending(Written).FirstOrDefault();
-        if (accountDir is null && HasFiles(deviceSave)) return Make(s, titleId, deviceSave, null, "Device");
+        if (accountDir is null && HasFiles(deviceSave))
+            return Make(s, titleId, deviceSave, null, "Device", currentUser is null ? null : At(currentUser));
         accountDir ??= currentUser is null ? null : At(currentUser);
         if (accountDir is null) return null;
         var user = Path.GetFileName(Path.GetDirectoryName(accountDir));
         return Make(s, titleId, accountDir, HasFiles(deviceSave) ? deviceSave : null, names.GetValueOrDefault(user!));
     }
 
-    private static TitleSave Make(Setup s, string titleId, string dir, string? deviceDir, string? user)
+    /// <summary>
+    /// A Switch game's folders here, laid out as the server's game has them, so each folder key holds the same save on every
+    /// machine. A title with only a device save (Animal Crossing's island) is found as one main folder; one with an account
+    /// save beside it as main plus <c>device</c>. A machine with a stray account copy beside the device save (the maintainer's
+    /// PC, 2026-10-16: an old island under Eden's user) then filed the real save under <c>device</c> while the Deck synced its
+    /// island as <c>main</c> — the Deck's save landed in the PC's stray copy, and Eden kept loading the old one.
+    /// <list type="bullet">
+    /// <item>The game has no device folder and this machine found one: the device save is the main folder here; the account
+    /// copy is left alone.</item>
+    /// <item>The game has a device folder and this machine found only the device save: it is the device folder here, and the
+    /// main folder is the current user's (<see cref="ScanCandidate.SwitchAccountDir"/>, empty until a pull fills it). Yuzu
+    /// forks only: Ryujinx has no account folder for a title until the game makes one.</item>
+    /// </list>
+    /// Null when nothing changes.
+    /// </summary>
+    public static (string Dir, IReadOnlyList<DeclaredSavePath> Extras, string Note)? AlignToGameFolders(
+        ScanCandidate c, GameDto game, string dir, IReadOnlyList<DeclaredSavePath> extras)
+    {
+        if (SwitchTitles.TitleIdOf(c.EmulatorKey) is not { } title) return null;
+        var gameHasDevice = (game.ExtraPaths ?? []).Any(p => p.Key == DeviceFolderKey);
+        var device = extras.FirstOrDefault(e => e.Key == DeviceFolderKey);
+        if (!gameHasDevice && device is not null)
+            return (device.Dir, extras.Where(e => e != device).ToList(),
+                $"{c.Name}: your other devices keep this game's save in the device folder, so it syncs from {device.Dir} here. " +
+                $"The copy under the emulator's user ({dir}) was left as it is.");
+        if (!gameHasDevice || device is not null || c.SwitchAccountDir is not { } account) return null;
+        return (account, [.. extras, new DeclaredSavePath(DeviceFolderKey, dir)],
+            $"{c.Name}: your other devices keep this game in two folders, so its device save here syncs as the device folder, " +
+            $"and the emulator user's folder ({account}) takes the other one.");
+    }
+
+    private static TitleSave Make(Setup s, string titleId, string dir, string? deviceDir, string? user, string? accountDir = null)
     {
         var exists = HasFiles(dir);
         var written = new[] { dir, deviceDir }.Where(d => d is not null).Select(d => Written(d!)).DefaultIfEmpty(DateTime.MinValue).Max();
-        return new TitleSave(s, titleId, dir, deviceDir, user, exists, written);
+        return new TitleSave(s, titleId, dir, deviceDir, user, exists, written, accountDir);
     }
 
     /// <summary>A fork's profile folders under <c>save/0000000000000000</c>: the users <c>profiles.dat</c> names and the device
@@ -348,7 +381,8 @@ public static partial class SwitchEmulators
             ExtraSaveDirs: t.DeviceDir is { } device ? [new DeclaredSavePath(DeviceFolderKey, device)] : null,
             Release: new GameReleaseDto("Nintendo Switch", Region: null, GameIds: [t.TitleId]),
             EmulatorKey: EmulatorKeys.Switch(t.TitleId),
-            NoSaveYet: noSaveYet);
+            NoSaveYet: noSaveYet,
+            SwitchAccountDir: t.AccountDir);
 
     // ---------------------------------------------------------------- names
 

@@ -1379,7 +1379,7 @@ public sealed class AgentApiServer : IDisposable
                 try
                 {
                     var synced = SwitchCopies.SyncedEmulator(game);
-                    if (!string.Equals(synced, emulator, StringComparison.OrdinalIgnoreCase))
+                    if (!SwitchCopies.IsSynced(game, emulator, body.Saves))
                         return TypedResults.BadRequest(new ErrorResponse(synced is null
                             ? $"No Switch emulator here holds the folder {game.Name} syncs, so nothing was changed."
                             : $"{game.Name} syncs through {synced} here, not {emulator}, so nothing was changed."));
@@ -1390,12 +1390,12 @@ public sealed class AgentApiServer : IDisposable
             }
             Func<Task<string?>>? work = body.Action switch
             {
-                SwitchCopyActions.CopyHere => () => Task.FromResult(SwitchCopies.CopyHere(_config, game, emulator, AgentLogger.Log)),
-                SwitchCopyActions.KeepInSync => () => { SwitchCopies.SetKeepInSync(_config, game, emulator, true); return Task.FromResult<string?>(null); },
-                SwitchCopyActions.StopKeeping => () => { SwitchCopies.SetKeepInSync(_config, game, emulator, false); return Task.FromResult<string?>(null); },
-                SwitchCopyActions.MakeSynced => () => SwitchCopies.MakeSyncedAsync(_config, game, emulator, ApiClient.For(_config), AgentLogger.Log),
-                SwitchCopyActions.KeepCopy => () => Task.FromResult(SwitchCopies.Resolve(_config, game, emulator, keepCopy: true, AgentLogger.Log)),
-                SwitchCopyActions.KeepSynced => () => Task.FromResult(SwitchCopies.Resolve(_config, game, emulator, keepCopy: false, AgentLogger.Log)),
+                SwitchCopyActions.CopyHere => () => Task.FromResult(SwitchCopies.CopyHere(_config, game, emulator, AgentLogger.Log, saves: body.Saves)),
+                SwitchCopyActions.KeepInSync => () => { SwitchCopies.SetKeepInSync(_config, game, emulator, true, saves: body.Saves); return Task.FromResult<string?>(null); },
+                SwitchCopyActions.StopKeeping => () => { SwitchCopies.SetKeepInSync(_config, game, emulator, false, saves: body.Saves); return Task.FromResult<string?>(null); },
+                SwitchCopyActions.MakeSynced => () => SwitchCopies.MakeSyncedAsync(_config, game, emulator, ApiClient.For(_config), AgentLogger.Log, saves: body.Saves),
+                SwitchCopyActions.KeepCopy => () => Task.FromResult(SwitchCopies.Resolve(_config, game, emulator, keepCopy: true, AgentLogger.Log, saves: body.Saves)),
+                SwitchCopyActions.KeepSynced => () => Task.FromResult(SwitchCopies.Resolve(_config, game, emulator, keepCopy: false, AgentLogger.Log, saves: body.Saves)),
                 SwitchCopyActions.TellWhenReady => () => Task.FromResult(SwitchCopies.SetTellWhenReady(_config, game, emulator, true)),
                 SwitchCopyActions.StopTelling => () => Task.FromResult(SwitchCopies.SetTellWhenReady(_config, game, emulator, false)),
                 _ => null,
@@ -2038,7 +2038,7 @@ public sealed class AgentApiServer : IDisposable
 
     private SwitchCopyDto[] SwitchCopyRows(TrackedGame game) =>
         SwitchCopies.List(_config, game).Select(r => new SwitchCopyDto(r.Emulator, r.User, r.Folder,
-            r.Synced, r.State, r.WrittenUtc, r.KeepInSync, r.CanCopyHere, r.CanMakeSynced, r.Note, r.TellWhenReady)).ToArray();
+            r.Synced, r.State, r.WrittenUtc, r.KeepInSync, r.CanCopyHere, r.CanMakeSynced, r.Note, r.TellWhenReady, r.Saves, r.Install)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -2559,7 +2559,7 @@ public sealed record TestConnectionDto(bool Ok, int? Status, long LatencyMs, str
 /// <see cref="SwitchCopies.States"/>.</summary>
 public sealed record SwitchCopyDto(
     string Emulator, string? User, string? Folder, bool Synced, string State, DateTime? WrittenUtc,
-    bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note, bool TellWhenReady);
+    bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note, bool TellWhenReady, string? Saves, string? Install);
 
 /// <summary>A game's save here next to the cloud's head: <see cref="State"/> is one of <see cref="SaveVsCloud"/>.
 /// <see cref="Emulators"/>: the Switch emulators the game's machines say they play it in, this one's too.</summary>
@@ -2586,8 +2586,9 @@ public static class SaveVsCloud
     }
 }
 
-/// <summary>What to do with one emulator's copy: one of <see cref="SwitchCopyActions"/>.</summary>
-public sealed record SwitchCopyActionRequest(string Action);
+/// <summary>What to do with one emulator's copy: one of <see cref="SwitchCopyActions"/>. <see cref="Saves"/> picks one
+/// install when the emulator has two here (its row's <see cref="SwitchCopyDto.Saves"/>).</summary>
+public sealed record SwitchCopyActionRequest(string Action, string? Saves = null);
 
 public static class SwitchCopyActions
 {

@@ -26,10 +26,12 @@ public static class SwitchCopies
     public const int BackupsKept = 5;
 
     /// <summary>One emulator's row on the game's Emulator settings page. <see cref="TellWhenReady"/>: the user is told once
-    /// it can sync the game (<see cref="SetTellWhenReady"/>).</summary>
+    /// it can sync the game (<see cref="SetTellWhenReady"/>). <see cref="Saves"/> is the install's saves folder, which tells
+    /// two installs of one emulator apart (EmuDeck's and a standalone one), and <see cref="Install"/> says which it is.</summary>
     public sealed record Row(
         string Emulator, string? User, string? Folder, bool Synced, string State, DateTime? WrittenUtc,
-        bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note, bool TellWhenReady = false);
+        bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note, bool TellWhenReady = false,
+        string? Saves = null, string? Install = null);
 
     /// <summary>What a copy is, next to the synced one.</summary>
     public static class States
@@ -68,14 +70,14 @@ public static class SwitchCopies
             if (s == synced)
             {
                 rows.Insert(0, new Row(s.Emulator, slot?.UserName, game.SaveDirectory, true, States.Synced,
-                    syncedWritten == DateTime.MinValue ? null : syncedWritten, false, false, false, null));
+                    syncedWritten == DateTime.MinValue ? null : syncedWritten, false, false, false, null, false, s.Saves, InstallOf(s)));
                 continue;
             }
             if (slot is null)
             {
                 rows.Add(new Row(s.Emulator, null, null, false, States.NoSlot, null, saved?.KeepInSync ?? false, false, false,
                     s.IsRyujinx ? $"Start the game once in {s.Emulator}: it makes the game's save folder the first time." : "No user in this emulator yet.",
-                    saved?.TellWhenReady ?? false));
+                    saved?.TellWhenReady ?? false, s.Saves, InstallOf(s)));
                 continue;
             }
             var (mine, theirs) = Pair(game.Roots(config.StateDir), CopyRoots(s, title, slot, game));
@@ -85,7 +87,7 @@ public static class SwitchCopies
                 : hash == Hash(mine) ? States.Same
                 : slot.WrittenUtc > syncedWritten ? States.Newer : States.Older;
             rows.Add(new Row(s.Emulator, slot.UserName, slot.Dir, false, state, slot.Exists ? slot.WrittenUtc : null,
-                saved?.KeepInSync ?? false, state != States.Same, slot.Exists, null));
+                saved?.KeepInSync ?? false, state != States.Same, slot.Exists, null, false, s.Saves, InstallOf(s)));
         }
         foreach (var waiting in game.EmulatorCopies.Where(c => c.TellWhenReady && !setups.Any(s => Is(s.Emulator, c.Emulator))))
             rows.Add(new Row(waiting.Emulator, null, null, false, States.NotInstalled, null, false, false, false, null, true));
@@ -135,6 +137,12 @@ public static class SwitchCopies
     public static string? SyncedEmulator(TrackedGame game, IReadOnlyList<SwitchEmulators.Setup>? setups = null) =>
         SyncedSetup(game, setups ?? SwitchEmulators.Find())?.Emulator;
 
+    /// <summary>Is <paramref name="emulator"/> (the install whose saves folder is <paramref name="saves"/>, when given) the
+    /// one whose copy syncs?</summary>
+    public static bool IsSynced(TrackedGame game, string emulator, string? saves, IReadOnlyList<SwitchEmulators.Setup>? setups = null) =>
+        SyncedSetup(game, setups ?? SwitchEmulators.Find()) is { } s && Is(s.Emulator, emulator) &&
+        (saves is null || string.Equals(Normalize(s.Saves), Normalize(saves), Comparison));
+
     /// <summary>Zip the synced copy as it is, beside the copies' own backups, before something replaces it.</summary>
     public static void BackupSynced(AgentConfig config, TrackedGame game, string label)
     {
@@ -144,14 +152,14 @@ public static class SwitchCopies
 
     /// <summary>Copy the synced save to <paramref name="emulator"/>'s copy now. Null when done, else why not.</summary>
     public static string? CopyHere(AgentConfig config, TrackedGame game, string emulator, Action<string> log,
-        IReadOnlyList<SwitchEmulators.Setup>? setups = null) =>
-        Transfer(config, game, emulator, toCopy: true, log, setups);
+        IReadOnlyList<SwitchEmulators.Setup>? setups = null, string? saves = null) =>
+        Transfer(config, game, emulator, toCopy: true, log, setups, saves);
 
     /// <summary>Keep the side the user chose of a copy marked <see cref="EmulatorCopy.Conflict"/>: <paramref name="keepCopy"/>
     /// takes the copy into the synced folder, otherwise the synced save goes to the copy.</summary>
     public static string? Resolve(AgentConfig config, TrackedGame game, string emulator, bool keepCopy, Action<string> log,
-        IReadOnlyList<SwitchEmulators.Setup>? setups = null) =>
-        Transfer(config, game, emulator, toCopy: !keepCopy, log, setups);
+        IReadOnlyList<SwitchEmulators.Setup>? setups = null, string? saves = null) =>
+        Transfer(config, game, emulator, toCopy: !keepCopy, log, setups, saves);
 
     /// <summary>
     /// Turn keeping <paramref name="emulator"/>'s copy in step on or off. Turned on, the two count as last the same as the
@@ -159,7 +167,7 @@ public static class SwitchCopies
     /// asking about two saves that were never made the same.
     /// </summary>
     public static void SetKeepInSync(AgentConfig config, TrackedGame game, string emulator, bool keep,
-        IReadOnlyList<SwitchEmulators.Setup>? setups = null)
+        IReadOnlyList<SwitchEmulators.Setup>? setups = null, string? saves = null)
     {
         var copies = game.EmulatorCopies.Select(c => c with { }).ToList();
         var copy = copies.FirstOrDefault(c => Is(c.Emulator, emulator));
@@ -167,7 +175,7 @@ public static class SwitchCopies
         if (keep && !copy.KeepInSync && !copy.Conflict && TitleId(game) is { } title)
         {
             setups ??= SwitchEmulators.Find();
-            if (setups.FirstOrDefault(s => Is(s.Emulator, emulator)) is { } setup && SwitchEmulators.Slot(setup, title) is { Exists: true } slot)
+            if (Pick(setups, emulator, saves) is { } setup && SwitchEmulators.Slot(setup, title) is { Exists: true } slot)
             {
                 var (mine, theirs) = Pair(game.Roots(config.StateDir), CopyRoots(setup, title, slot, game));
                 var syncedWritten = mine.Select(r => SwitchEmulators.Written(r.Directory)).DefaultIfEmpty(DateTime.MinValue).Max();
@@ -185,11 +193,11 @@ public static class SwitchCopies
     /// poller applies, so a move only made here would be undone on its next tick.
     /// </summary>
     public static async Task<string?> MakeSyncedAsync(AgentConfig config, TrackedGame game, string emulator, ApiClient? api, Action<string> log,
-        IReadOnlyList<SwitchEmulators.Setup>? setups = null)
+        IReadOnlyList<SwitchEmulators.Setup>? setups = null, string? saves = null)
     {
         if (TitleId(game) is not { } title) return "this is not a Switch game.";
         setups ??= SwitchEmulators.Find();
-        var target = setups.FirstOrDefault(s => Is(s.Emulator, emulator));
+        var target = Pick(setups, emulator, saves);
         if (target is null || SwitchEmulators.Slot(target, title) is not { } slot) return $"{emulator} has no save folder for this game.";
         var device = game.ExtraPaths.FirstOrDefault(p => p.Key == SwitchEmulators.DeviceFolderKey);
         var deviceDir = DeviceDir(target, title, slot);
@@ -335,11 +343,11 @@ public static class SwitchCopies
     // ---------------------------------------------------------------- the copying
 
     private static string? Transfer(AgentConfig config, TrackedGame game, string emulator, bool toCopy, Action<string> log,
-        IReadOnlyList<SwitchEmulators.Setup>? setups)
+        IReadOnlyList<SwitchEmulators.Setup>? setups, string? saves)
     {
         if (TitleId(game) is not { } title) return "this is not a Switch game.";
         setups ??= SwitchEmulators.Find();
-        var setup = setups.FirstOrDefault(s => Is(s.Emulator, emulator));
+        var setup = Pick(setups, emulator, saves);
         if (setup is null) return $"{emulator} isn't on this machine.";
         if (setup == SyncedSetup(game, setups)) return $"{emulator}'s copy is the one that syncs.";
         if (SwitchEmulators.Slot(setup, title) is not { } slot)
@@ -464,6 +472,13 @@ public static class SwitchCopies
         return setups.FirstOrDefault(s => dir.StartsWith(Normalize(s.Saves) + "/", Comparison))
                ?? setups.FirstOrDefault(s => Is(s.Emulator, game.Source?.Detail));
     }
+
+    /// <summary>One install of <paramref name="emulator"/>: the one whose saves folder is <paramref name="saves"/> when
+    /// given (two installs of one emulator, EmuDeck's and a standalone one), else the first.</summary>
+    private static SwitchEmulators.Setup? Pick(IReadOnlyList<SwitchEmulators.Setup> setups, string emulator, string? saves) =>
+        setups.FirstOrDefault(s => Is(s.Emulator, emulator) && (saves is null || string.Equals(Normalize(s.Saves), Normalize(saves), Comparison)));
+
+    private static string InstallOf(SwitchEmulators.Setup s) => s.EmuDeck ? "EmuDeck" : "Standalone";
 
     private static StringComparison Comparison => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     private static string Normalize(string p) => (p ?? "").Replace('\\', '/').TrimEnd('/');

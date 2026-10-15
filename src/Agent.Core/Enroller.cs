@@ -190,6 +190,26 @@ public static class Enroller
                     extras = [.. aligned.Extras];
                     info.Add(aligned.Note);
                 }
+                // A Switch game's folders follow the server game's layout, so each key holds the same save everywhere.
+                if (SwitchEmulators.AlignToGameFolders(c, game, check.Canonical!, extras) is { } laid)
+                {
+                    var moved = SavePathGuard.Check(laid.Dir, config.StateDir);
+                    if (!moved.Ok)
+                    {
+                        Refuse(c.Name, $"its save folder here is refused: {moved.Reason}");
+                        continue;
+                    }
+                    // The user's folder a device save was moved beside may not exist yet; a push needs its main folder.
+                    try { Directory.CreateDirectory(moved.Canonical!); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        Refuse(c.Name, $"could not create its save folder {moved.Canonical}: {ex.Message}");
+                        continue;
+                    }
+                    check = moved;
+                    extras = [.. laid.Extras];
+                    info.Add(laid.Note);
+                }
                 if ((c.IncludeGlobs is { Count: > 0 } || extras.Count > 0) && FolderMismatch(game, c, extras) is { } mismatch)
                 {
                     Refuse(c.Name, mismatch);

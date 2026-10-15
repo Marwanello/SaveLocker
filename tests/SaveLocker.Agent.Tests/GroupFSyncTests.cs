@@ -368,6 +368,66 @@ public sealed class GroupFSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Contains(await ApiClient.For(deck).GetGameVersionsAsync(game.GameId), v => v.Id == head.Head!.Id);
     }
 
+    [Fact]
+    public async Task Two_installs_of_one_emulator_are_two_choices_and_the_save_moves_to_the_one_picked()
+    {
+        // EmuDeck's Eden holds the save; a standalone Eden beside it has none (the maintainer's PC, 2026-10-16).
+        var emuDeck = S.Eden(P("pc/Emulation"), EdenUser);
+        var standalone = S.Eden(P("pc/standalone"), EdenUser) with { EmuDeck = false };
+        S.Write(Path.Combine(S.EdenSave(P("pc/Emulation"), EdenUser, Title), "save.bin"), "played");
+        IReadOnlyList<SwitchEmulators.Setup> setups = [emuDeck, standalone];
+        var pc = await Machine("pc");
+        var game = await Enroll(pc, SwitchEmulators.Scan(setups, []), Title);
+
+        var rows = SwitchCopies.List(pc, game, setups);
+        Assert.Equal([("Eden", "EmuDeck", true), ("Eden", "Standalone", false)], rows.Select(r => (r.Emulator, r.Install!, r.Synced)));
+        Assert.NotEqual(rows[0].Saves, rows[1].Saves);
+
+        // Named by its folder, the standalone one takes the save played in EmuDeck's, then syncs.
+        Assert.NotNull(SwitchCopies.CopyHere(pc, game, "Eden", _ => { }, setups));
+        Assert.Null(SwitchCopies.CopyHere(pc, game, "Eden", _ => { }, setups, standalone.Saves));
+        Assert.Null(await SwitchCopies.MakeSyncedAsync(pc, game, "Eden", ApiClient.For(pc), _ => { }, setups, standalone.Saves));
+        Assert.Equal("played", File.ReadAllText(Path.Combine(S.EdenSave(P("pc/standalone"), EdenUser, Title), "save.bin")));
+        Assert.True(SwitchCopies.IsSynced(game, "Eden", standalone.Saves, setups));
+        Assert.False(SwitchCopies.IsSynced(game, "Eden", emuDeck.Saves, setups));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_device_save_lands_in_the_device_save_whichever_machine_joins_first(bool deckFirst)
+    {
+        // The Deck has only the island (the device save); the PC has it too, plus a stray copy under Eden's user.
+        var deckSetup = S.Eden(P("deck/Emulation"), EdenUser);
+        var deckIsland = S.EdenSave(P("deck/Emulation"), SwitchEmulators.DeviceProfile, Title);
+        S.Write(Path.Combine(deckIsland, "main.dat"), "deck-island");
+        var pcSetup = S.Eden(P("pc/Emulation"), EdenUser);
+        var pcIsland = S.EdenSave(P("pc/Emulation"), SwitchEmulators.DeviceProfile, Title);
+        var pcStray = S.EdenSave(P("pc/Emulation"), EdenUser, Title);
+        S.Write(Path.Combine(pcIsland, "main.dat"), "pc-island");
+        S.Write(Path.Combine(pcStray, "main.dat"), "stray");
+        var deck = await Machine("deck");
+        var pc = await Machine("pc");
+        async Task<TrackedGame> Join(AgentConfig m, SwitchEmulators.Setup s) => await Enroll(m, SwitchEmulators.Scan([s], []), Title);
+        TrackedGame deckGame, pcGame;
+        if (deckFirst) { deckGame = await Join(deck, deckSetup); pcGame = await Join(pc, pcSetup); }
+        else { pcGame = await Join(pc, pcSetup); deckGame = await Join(deck, deckSetup); }
+
+        // Every key holds the same save on both: the island is under one key, wherever each machine keeps it.
+        string? Island(TrackedGame g) => Path.GetFullPath(g.SaveDirectory) is var main &&
+            (main == Path.GetFullPath(deckIsland) || main == Path.GetFullPath(pcIsland)) ? "main"
+            : g.ExtraPaths.FirstOrDefault(p => p.Key == SwitchEmulators.DeviceFolderKey)?.Key;
+        Assert.Equal(Island(deckGame), Island(pcGame));
+        Assert.NotNull(Island(deckGame));
+
+        // The Deck's island, kept over the PC's, reaches the island the PC's Eden loads.
+        await using var deckEngine = new SyncEngine(deck, ApiClient.For(deck));
+        await using var pcEngine = new SyncEngine(pc, ApiClient.For(pc));
+        Assert.NotNull(await deckEngine.PushAsync(deckGame, force: true));
+        await pcEngine.PullAsync(pcGame, force: true);
+        Assert.Equal("deck-island", File.ReadAllText(Path.Combine(pcIsland, "main.dat")));
+    }
+
     [Theory]
     [InlineData("a", "a", "a", SaveVsCloud.Same)]
     [InlineData("a", "b", "a", SaveVsCloud.CloudNewer)]
