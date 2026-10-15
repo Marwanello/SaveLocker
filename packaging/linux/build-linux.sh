@@ -71,6 +71,15 @@ fi
 tarball="${out}/savelocker-${version}-${rid}.tar.gz"
 tar -czf "${tarball}" -C "${out}" SaveLocker
 
+# The double-click installer a release offers beside the tarball (the EmuDeck/Decky pattern): a
+# .desktop that fetches savelocker-install.sh, which finds and installs the latest tarball. Both name
+# the repository the release lives in — GITHUB_REPOSITORY on a CI runner.
+repo="${SAVELOCKER_GITHUB_REPO:-${GITHUB_REPOSITORY:-SkorcherX/SaveLocker}}"
+for f in SaveLocker-Installer.desktop savelocker-install.sh; do
+  sed "s|@REPO@|${repo}|g" "${repo_root}/packaging/linux/${f}" > "${out}/${f}"
+done
+chmod +x "${out}/savelocker-install.sh"
+
 echo
 echo "Built: ${tarball}"
 echo "Install on the Deck:  tar -xzf $(basename "${tarball}") && ./SaveLocker/install.sh"

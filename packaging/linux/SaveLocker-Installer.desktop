@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Install SaveLocker
+Comment=Download and install the SaveLocker agent from its latest GitHub release
+Icon=system-software-install
+Terminal=true
+Exec=sh -c 'cd "$(mktemp -d)" || exit 1; if curl -fsSL -o savelocker-install.sh "${SAVELOCKER_RELEASE_BASE:-https://github.com/@REPO@/releases/latest/download}/savelocker-install.sh"; then sh savelocker-install.sh; else echo Could not download the SaveLocker installer - check the internet connection.; fi; rm -f savelocker-install.sh; echo; echo Press Enter to close this window.; read reply'

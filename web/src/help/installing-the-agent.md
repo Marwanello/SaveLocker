@@ -97,6 +97,15 @@ first. (It needs glibc 2.27 or newer; every SteamOS 3 release is well past that.
 
 On a Steam Deck, switch to **Desktop Mode** first (**Steam button → Power → Switch to Desktop**).
 
+The easiest way in is a join link from the console (see [Enroll it](#help/installing-the-agent)
+below) — it installs and enrolls together. Without one, use the release's double-click installer:
+download **`SaveLocker-Installer.desktop`** from the latest release on GitHub, double-click it in
+the file manager (choose **Execute** when asked whether to trust it), and a terminal installs the
+newest agent — checking the download against the release's checksum — then opens the agent on its
+**Join a server** card, ready for the link. Running it again later updates the agent in place.
+
+Or by hand, from the release's tarball:
+
 ```bash
 tar -xzf savelocker-<version>-linux-x64.tar.gz
 ./SaveLocker/install.sh

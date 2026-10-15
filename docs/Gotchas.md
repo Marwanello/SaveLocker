@@ -135,6 +135,15 @@ These exist because the production values are far too slow to observe in a suite
   in a notification (production: 5 minutes; clamped 1–3600). Set it in the shell you run
   `testenv.ps1 up` from and clear it afterwards; 20 lets the whole appear-once-then-withdraw cycle be
   watched in a minute (`docker stop savelocker-test`, wait, `docker start savelocker-test`).
+- **`SAVELOCKER_INSTALL_SANDBOX=<port>`** — read by `packaging/linux/install.sh`, not the agent: a whole
+  install into a throwaway `$HOME` (`testenv.ps1 flow`, CI's release-installer step). Everything
+  install.sh writes follows `$HOME` **except the systemd user manager**, which belongs to the real user
+  whatever `$HOME` says — so without this a sandboxed install would stop, re-enable and restart the real
+  `savelocker.service`. With it, systemd is never touched and the daemon runs on `<port>` (5178 refused).
+  `flow` refuses a Linux build whose install.sh predates it.
+- **`SAVELOCKER_RELEASE_BASE`** — where `SaveLocker-Installer.desktop` and `savelocker-install.sh` fetch a
+  release from instead of GitHub's `releases/latest/download`; a `file://` folder works. CI and `flow`
+  point it at a local mirror holding the tarball, `SHA256SUMS-linux.txt` and the script.
 - **`SAVELOCKER_RUNKEY_SUBPATH`** — moves the HKCU "Start with Windows" subkey (Windows only).
   WA-10's access-denied case needs a **Deny ACE**, and putting one on the real
   `Software\Microsoft\Windows\CurrentVersion\Run` would break auto-start for everything on the box if

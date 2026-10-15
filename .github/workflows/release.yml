@@ -142,3 +142,5 @@ jobs:
           files: |
             artifacts/linux/savelocker-*-linux-x64.tar.gz
             artifacts/linux/SHA256SUMS-linux.txt
+            artifacts/linux/SaveLocker-Installer.desktop
+            artifacts/linux/savelocker-install.sh

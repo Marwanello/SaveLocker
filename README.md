@@ -224,8 +224,11 @@ page, paste the link (Ctrl+V); the machine is online in the console before the i
 (SmartScreen warns because the installer isn't code-signed yet — *More info → Run anyway*.) Unattended:
 `Setup.exe /SILENT /ENROLL-URL="http://your-server:5080/join/K7QM-4H2X"`.
 
-**Steam Deck / Linux** — in Desktop Mode, the pairing page's one-liner installs and enrolls in one
-go; by hand:
+**Steam Deck / Linux** — in Desktop Mode, open the join link and press **Download installer**: a
+double-clickable launcher that installs and enrolls in one go (a one-line command is beside it).
+Without a link yet, take **[SaveLocker-Installer.desktop](https://github.com/Marwanello/SaveLocker/releases/latest/download/SaveLocker-Installer.desktop)**
+from the latest release — double-click it, and it installs the newest agent and opens its **Join a
+server** card for the link. By hand:
 
 ```sh
 tar -xzf savelocker-x.x.x-linux-x64.tar.gz

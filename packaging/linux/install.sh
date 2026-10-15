@@ -11,6 +11,19 @@ prefix="${HOME}/.local/share/SaveLocker"
 bindir="${HOME}/.local/bin"
 unitdir="${HOME}/.config/systemd/user"
 
+# Test-only (tests/testenv-flow.sh, CI): a whole install into a throwaway $HOME. Everything below
+# follows $HOME except the systemd user manager, which is the real user's whatever $HOME says — so a
+# sandbox never stops, enables or starts savelocker.service, and runs its own daemon on this port
+# instead of the real agent's 5178.
+sandbox_port="${SAVELOCKER_INSTALL_SANDBOX:-}"
+if [ -n "${sandbox_port}" ]; then
+  case "${sandbox_port}" in
+    *[!0-9]*) echo "!! SAVELOCKER_INSTALL_SANDBOX must be a port number"; exit 1 ;;
+  esac
+  [ "${sandbox_port}" != 5178 ] || { echo "!! a sandbox cannot use the real agent's port 5178"; exit 1; }
+  echo "==> SANDBOX install (test-only): systemd is left alone, the daemon runs on :${sandbox_port}"
+fi
+
 echo "==> Installing to ${prefix}"
 mkdir -p "${prefix}" "${bindir}" "${unitdir}"
 
@@ -23,7 +36,9 @@ mkdir -p "${prefix}" "${bindir}" "${unitdir}"
 # and `set -e` therefore never fired. Re-running install.sh from a newer tarball is THE documented
 # Linux update path, so this hit every upgrade.
 restart_after=0
-if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet savelocker.service 2>/dev/null; then
+if [ -n "${sandbox_port}" ]; then
+  pkill -f "^${prefix}/savelocker daemon" 2>/dev/null || true
+elif command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet savelocker.service 2>/dev/null; then
   echo "==> Stopping the running agent before replacing its files"
   systemctl --user stop savelocker.service 2>/dev/null || true
   restart_after=1
@@ -32,7 +47,7 @@ fi
 # A daemon started by hand is not under systemd's control, and we must not kill something the user
 # is running deliberately — but they need to know this install will not take effect until it restarts.
 stray_daemon=0
-if command -v pgrep >/dev/null 2>&1 && pgrep -f "savelocker daemon" >/dev/null 2>&1; then
+if [ -z "${sandbox_port}" ] && command -v pgrep >/dev/null 2>&1 && pgrep -f "savelocker daemon" >/dev/null 2>&1; then
   stray_daemon=1
 fi
 
@@ -125,7 +140,16 @@ install_unit() {
   fi
 }
 
-if ! install_unit; then
+if [ -n "${sandbox_port}" ]; then
+  nohup "${prefix}/savelocker" daemon --port "${sandbox_port}" >> "${prefix}/sandbox-daemon.log" 2>&1 < /dev/null &
+  # Up before anything runs `savelocker open`: until the daemon has recorded its port, open would
+  # look for the real agent's 5178.
+  for _ in $(seq 1 30); do
+    curl -sf "http://127.0.0.1:${sandbox_port}/" >/dev/null 2>&1 && break
+    sleep 0.5
+  done
+  echo "==> Sandbox daemon on :${sandbox_port} (log: ${prefix}/sandbox-daemon.log)"
+elif ! install_unit; then
   echo "   You can always run the agent directly:  ${prefix}/savelocker daemon"
   # We stopped a working agent for the upgrade and could not bring it back. Say so loudly: on a
   # headless Deck the only symptom otherwise is the machine quietly going offline in the console.
