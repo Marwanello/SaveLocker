@@ -42,9 +42,10 @@ public static class AgentEnroller
     /// the TOFU pin, and pre-seed the games so the agent is useful before its first poll rather
     /// than twenty seconds after it.
     /// </summary>
-    /// <param name="nameOverride">The CLI's <c>--name</c> (or the Settings field). A code minted
-    /// for a machine name is BINDING and wins over this — that is what stops a leaked link from
-    /// claiming another machine's identity.</param>
+    /// <param name="nameOverride">The CLI's <c>--name</c> (or the Settings field), sent as the
+    /// redeem's <c>machineName</c>. A code minted for a machine name is BINDING and wins: the
+    /// SERVER rebinds the machine to the code's name and returns it, which is what stops a leaked
+    /// link from claiming another machine's identity.</param>
     /// <param name="log">Everything the old <c>enroll</c> printed; the CLI sends it to the console
     /// and the log, the daemon to the log.</param>
     public static async Task<JoinOutcome> ApplyAsync(
@@ -111,17 +112,25 @@ public static class AgentEnroller
         {
             var dir = await ResolveForEnrollAsync(pg, detection);
 
-            var existing = config.Games.FirstOrDefault(g => g.GameId == pg.GameId);
-            var tracked = existing ?? new TrackedGame();
-            tracked.GameId = pg.GameId;
-            tracked.Name = pg.Name;
-            tracked.ManifestKey = pg.ManifestKey;
-            tracked.ExcludeGlobs = (pg.ExcludeGlobs ?? Array.Empty<string>()).ToList();
-            if (!string.IsNullOrEmpty(dir)) tracked.SaveDirectory = dir;
-            // Copy-on-write like every other writer: the last direct mutation of the live list.
-            if (existing is null) config.MutateGames(list => list.Add(tracked));
+            // One copy-on-write pass (MutateGames) for both the add and the update: the live list is
+            // never mutated in place, the same rule every other writer in AgentConfig follows — a
+            // reader enumerating it (the Deck UI's render loop) must never see it change underfoot.
+            config.MutateGames(list =>
+            {
+                var tracked = list.FirstOrDefault(g => g.GameId == pg.GameId);
+                if (tracked is null)
+                {
+                    tracked = new TrackedGame { GameId = pg.GameId };
+                    list.Add(tracked);
+                }
+                tracked.Name = pg.Name;
+                tracked.ManifestKey = pg.ManifestKey;
+                tracked.ExcludeGlobs = (pg.ExcludeGlobs ?? Array.Empty<string>()).ToList();
+                if (!string.IsNullOrEmpty(dir)) tracked.SaveDirectory = dir;
+            });
 
-            if (string.IsNullOrEmpty(tracked.SaveDirectory))
+            var saveDir = config.Games.FirstOrDefault(g => g.GameId == pg.GameId)?.SaveDirectory ?? "";
+            if (string.IsNullOrEmpty(saveDir))
             {
                 unmapped++;
                 log($"  {pg.Name}: no save folder found here — map it with: add-game --name \"{pg.Name}\" --dir <path>");
@@ -129,9 +138,9 @@ public static class AgentEnroller
             }
 
             mapped++;
-            log($"  {pg.Name}: {tracked.SaveDirectory}");
+            log($"  {pg.Name}: {saveDir}");
             // Tell the server where this machine put it, so the console can show it.
-            try { await api.SetMachinePathAsync(pg.GameId, tracked.SaveDirectory); }
+            try { await api.SetMachinePathAsync(pg.GameId, saveDir); }
             catch (Exception ex) { AgentLogger.LogException("enroll.SetMachinePath", ex); }
         }
 

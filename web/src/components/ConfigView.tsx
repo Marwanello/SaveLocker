@@ -400,8 +400,8 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
       head: '', label: 'Actions', end: true,
       cell: e => e.redeemedAt || toMs(e.expiresAt) <= Date.now()
         ? <Button size="sm" variant="quiet" onClick={() => void handleRevokeEnrollment(e)}>Remove</Button>
-        : <InlineConfirm label="Revoke" consequence="An agent still holding this file will not be able to use it."
-            confirmLabel="Revoke the file" onConfirm={() => handleRevokeEnrollment(e)} />,
+        : <InlineConfirm label="Revoke" consequence="An agent still holding this link will not be able to use it."
+            confirmLabel="Revoke the link" onConfirm={() => handleRevokeEnrollment(e)} />,
     },
   ];
 

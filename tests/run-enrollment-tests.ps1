@@ -95,12 +95,10 @@ $page = Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)"
 Check "the pairing page renders"               ($page.StatusCode -eq 200 -and
                                                 $page.Content -match "Pair this device" -and
                                                 $page.Content -match [regex]::Escape($mint.code))
-# The dashboard's CSP blocks inline script, which left the page's tabs and Copy buttons dead in a real
-# browser. The page sends its own policy, allowing its one script by digest: it must match.
-$inline = [regex]::Match($page.Content, "<script>([\s\S]*?)</script>").Groups[1].Value
-$digest = [Convert]::ToBase64String([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($inline)))
-Check "the page's CSP allows exactly its own script" ($inline.Length -gt 0 -and
-                                                "$($page.Headers['Content-Security-Policy'])" -match [regex]::Escape("script-src 'sha256-$digest'"))
+# The Linux tab's "already have an agent" block switches with the tabs: /join.js must carry that.
+$joinJs = Invoke-WebRequest -UseBasicParsing -Uri "$server/join.js"
+$joinJsText = if ($joinJs.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($joinJs.Content) } else { $joinJs.Content }
+Check "the page's script switches the agent hand-off with the tab" ($joinJsText -match "data-os")
 Check "the page links an installed Linux agent" ($page.Content -match
                                                 [regex]::Escape("savelocker://enroll?link=" + [uri]::EscapeDataString($mint.joinUrl)))
 
@@ -121,6 +119,28 @@ Check "policy carries the code"                ($policy.token -eq $mint.code)
 Check "policy carries the server URL"          ($policy.serverUrl -eq $server)
 Check "policy binds the machine name"          ($policy.machineName -eq $deckName)
 Check "policy carries the server's games"      ($policy.games.gameId -contains $game.id)
+
+# The two child routes the page's buttons use, while the code is valid: the Linux one-liner is
+# served with the code in it, and the Windows button lands on the installer (or says none is
+# hosted — a fresh server has none, a dev box with one gets the redirect).
+$oneLiner = Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)/install.sh"
+Check "the one-liner is served for a valid code" ($oneLiner.StatusCode -eq 200 -and
+                                                $oneLiner.Content -match "enroll --url" -and
+                                                $oneLiner.Content -match [regex]::Escape($mint.code))
+
+Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+$noRedirect = New-Object System.Net.Http.HttpClientHandler
+$noRedirect.AllowAutoRedirect = $false
+$http = New-Object System.Net.Http.HttpClient($noRedirect)
+try {
+    $setup = $http.GetAsync("$server/join/$($mint.code)/setup.exe").GetAwaiter().GetResult()
+    $redirects = ($setup.StatusCode -eq [System.Net.HttpStatusCode]::Found) -and
+                 ($setup.Headers.Location.OriginalString -eq "/api/agent/installer/download?platform=win-x64")
+    $noInstaller = $setup.StatusCode -eq [System.Net.HttpStatusCode]::NotFound
+    Check "setup.exe points at the installer, or names its absence" ($redirects -or $noInstaller)
+} finally {
+    $http.Dispose(); $noRedirect.Dispose()
+}
 
 # ---- 3. Enroll by link: the agent trades the code for a real machine key ----
 # --name is deliberately WRONG here: the link was minted for $deckName, and a bound code must win.
@@ -158,6 +178,15 @@ $cfg2 = Join-Path $scratch "enroll-cfg2-$stamp.json"
 $replay = Agent enroll --url $mint.joinUrl --config $cfg2
 Check "replaying the link is refused"          ($LASTEXITCODE -ne 0 -and "$replay" -match "already been used")
 
+# The policy is the other route a spent code reaches: it must say 404, not serve a de-facto
+# credential to a replay.
+try {
+    Invoke-RestMethod -Uri "$server/join/$($mint.code)/policy" | Out-Null
+    Check "the policy for a used code is refused (404)" $false
+} catch {
+    Check "the policy for a used code is refused (404)" ([int]$_.Exception.Response.StatusCode -eq 404)
+}
+
 $pageUsed = Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)"
 Check "the pairing page says it was used"      ($pageUsed.StatusCode -eq 200 -and
                                                 $pageUsed.Content -match "already been used")
@@ -191,7 +220,7 @@ Check "console shows the code as redeemed"     ($null -ne $mine.redeemedAt -and 
 # code; without it the whole option would be guessable at wire speed.
 $throttleState = Join-Path $scratch "throttle-$stamp"
 New-Item -ItemType Directory -Force $throttleState | Out-Null
-$throttle = "http://localhost:5196"
+$throttle = "http://localhost:5184"
 $serverDll = Join-Path $root "src/Server/bin/Debug/net10.0/SaveLocker.Server.dll"
 if (Test-Path $serverDll) {
     $env:ASPNETCORE_URLS = $throttle
@@ -227,7 +256,14 @@ if (Test-Path $serverDll) {
                     $statuses += 200
                 } catch {
                     $statuses += [int]$_.Exception.Response.StatusCode
-                    if ($null -eq $retryAfter) { $retryAfter = $_.Exception.Response.Headers["Retry-After"] }
+                    if ($null -eq $retryAfter) {
+                        # GetValues works on Windows PowerShell's WebHeaderCollection AND pwsh's
+                        # HttpResponseHeaders; the string indexer is $null/throws on pwsh, which
+                        # is why this check alone failed on Linux CI. Latch only a real value —
+                        # the first exception here is the 401, which has no Retry-After at all.
+                        $ra = try { @($_.Exception.Response.Headers.GetValues('Retry-After'))[0] } catch { $null }
+                        if ($ra) { $retryAfter = $ra }
+                    }
                 }
             }
             Check "hammering unknown codes is throttled (429)" ($statuses -contains 429)

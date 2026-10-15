@@ -374,6 +374,19 @@ static string JoinNormalize(string code) => JoinCodes.NormalizeJoinCode(code) ??
 
 var join = app.MapGroup("/join");
 
+// The pairing page's script, same-origin so the dashboard CSP's `script-src 'self'` keeps
+// applying. Inlined, it was silently blocked — the page rendered without its Copy buttons or
+// the Linux tab (found in review).
+app.MapGet("/join.js", () => Results.Text(JoinPages.Script, "application/javascript; charset=utf-8"));
+
+// A link's code is a live credential riding in the URL: nothing along the way may store it, and
+// a used/expired page must not be served from a cache.
+join.AddEndpointFilter(async (ctx, next) =>
+{
+    ctx.HttpContext.Response.Headers.CacheControl = "no-store";
+    return await next(ctx);
+});
+
 join.MapGet("/{code}", async (string code, HttpContext http, EnrollmentService enrollment,
     AgentInstallerService installer, IConfiguration cfg, JoinThrottle throttle) =>
 {
@@ -387,7 +400,6 @@ join.MapGet("/{code}", async (string code, HttpContext http, EnrollmentService e
     var html = JoinPages.PairingPage(JoinNormalize(code), state, serverUrl, token?.ExpiresAt,
         installer.GetInstallerPath(AgentPlatform.Windows) is not null,
         installer.GetInstallerPath(AgentPlatform.Linux) is not null);
-    http.Response.Headers.ContentSecurityPolicy = JoinPages.PairingCsp;
     return Results.Content(html, "text/html; charset=utf-8");
 });
 

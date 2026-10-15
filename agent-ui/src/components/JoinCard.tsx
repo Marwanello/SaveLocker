@@ -77,7 +77,7 @@ export function JoinCard({ state, pendingJoin, onJoined }: Props) {
           </>
         ) : (
           <>
-            {pendingJoin !== null && (
+            {pendingJoin && (
               <div className="sl-banner" style={{
                 borderColor: 'var(--color-accent-line)', background: 'var(--color-accent-soft)',
               }}>
@@ -116,7 +116,7 @@ export function JoinCard({ state, pendingJoin, onJoined }: Props) {
 
             <div className="sl-inline">
               <Button variant="primary" onClick={() => void join()} disabled={!canSubmit}>
-                {busy ? 'Joining\u2026' : pendingJoin !== null ? 'Finish enrollment' : 'Enroll this machine'}
+                {busy ? 'Joining\u2026' : pendingJoin ? 'Finish enrollment' : 'Enroll this machine'}
               </Button>
               {busy && <span className="sl-note">Fetching the link \u2192 trading the code for a key \u2192 matching save folders\u2026</span>}
               {error && <span style={{ color: 'var(--color-accent-ink)', fontSize: 12.5 }} role="alert">{error}</span>}

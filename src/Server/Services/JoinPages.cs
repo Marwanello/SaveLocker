@@ -1,6 +1,4 @@
 using System.Net;
-using System.Security.Cryptography;
-using System.Text;
 using SaveLocker.Shared;
 
 namespace SaveLocker.Server.Services;
@@ -16,17 +14,54 @@ public static class JoinPages
     public const string ShellContentType = "text/x-shellscript";
     public const string DesktopContentType = "application/x-desktop";
 
+
     /// <summary>
-    /// The pairing page's own CSP: the dashboard's policy, plus its one inline script by hash. The
-    /// dashboard's <c>script-src 'self'</c> blocks inline script, which left the page's tabs and Copy
-    /// buttons dead; the page is self-contained on purpose, so the script stays inline and is allowed
-    /// by exactly its own digest.
+    /// The pairing page's script, served from <c>/join.js</c> rather than inlined: the dashboard's
+    /// CSP is <c>script-src 'self'</c> and silently blocks an inline script, so inlined the page
+    /// rendered but lost its Copy buttons and the Linux tab (found in review). A same-origin
+    /// external script is exactly what that policy was built to allow.
     /// </summary>
-    public static readonly string PairingCsp =
-        "default-src 'self'; " +
-        $"script-src 'sha256-{Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(Script)))}'; " +
-        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; " +
-        "base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+    public const string Script = """
+        (function () {
+          function fallback(text, done) {
+            var ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); done(); } catch (e) {}
+            document.body.removeChild(ta);
+          }
+          function copy(text, el, done) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
+            } else { fallback(text, done); }
+          }
+          document.querySelectorAll('[data-copy]').forEach(function (el) {
+            el.addEventListener('click', function () {
+              copy(el.getAttribute('data-copy'), el, function () {
+                var label = el.querySelector('.lbl') || el;
+                if (label.dataset.was === undefined) label.dataset.was = label.textContent;
+                label.textContent = 'Copied';
+                label.classList.add('copied');
+                setTimeout(function () {
+                  label.textContent = label.dataset.was; label.classList.remove('copied');
+                }, 1600);
+              });
+            });
+          });
+          var tabs = document.querySelectorAll('#tabs button');
+          function show(which) {
+            tabs.forEach(function (t) { t.classList.toggle('on', t.dataset.tab === which); });
+            document.querySelectorAll('[data-panel]').forEach(function (p) {
+              p.classList.toggle('hidden', p.dataset.panel !== which);
+            });
+            document.querySelectorAll('[data-os]').forEach(function (p) {
+              p.classList.toggle('hidden', p.dataset.os !== which);
+            });
+          }
+          tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.tab); }); });
+          if (!/Windows/i.test(navigator.userAgent)) show('linux');
+        })();
+        """;
 
     /// <summary>
     /// The pairing page. <paramref name="state"/> decides which card is shown; only a valid code
@@ -54,7 +89,6 @@ public static class JoinPages
         };
 
         return Template
-            .Replace("@SCRIPT@", Script)
             .Replace("@BODY@", body)
             .Replace("@HOST@", host)
             .Replace("@SERVER@", WebUtility.HtmlEncode(serverUrl));
@@ -246,51 +280,9 @@ public static class JoinPages
         <div class="card">
         @BODY@
         </div>
-        <script>@SCRIPT@</script>
+        <script src="/join.js"></script>
         </body>
         </html>
-        """;
-
-    private const string Script = """
-        (function () {
-          function fallback(text, done) {
-            var ta = document.createElement('textarea');
-            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-            document.body.appendChild(ta); ta.select();
-            try { document.execCommand('copy'); done(); } catch (e) {}
-            document.body.removeChild(ta);
-          }
-          function copy(text, el, done) {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
-            } else { fallback(text, done); }
-          }
-          document.querySelectorAll('[data-copy]').forEach(function (el) {
-            el.addEventListener('click', function () {
-              copy(el.getAttribute('data-copy'), el, function () {
-                var label = el.querySelector('.lbl') || el;
-                if (label.dataset.was === undefined) label.dataset.was = label.textContent;
-                label.textContent = 'Copied';
-                label.classList.add('copied');
-                setTimeout(function () {
-                  label.textContent = label.dataset.was; label.classList.remove('copied');
-                }, 1600);
-              });
-            });
-          });
-          var tabs = document.querySelectorAll('#tabs button');
-          function show(which) {
-            tabs.forEach(function (t) { t.classList.toggle('on', t.dataset.tab === which); });
-            document.querySelectorAll('[data-panel]').forEach(function (p) {
-              p.classList.toggle('hidden', p.dataset.panel !== which);
-            });
-            document.querySelectorAll('[data-os]').forEach(function (p) {
-              p.classList.toggle('hidden', p.dataset.os !== which);
-            });
-          }
-          tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.tab); }); });
-          if (!/Windows/i.test(navigator.userAgent)) show('linux');
-        })();
         """;
 
     private const string ScriptTemplate = """

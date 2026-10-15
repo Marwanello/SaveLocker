@@ -2160,10 +2160,15 @@ session's report (testenv walkthrough). `run-enrollment-tls-tests` is blocked on
 cert exists but is **untrusted** (`dotnet dev-certs https --trust` needs its dialog accepted).
 <br>**Session note:** for a while the headless tooling wrote edits into the **main checkout** instead
 of this worktree (opencode's default cwd); recovered with a stash move — builds/tests in a worktree
-must always be driven with the worktree's absolute paths. The implementation is **uncommitted** on
-`enrollment-join-link` pending the maintainer's review; release notes for the next tag must cover the
-enrollment-file removal (old agents/installers cannot enroll until updated — they can still
-`savelocker register`).
+must always be driven with the worktree's absolute paths. The implementation is committed on
+`enrollment-join-link` and in review as PR #76. A review pass then fixed the pairing page's script —
+inline under the dashboard's `script-src 'self'` it was silently blocked, so the page lost its Copy
+buttons and the Linux tab; it is now served same-origin as `/join.js` — plus `Cache-Control:
+no-store` on every `/join/*` response, a pwsh-only `Retry-After` read in the suite (the one Linux CI
+failure), a missed `--file` banner in `UiApp.cs`, two stale "file" strings, an empty `#enroll`
+banner, and the pre-seed's game-list writes now going through `MutateGames`. Release notes for the
+next tag must cover the enrollment-file removal (old agents/installers cannot enroll until updated —
+they can still `savelocker register`).
 <br>**Follow-up (2026-10-15, same branch) — Linux `.desktop` installer + `savelocker://`.** The pairing
 page's Linux tab now leads with **Download installer**: `GET /join/{code}/install.desktop`, a launcher
 (`JoinLinks.InstallLauncher` in Shared) whose `Exec=sh -c '…'` fetches and runs the same `install.sh`
@@ -2173,11 +2178,10 @@ entry now registers `x-scheme-handler/savelocker` (`Exec=… open %u`; install.s
 default`, and the daemon rewrites an entry *it* wrote that predates this — `DesktopEntry.OfferOnce`).
 `savelocker open savelocker://enroll?link=<join url>` opens the Join card pre-filled (only a
 well-formed join link is accepted, still one click to enroll), and `open` now starts the systemd
-unit when the daemon is down. **Found and fixed:** the pairing page's inline script was blocked by the
-dashboard CSP (`script-src 'self'`) — tabs and Copy buttons were dead in a real browser, so a Linux
-visitor never saw the Linux tab. The page now sends its own CSP with the script's SHA-256
-(`JoinPages.PairingCsp`). **Verified:** `run-enrollment-tests` **31/31** (+6: launcher served,
-terminal + exec line, not spending the code, refused once spent, the Linux agent link, the CSP hash),
+unit when the daemon is down. The same session also found the pairing page's script blocked by the dashboard CSP and fixed it
+with a per-page hash; merging the review commit replaced that with its `/join.js` (the better fix — the
+dashboard policy stays as it is), carrying over only the tab switch for the Linux hand-off. **Verified:** `run-enrollment-tests` **31/31** (+6: launcher served,
+terminal + exec line, not spending the code, refused once spent, the Linux agent link, the script's tab switch),
 `run-console-security-tests` 378/378, `run-server-bugbounty-tests` 216/216, `JoinLinksTests` +
 `DesktopEntryTests` 25/25 (`dotnet test` **574/574** overall); the launcher parsed by GLib (`Gio.DesktopAppInfo`, WSL Ubuntu) to
 `sh -c <one script>`, and that script run against a scratch server shows the refusal for a bad code
