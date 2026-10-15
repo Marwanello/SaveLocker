@@ -1029,7 +1029,10 @@ function Stop-Deck { Invoke-Deck 'down' }
 
 # ---- `flow`: the fresh-install flow in sandboxes (tests/testenv-flow.sh does the Linux half) ----
 
-function Get-FlowRoot { return (Join-Path $StateRoot 'flow') }
+# Not under %LOCALAPPDATA%: a shell started from a packaged app (the Claude desktop app's terminal)
+# has its AppData writes redirected into the app's private store, where neither WSL nor Windows
+# Sandbox can see them. The repo's artifacts/ is gitignored.
+function Get-FlowRoot { return (Join-Path $root 'artifacts\testenv-flow') }
 
 # The console as another machine dials it. The Deck's URL already is that; otherwise this PC's address
 # on its default route — what a Windows Sandbox (a separate VM) has to use too.
@@ -1052,7 +1055,13 @@ function New-FlowCode {
 function Publish-FlowPackage {
     param([string]$Platform, [string]$Path)
     Say "hosting $(Split-Path $Path -Leaf) as the console's $Platform package"
-    $out = & curl.exe -s -f -F "file=@$Path" "$serverUrl/api/admin/agent-installer?platform=$Platform&version=$Version"
+    # A tarball the WSL build has only just written can still be held open (the drvfs copy, or Defender
+    # scanning it) - curl then can't read it (exit 26). Give it a few seconds.
+    for ($try = 1; $try -le 5; $try++) {
+        $out = & curl.exe -sS -f -F "file=@$Path" "$serverUrl/api/admin/agent-installer?platform=$Platform&version=$Version"
+        if ($LASTEXITCODE -ne 26) { break }
+        Start-Sleep -Seconds 3
+    }
     if ($LASTEXITCODE -ne 0) { throw "upload to the console failed (curl exit $LASTEXITCODE)" }
     Write-Host "  $out"
 }

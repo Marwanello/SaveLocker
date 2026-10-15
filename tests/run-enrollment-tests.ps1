@@ -127,6 +127,7 @@ $oneLiner = Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)/
 Check "the one-liner is served for a valid code" ($oneLiner.StatusCode -eq 200 -and
                                                 $oneLiner.Content -match "enroll --url" -and
                                                 $oneLiner.Content -match [regex]::Escape($mint.code))
+Check "the one-liner has Unix line endings (sh fails on a CR)" (-not "$($oneLiner.Content)".Contains("`r"))
 
 Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
 $noRedirect = New-Object System.Net.Http.HttpClientHandler

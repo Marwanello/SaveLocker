@@ -295,7 +295,8 @@ sandbox. **Deck**: in Desktop Mode, double-click `SaveLocker TEST - join link` a
 be used there — that one installs for real. **Windows**: the Inno installer writes Program Files, the
 Run key and the installed agent's mutex, so it only runs in **Windows Sandbox** —
 `flow -Only windows` builds it stamped `-Version`, hosts it, and writes
-`<StateRoot>\flow\SaveLocker-flow.wsb`, which opens a join link inside the sandbox (needs the
+`artifacts\testenv-flow\SaveLocker-flow.wsb` (in the repo, not AppData: a terminal inside the Claude
+desktop app has its AppData writes hidden from WSL and the sandbox), which opens a join link inside the sandbox (needs the
 *Windows Sandbox* feature: `Enable-WindowsOptionalFeature -Online -FeatureName
 Containers-DisposableClientVM -All` from an elevated shell, then a reboot).
 

@@ -195,9 +195,12 @@ public static class JoinPages
     {
         // Placeholders, not interpolation: the script is full of ${...} and doubling every brace
         // would be the least readable part of this feature.
+        // A raw string literal takes the source file's line endings, and a Windows checkout of this
+        // file is CRLF: sh then dies on `set -e\r` before doing anything.
         return ScriptTemplate
             .Replace("@SERVER@", serverUrl)
-            .Replace("@CODE@", code);
+            .Replace("@CODE@", code)
+            .ReplaceLineEndings("\n");
     }
 
     /// <summary>
