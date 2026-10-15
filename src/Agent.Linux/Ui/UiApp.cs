@@ -1324,7 +1324,7 @@ sealed partial class UiApp
         if (!Connected)
         {
             Widgets.Banner("notenrolled", "This device is not enrolled",
-                "Run  savelocker enroll --file <policy.json>  once in Desktop Mode, then come back here.",
+                "Run  savelocker enroll --url <join link>  once in Desktop Mode, then come back here.",
                 Theme.Watch, Icons.AlertTriangle);
             Widgets.Gap(Theme.Space.Md);
         }
@@ -1646,7 +1646,7 @@ sealed partial class UiApp
         if (!Connected)
         {
             Widgets.Banner("addblocked", "This device is not enrolled",
-                "Games cannot be added yet. Run  savelocker enroll --file <policy.json>  once in "
+                "Games cannot be added yet. Run  savelocker enroll --url <join link>  once in "
                 + "Desktop Mode, then return here.",
                 Theme.Watch, Icons.AlertTriangle);
             return;
@@ -2431,7 +2431,7 @@ sealed partial class UiApp
         {
             Widgets.Banner("conflictsblocked", "This device is not enrolled",
                 "Conflicts can only be checked once this device is enrolled. Run  savelocker enroll "
-                + "--file <policy.json>  once in Desktop Mode, then come back here.",
+                + "--url <join link>  once in Desktop Mode, then come back here.",
                 Theme.Watch, Icons.AlertTriangle);
             return;
         }

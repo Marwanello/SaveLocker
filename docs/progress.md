@@ -4015,6 +4015,44 @@ exception); DLC in every version makes Forza Horizon ~1 GB per version (~7 GB ke
 
 ---
 
+## 2026-10-14 — Enrollment join links replace the enrollment file (option B) (PR #76)
+
+**Branch:** `enrollment-join-link` (worktree `.claude/worktrees/enrollment-mockups`). **PR:** https://github.com/Marwanello/SaveLocker/pull/76 (open). Mockups committed on `enrollment-mockups` (`9ab48b7`); the feature is `3239b1c`; the CONTEXT handoff `728538f`.
+
+### Request sequence
+
+1. "I don't like the enrollment file process" — three easiest-way-to-enroll suggestions wanted, plus three clickable walkthrough mockups built from real console/agent-UI elements.
+2. Picked option B and answered the five clarifying questions: **replace the file entirely**; **short typable codes**; **Windows paste-once** (pairing page copies the link, the wizard takes a paste, `/ENROLL-URL` for scripts); `uqr` for the QR; commit the mockups then branch `enrollment-join-link`.
+3. Implemented option B, with a step-by-step `testenv` verification plan and a technical + plain-terms report.
+4. PR opened (#76).
+5. "Append that summary to `docs/progress.md`; save a standalone summary to `docs/session_summary.md`" — this entry and the one at the top of that file.
+
+### What shipped
+
+- **Console** → Configuration → Enroll a machine → **Create join link**: the code (8 Crockford chars, shown once), the link, a QR (client-side `uqr`, a new web dep), copy buttons, and the existing Valid/Used/Expired table. A clipboard helper that works on plain-http LAN (`navigator.clipboard` is undefined there — the old call silently copied nothing).
+- **Pairing page** (`GET /join/{code}`, self-contained): Windows tab downloads the hosted installer *and* copies the link (the wizard's Enroll page is Ctrl+V); Linux/Deck tab is `curl -fsSL <link>/install.sh | sh`; an already-installed agent is reached by `127.0.0.1:5178/#enroll:<link>`. Used/expired/revoked/unknown each say so.
+- **Server:** `Shared/JoinCodes` (mint/normalise/format; `I/L→1`, `O→0`), `EnrollmentService.LookupAsync` + `BuildPolicyAsync` (**the policy is built at delivery now**), `JoinThrottle` (15 failures / 15 min / client + global backstop; only unknown codes count; a successful redeem resets) → 429 + `Retry-After`; admin mint returns `{ id, code, joinUrl, expiresAt }`; `CreateEnrollmentRequest` lost the file-era fields.
+- **Agent:** `AgentEnroller` is the one join implementation (fetch `/policy`, redeem, TOFU pin, game pre-seeding), shared by the CLI (`enroll --url`, or `--code` + `--server`) and the daemon (`POST /api/join`, token-guarded, rollback on failure, 400 with the server's sentence); `agent-ui` gained the `#enroll:<link>` route and the Settings `JoinCard`. `enroll --file` removed.
+- **Installer:** pasted-link Enroll page (validated, server + code preview, trust note), `/SILENT /ENROLL-URL`; `install.sh`/help/README/API Reference/Decisions updated; `openapi.json` + both `api-types.ts` regenerated.
+
+### Verification
+
+- `run-enrollment-tests` **25/25** (rewritten: pairing-page states, both enroll forms, single-use / revoked / forged, throttle against its own low-limit server) · `run-local-api-tests` **128/128** (`SL_LOCALAPI_PORT=5197` — another worktree's tray held :5188; +3 `/api/join` checks) · `run-server-bugbounty-tests` **216/216** (CS-06/CS-10 updated to the link shape) · `run-agent-tests` 47/47 · `dotnet test` **552/552** · `run-appearance-consistency-tests` 50/50
+- `web` + `agent-ui` build and lint clean; installer compiles (`SaveLocker-Agent-Setup-0.7.1.exe`); the pairing page inspected in headless Edge (valid + invalid states)
+
+### Findings / gotchas
+
+- For a while the headless tooling's edits landed in the **main checkout** instead of the worktree (the default cwd) — recovered with a stash-move; drive a worktree's builds/tests with its absolute paths.
+- C# raw string literals (`"""…"""`) do not process `\u` escapes: `Configuration \u2192 …` shipped literally until a screenshot caught it (the same class of bug already existed in a plain-HTML mockup file).
+- The QR's colours tripped `run-appearance-consistency-tests` (hex banned in views); `currentColor` + keyword `black` on a forced-white tile passed and stays scannable in both themes.
+- One transient CS-01 crash in the bug-bounty suite on its first run (baseline build race), not reproducible on a rerun — 216/216 twice since.
+
+### Not verified (manual pass owed)
+
+The Windows wizard paste round-trip and `/SILENT /ENROLL-URL`; a Deck running the one-liner (upload the new linux-x64 package first — the released agent predates `enroll --url`); the `#enroll:` hand-off clicked in a real WebView2 window; `run-enrollment-tls-tests` (dev cert untrusted on this box); a phone scanning the QR. Release notes for the next tag must cover the file's removal — agents/installers released before this cannot use join links until updated (they can still `savelocker register`).
+
+---
+
 ## 2026-10-14 — Duplicate-shortcut warnings shipped (PR #75); Group 9 checklist closed; setup-guide mockups
 
 **Branch:** `duplicate-shortcut-warnings` (worktree `backlog-plans-testenv-mockup`, rebased onto `main` `3150f05`). **PR:** [#75](https://github.com/Marwanello/SaveLocker/pull/75) — open, MERGEABLE.

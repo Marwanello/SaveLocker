@@ -7,6 +7,7 @@ import { PlaynitePluginCard } from './PlaynitePluginCard'
 import { AppearanceCard } from './AppearanceCard'
 import { ControllerCard } from './ControllerCard'
 import { Xbox360SettingsCard } from './Xbox360SettingsCard'
+import { JoinCard } from './JoinCard'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { Chip } from './ui/Chip'
@@ -19,6 +20,10 @@ interface Props {
   onAppearanceChanged: (next: AgentAppearance) => void
   /** Open one game's page — where its folder, process and tracking are managed. */
   onOpenGame: (id: string) => void
+  /** A `#enroll:<link>` deep link's value, pre-filled into the Join card. Null when there is none. */
+  pendingJoin: string | null
+  /** The Join card finished: clear the pending value. */
+  onJoinHandled: () => void
 }
 
 /**
@@ -80,7 +85,7 @@ function TrustChip({ trust }: { trust: string | undefined }) {
   return <Chip tone="warn">Not pinned (plain HTTP)</Chip>
 }
 
-export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, onOpenGame }: Props) {
+export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, onOpenGame, pendingJoin, onJoinHandled }: Props) {
   const [serverUrl, setServerUrl] = useState('')
   const [machineName, setMachineName] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
@@ -218,6 +223,9 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, 
   return (
     <div className="sl-page">
       <PageHead title="Settings" sub={`${state?.machineName ?? '…'} · ${state?.serverUrl ? state.serverUrl.replace(/^https?:\/\//, '') : 'no server'}`} />
+
+      <JoinCard state={state} pendingJoin={pendingJoin}
+        onJoined={() => { onJoinHandled(); onSaved() }} />
 
       <Card title="Connection" headerRight={<TrustChip trust={state?.serverTrust} />}>
         <div className="sl-stack">

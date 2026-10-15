@@ -2,8 +2,9 @@
 Type=Application
 Name=SaveLocker
 Comment=Game save sync for this machine
-Exec=@PREFIX@/savelocker open
+Exec=@PREFIX@/savelocker open %u
 Icon=@PREFIX@/artwork/icon.png
 Terminal=false
 Categories=Utility;Game;
+MimeType=x-scheme-handler/savelocker;
 StartupNotify=false

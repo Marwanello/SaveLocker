@@ -573,6 +573,58 @@ public sealed class AgentApiServer : IDisposable
             }
         });
 
+        // Join this machine to a server from its join link (tasks/enrollment-options, option B) —
+        // what the Settings tab and a "#enroll:<link>" deep link call. The same AgentEnroller the
+        // CLI's `enroll --url` uses, so the two cannot drift; a bare code is accepted too, with the
+        // server addressed by this machine's saved one (or an explicit override).
+        app.MapPost("/api/join", async Task<Results<Ok<JoinResponse>, BadRequest<ErrorResponse>, InternalServerError<ErrorResponse>>>
+            (JoinRequest body) =>
+        {
+            string joinUrl;
+            if (!string.IsNullOrWhiteSpace(body.Url))
+            {
+                joinUrl = body.Url.Trim();
+            }
+            else
+            {
+                var normalized = JoinCodes.NormalizeJoinCode(body.Code);
+                if (normalized is null)
+                    return TypedResults.BadRequest(new ErrorResponse(
+                        "That does not look like a join code (8 letters and digits). Paste the whole join link, or the code with the server address."));
+                var serverUrl = !string.IsNullOrWhiteSpace(body.ServerUrl) ? body.ServerUrl.Trim()
+                    : _config.ServerUrl;
+                if (string.IsNullOrWhiteSpace(serverUrl))
+                    return TypedResults.BadRequest(new ErrorResponse(
+                        "Give the server address too, or paste the whole join link."));
+                joinUrl = serverUrl.TrimEnd('/') + "/join/" + normalized;
+            }
+
+            var previousIdentity = _config.CaptureIdentity();
+            var previousName = _config.MachineName;
+            try
+            {
+                var policy = await AgentEnroller.FetchPolicyAsync(joinUrl);
+                var outcome = await AgentEnroller.ApplyAsync(_config, policy, _detection, body.MachineName, AgentLogger.Log);
+                // The engine caches an ApiClient (base URL + key + pin); a new identity must reach it
+                // before any request that starts after this response — same rule as /api/register.
+                _onConnectionChanged?.Invoke();
+                return TypedResults.Ok(new JoinResponse(outcome.MachineName, outcome.MachineId, outcome.Mapped, outcome.Unmapped));
+            }
+            catch (Exception ex)
+            {
+                // A failed join must not leave a half-built identity — the key of a server that was
+                // never confirmed, a name from neither side. In-memory rollback, like /api/register.
+                _config.RestoreIdentity(previousIdentity);
+                _config.MachineName = previousName;
+                // A link the other end refused, an unreachable server, a timeout: all things the user
+                // can act on, and all carrying the server's own sentence — 400, so the UI shows it
+                // as a fixable input problem rather than a fault in this agent.
+                return ex is HttpRequestException or InvalidOperationException or TaskCanceledException or UriFormatException
+                    ? TypedResults.BadRequest(new ErrorResponse(ex.Message))
+                    : TypedResults.InternalServerError(new ErrorResponse(ex.Message));
+            }
+        }).Produces<JoinResponse>().Produces<ErrorResponse>();
+
         // HasSteamCloud is decided once, at enrollment (Enroller.EnrollAsync, from the candidate's
         // own ScanCandidate.HasSteamCloud) - not re-derived here from a name-only manifest lookup.
         // That lookup answers "does a Steam release of this TITLE have Steam Cloud", which is true

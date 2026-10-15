@@ -22,6 +22,12 @@ import { isCurrentPoll, looksEpoch, setLook } from './appearance'
 import { clearRouteHash, parseRoute } from './route'
 import { useActivityRecent } from './useActivity'
 
+/** A `#enroll:` value may be a URI-encoded join link or a bare code. Decoding is best-effort: a
+ *  value with no escapes is already what we want, and a malformed escape is kept as typed. */
+function decodeJoinValue(raw: string): string {
+  try { return decodeURIComponent(raw) } catch { return raw }
+}
+
 export default function App() {
   // The tray's native Sync All / Force Pull / Force Push (TrayApp.cs, Phase 7) open this window at
   // "#conflicts:queue" rather than the plain "#conflicts" route when they find an open conflict —
@@ -33,6 +39,11 @@ export default function App() {
   const [view, setView] = useState<View>(initialRoute.view)
   const [autoQueueRequested] = useState(initialRoute.queue)
   const [openGameId, setOpenGameId] = useState<string | null>(initialRoute.gameId)
+  // The pairing page's "Open the agent and finish" button lands here (#enroll:<link>); the Join card
+  // reads it, and clears it once the machine is enrolled. Decoded because a link in a hash carries
+  // its own colons and slashes — the pairing page URI-encodes it.
+  const [pendingJoin, setPendingJoin] = useState<string | null>(
+    initialRoute.join != null ? decodeJoinValue(initialRoute.join) : null)
   const [state, setState] = useState<AgentState | null>(null)
   const [appearance, setAppearance] = useState<AgentAppearance | null>(null)
   const [conflicts, setConflicts] = useState<Conflict[]>([])
@@ -166,6 +177,7 @@ export default function App() {
       clearRouteHash()
       setView(route.view)
       setOpenGameId(route.gameId)
+      if (route.join != null) setPendingJoin(decodeJoinValue(route.join))
       if (route.queue) refreshConflicts().then(cs => { if (cs.length > 0) setSyncQueue(cs) })
       if (route.folders) askAboutFolders()
     }
@@ -264,6 +276,8 @@ export default function App() {
                 appearance={appearance}
                 onAppearanceChanged={adoptAppearance}
                 onOpenGame={id => { setOpenGameId(id); setView('games') }}
+                pendingJoin={pendingJoin}
+                onJoinHandled={() => setPendingJoin(null)}
               />
             )}
           </main>

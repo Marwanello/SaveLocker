@@ -63,8 +63,8 @@ public sealed class ApiClient
     }
 
     /// <summary>
-    /// Spend an enrollment token for this machine's real API key. The only call the agent makes
-    /// before it has a key.
+    /// Spend an enrollment code for this machine's real API key. The only call the agent makes
+    /// before it has a key, besides the policy fetch below.
     /// </summary>
     public async Task<RedeemEnrollmentResponse> EnrollAsync(string token, string? machineName)
     {
@@ -72,6 +72,18 @@ public sealed class ApiClient
         if (!resp.IsSuccessStatusCode)
             throw new InvalidOperationException(await ReadErrorAsync(resp));
         return (await resp.Content.ReadFromJsonAsync<RedeemEnrollmentResponse>())!;
+    }
+
+    /// <summary>
+    /// Fetch the enrollment policy a join link points at (its <c>/policy</c> sibling). Absolute
+    /// URL because the caller derives it from the link — the base address here is only the origin.
+    /// </summary>
+    public async Task<EnrollmentPolicy> FetchPolicyAsync(string absolutePolicyUrl)
+    {
+        var resp = await _http.GetAsync(absolutePolicyUrl);
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException(await ReadErrorAsync(resp));
+        return (await resp.Content.ReadFromJsonAsync<EnrollmentPolicy>(WebJson))!;
     }
 
     public async Task<MachineRegisterResponse> RegisterAsync(string name, string? adminPassword = null)

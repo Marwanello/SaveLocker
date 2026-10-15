@@ -109,6 +109,26 @@
 #                                 install (restart it with `up -Only windows`); `clean` deletes it with the rest
 #                                 of the state. -EmuDeckPath (or $env:SAVELOCKER_EMUDECK_PATH) points the agent
 #                                 at any other folder, a copy of a real one included.
+#   .\tests\testenv.ps1 flow [-Only linux|deck|windows] [-Headless]
+#                                 the FRESH-install flow — the .desktop launchers, install.sh, the
+#                                 menu entry's savelocker:// handler, enrolling — which the rest of
+#                                 the rig skips by running a pre-built agent. Every one of those
+#                                 writes to $HOME, so each runs in a throwaway HOME of its own
+#                                 (tests/testenv-flow.sh, install.sh's test-only
+#                                 SAVELOCKER_INSTALL_SANDBOX): never ~/.local/share/SaveLocker, its
+#                                 savelocker.service, port 5178, its menu entry or Steam. Needs the
+#                                 console up from this branch. Uploads the Deck build (built first if
+#                                 missing) as the console's Linux package, mints join links, and
+#                                 mirrors a GitHub release locally for the GitHub installer.
+#                                 linux (WSL): both launchers run headless and are checked, then a
+#                                 savelocker:// link opens the GitHub sandbox's Join card and joining
+#                                 there enrolls it. deck: the two sandboxed launchers are put on the
+#                                 Deck's desktop ("SaveLocker TEST - ...") for double-clicking in
+#                                 Desktop Mode, plus ~/savelocker-flow/open-link.sh; -Headless runs
+#                                 them like WSL instead. windows: builds the installer (stamped
+#                                 -Version) for the console and writes a Windows Sandbox file that
+#                                 opens a join link inside the sandbox — the real Inno installer can
+#                                 only be tried in a disposable VM. `clean` removes all of it.
 #   .\tests\testenv.ps1 help [command]
 #                                 print this list of commands (or one command's entry) and the
 #                                 options and variables that steer them; touches nothing
@@ -163,7 +183,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'art', 'clean', 'deck-config', 'playnite-import', 'emu-fixture', 'help')]
+    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'art', 'clean', 'deck-config', 'playnite-import', 'emu-fixture', 'flow', 'help')]
     [string]$Command = 'status',
 
     # `help <command>`: show only that command's entry.
@@ -277,7 +297,11 @@ param(
     # Forwarded to testenv-deck.sh only (SAVELOCKER_CONFLICT_ADD_COMMAND); the Windows side is
     # unaffected. Mutually exclusive with -Size/-Files — combining them warns (see the
     # 'conflict' case) and still seeds the requested sizes.
-    [switch]$AddCommand
+    [switch]$AddCommand,
+
+    # 'flow' command only: run the Deck's sandboxed launchers headless and check them, as WSL always
+    # does, instead of staging them on its desktop for double-clicking.
+    [switch]$Headless
 )
 
 $ErrorActionPreference = 'Continue'
@@ -1002,6 +1026,188 @@ function Start-Deck {
 }
 
 function Stop-Deck { Invoke-Deck 'down' }
+
+# ---- `flow`: the fresh-install flow in sandboxes (tests/testenv-flow.sh does the Linux half) ----
+
+# Not under %LOCALAPPDATA%: a shell started from a packaged app (the Claude desktop app's terminal)
+# has its AppData writes redirected into the app's private store, where neither WSL nor Windows
+# Sandbox can see them. The repo's artifacts/ is gitignored.
+function Get-FlowRoot { return (Join-Path $root 'artifacts\testenv-flow') }
+
+# The console as another machine dials it. The Deck's URL already is that; otherwise this PC's address
+# on its default route — what a Windows Sandbox (a separate VM) has to use too.
+function Get-FlowLanUrl {
+    if ($DeckServerUrl) { return $DeckServerUrl.TrimEnd('/') }
+    $route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
+    $ip = if ($route) { (Get-NetIPAddress -InterfaceIndex $route.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1).IPAddress }
+    if (-not $ip) { throw "cannot work out this PC's LAN address - set -DeckServerUrl http://<lan-ip>:$ConsolePort" }
+    return "http://${ip}:$ConsolePort"
+}
+
+function New-FlowCode {
+    param([string]$PublicUrl, [string]$MachineName)
+    $body = @{ ttlMinutes = 120; machineName = $MachineName; serverUrl = $PublicUrl } | ConvertTo-Json
+    return Invoke-RestMethod -Uri "$serverUrl/api/admin/enrollments" -Method Post -ContentType 'application/json' -Body $body
+}
+
+# The console's hosted package is what a join link installs. The test build carries -Version, which
+# the rig's own agents already run, so hosting it offers them nothing new.
+function Publish-FlowPackage {
+    param([string]$Platform, [string]$Path)
+    Say "hosting $(Split-Path $Path -Leaf) as the console's $Platform package"
+    # A tarball the WSL build has only just written can still be held open (the drvfs copy, or Defender
+    # scanning it) - curl then can't read it (exit 26). Give it a few seconds.
+    for ($try = 1; $try -le 5; $try++) {
+        $out = & curl.exe -sS -f -F "file=@$Path" "$serverUrl/api/admin/agent-installer?platform=$Platform&version=$Version"
+        if ($LASTEXITCODE -ne 26) { break }
+        Start-Sleep -Seconds 3
+    }
+    if ($LASTEXITCODE -ne 0) { throw "upload to the console failed (curl exit $LASTEXITCODE)" }
+    Write-Host "  $out"
+}
+
+function Write-LfFile {
+    param([string]$Path, [string]$Text)
+    [System.IO.File]::WriteAllText($Path, $Text.Replace("`r`n", "`n"), (New-Object System.Text.UTF8Encoding $false))
+}
+
+function Get-FlowTarball {
+    $tarball = Join-Path (Join-Path $env:TEMP 'savelocker-testenv-artifacts') "savelocker-$Version-linux-x64.tar.gz"
+    if (-not (Test-Path $tarball)) { Build-Deck }
+    if (-not (Test-Path $tarball)) { throw "no Linux build at $tarball" }
+    # The build comes from the WSL clone, which may be on another branch. Its install.sh has to know
+    # the sandbox: an older one would stop and re-enable the REAL savelocker.service.
+    $installSh = & tar.exe -xOzf $tarball 'SaveLocker/install.sh' 2>$null
+    if ("$installSh" -notmatch 'SAVELOCKER_INSTALL_SANDBOX') {
+        throw "the Linux build at $tarball has no sandboxed install.sh - run sync, then build -Only deck"
+    }
+    return $tarball
+}
+
+# Everything one Linux target needs, in one folder: its join link's launcher as the console serves it
+# (fetched through $PublicUrl, the address the target uses — the launcher names the host it came from),
+# the release's installer pair rendered as build-linux.sh renders them, and a mirror of a release.
+function New-FlowBundle {
+    param([string]$Target, [string]$PublicUrl, [string]$Tarball)
+    $bundle = Join-Path (Get-FlowRoot) "$Target-bundle"
+    if (Test-Path $bundle) { Remove-Item $bundle -Recurse -Force }
+    $release = Join-Path $bundle 'release'
+    New-Item -ItemType Directory -Force -Path $release | Out-Null
+
+    $stamp = Get-Date -Format 'HHmmss'
+    $join = New-FlowCode $PublicUrl "flow-$Target-join-$stamp"
+    $link = New-FlowCode $PublicUrl "flow-$Target-github-$stamp"
+    $launcher = Invoke-WebRequest -UseBasicParsing -Uri "$PublicUrl/join/$($join.code)/install.desktop"
+    $text = if ($launcher.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($launcher.Content) } else { $launcher.Content }
+    Write-LfFile (Join-Path $bundle 'join.desktop') $text
+
+    $packaging = Join-Path $root 'packaging\linux'
+    foreach ($f in 'SaveLocker-Installer.desktop', 'savelocker-install.sh') {
+        $rendered = (Get-Content (Join-Path $packaging $f) -Raw -Encoding utf8).Replace('@REPO@', 'SkorcherX/SaveLocker')
+        $dest = if ($f -eq 'savelocker-install.sh') { Join-Path $release $f } else { Join-Path $bundle $f }
+        Write-LfFile $dest $rendered
+    }
+    $name = Split-Path $Tarball -Leaf
+    Copy-Item $Tarball (Join-Path $release $name)
+    $sum = (Get-FileHash $Tarball -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-LfFile (Join-Path $release 'SHA256SUMS-linux.txt') "$sum  $name`n"
+    Copy-Item (Join-Path $PSScriptRoot 'linux\run-desktop-launcher.py') $bundle
+    Copy-Item (Join-Path $PSScriptRoot 'testenv-flow.sh') $bundle
+
+    $agentLink = 'savelocker://enroll?link=' + [uri]::EscapeDataString($link.joinUrl)
+    Write-Host "  $Target join link (launcher):   $($join.joinUrl)"
+    Write-Host "  $Target join link (savelocker://): $($link.joinUrl)"
+    return [pscustomobject]@{ Dir = $bundle; AgentLink = $agentLink }
+}
+
+# Text files from a Windows checkout may be CRLF, which bash and the .desktop parsers both reject.
+function Get-FlowRemoteScript {
+    param([string]$BundlePath, [string]$Sub, [string]$AgentLink)
+    return "find '$BundlePath' -type f ! -name '*.tar.gz' -exec sed -i 's/\r`$//' {} +; " +
+           "SAVELOCKER_FLOW_BUNDLE='$BundlePath' SAVELOCKER_FLOW_LINK_URL='$AgentLink' " +
+           "bash '$BundlePath/testenv-flow.sh' $Sub"
+}
+
+function Invoke-FlowWsl {
+    param([string]$Tarball)
+    Say 'flow on WSL (headless, sandboxed)'
+    $b = New-FlowBundle 'wsl' $serverUrl $Tarball
+    $tmp = '/tmp/savelocker-flow-bundle'
+    $cmd = "rm -rf $tmp && cp -r '$(ConvertTo-WslPath $b.Dir)' $tmp && " + (Get-FlowRemoteScript $tmp 'run' $b.AgentLink)
+    & wsl -d $Distro -- bash -c $cmd
+    if ($LASTEXITCODE -ne 0) { Warn "WSL flow reported failures (exit $LASTEXITCODE)" }
+}
+
+function Invoke-FlowDeck {
+    param([string]$Tarball)
+    if (-not $DeckServerUrl) { throw "no -DeckServerUrl - the Deck needs this PC's LAN address for the console" }
+    Say "flow on the Deck ($(if ($Headless) { 'headless' } else { 'staged for Desktop Mode' }), sandboxed)"
+    $b = New-FlowBundle 'deck' $DeckServerUrl.TrimEnd('/') $Tarball
+    $tmp = '/tmp/savelocker-flow-bundle'
+    & ssh -n -o ConnectTimeout=5 $DeckHost "rm -rf $tmp"
+    if ($LASTEXITCODE -ne 0) { throw "cannot reach $DeckHost (asleep?)" }
+    & scp -o ConnectTimeout=5 -q -r $b.Dir "${DeckHost}:$tmp"
+    if ($LASTEXITCODE -ne 0) { throw "scp to $DeckHost failed" }
+    & ssh -n -o ConnectTimeout=5 $DeckHost (Get-FlowRemoteScript $tmp $(if ($Headless) { 'run' } else { 'stage' }) $b.AgentLink)
+    if ($LASTEXITCODE -ne 0) { Warn "Deck flow reported failures (exit $LASTEXITCODE)" }
+    if (-not $Headless) {
+        Write-Host ''
+        Write-Host '  On the Deck, in Desktop Mode:'
+        Write-Host "   1. Double-click 'SaveLocker TEST - join link' on the desktop -> Execute -> a Konsole installs"
+        Write-Host '      into ~/savelocker-flow/join-home and enrolls as flow-deck-join-<time> (see the console''s Machines).'
+        Write-Host "   2. Double-click 'SaveLocker TEST - GitHub installer' -> it installs from the staged release"
+        Write-Host '      mirror into ~/savelocker-flow/github-home and opens that agent on its Join card.'
+        Write-Host '   3. In Konsole: ~/savelocker-flow/open-link.sh -> the savelocker:// handler opens the Join card'
+        Write-Host '      pre-filled (flow-deck-github-<time>); click Join.'
+        Write-Host '  Do NOT use the pairing page''s own Download installer on the Deck: that one installs for real.'
+    }
+}
+
+# The real Inno installer writes Program Files, the Run key and the installed agent's mutex, so it is
+# only ever run inside Windows Sandbox: a disposable VM that forgets everything when closed.
+function Invoke-FlowWindows {
+    $exe = Join-Path $root "installer\dist\SaveLocker-Agent-Setup-$Version.exe"
+    if (-not (Test-Path $exe)) {
+        Say "building the Windows installer as $Version"
+        & (Join-Path $root 'installer\build-installer.ps1') -AppVersion $Version
+        if (-not (Test-Path $exe)) { throw "the installer build did not produce $exe" }
+    }
+    Publish-FlowPackage 'win-x64' $exe
+
+    $lan = Get-FlowLanUrl
+    $code = New-FlowCode $lan 'flow-sandbox-win'
+    New-Item -ItemType Directory -Force -Path (Get-FlowRoot) | Out-Null
+    $wsb = Join-Path (Get-FlowRoot) 'SaveLocker-flow.wsb'
+    $url = [System.Security.SecurityElement]::Escape($code.joinUrl)
+    Write-LfFile $wsb @"
+<Configuration>
+  <Networking>Enable</Networking>
+  <MemoryInMB>4096</MemoryInMB>
+  <LogonCommand>
+    <Command>cmd.exe /c start "" "$url"</Command>
+  </LogonCommand>
+</Configuration>
+"@
+    Write-Host "  windows join link: $($code.joinUrl)"
+    Write-Host "  sandbox file:      $wsb"
+    if (Test-Path (Join-Path $env:windir 'System32\WindowsSandbox.exe')) {
+        Write-Host '  Open it (double-click, or: Start-Process <that file>): the pairing page opens inside the sandbox;'
+        Write-Host '  Download & enroll -> run the installer -> Ctrl+V the link on its Enroll page. Close the sandbox to discard it.'
+    } else {
+        Warn 'Windows Sandbox is not enabled. From an ELEVATED PowerShell, once, then reboot:'
+        Write-Host '      Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All'
+    }
+}
+
+function Remove-FlowSandboxes {
+    $cmd = "[ -f /tmp/savelocker-flow-bundle/testenv-flow.sh ] && bash /tmp/savelocker-flow-bundle/testenv-flow.sh clean; " +
+           'pkill -f "^$HOME/savelocker-flow/" 2>/dev/null; rm -rf "$HOME/savelocker-flow" "$HOME/Desktop/SaveLocker TEST - "*.desktop; true'
+    & wsl -d $Distro -- bash -c $cmd
+    if (Test-DeckConfigured) {
+        & ssh -n -o ConnectTimeout=5 $DeckHost $cmd
+        if ($LASTEXITCODE -ne 0) { Warn "deck: could not remove the flow sandboxes (asleep?)" }
+    }
+}
 
 # Resolves and validates the sibling SaveLocker-Decky checkout. Guessed as ..\SaveLocker-Decky next
 # to the MAIN checkout (how every contributor's checkout is actually laid out today) rather than
@@ -2363,6 +2569,7 @@ switch ($Command) {
         }
 
         Invoke-Wsl 'clean'
+        Remove-FlowSandboxes
 
         if (Test-DeckConfigured) {
             try { Invoke-Deck 'clean' } catch { Warn "deck: $($_.Exception.Message)" }
@@ -2385,6 +2592,24 @@ switch ($Command) {
     'playnite-import' { Import-PlayniteData }
 
     'emu-fixture' { New-EmuDeckFixture }
+
+    'flow' {
+        if (-not (Test-ConsoleUp)) { throw "the console is not up - run: .\tests\testenv.ps1 up -Only console" }
+        $doc = Invoke-WebRequest -UseBasicParsing -Uri "$serverUrl/openapi/v1.json"
+        if ("$($doc.Content)" -notmatch [regex]::Escape('/join/{code}/install.desktop')) {
+            throw "the console predates join-link launchers - run sync, build -Only console, up -Only console"
+        }
+        if ($Only -in 'all', 'linux', 'deck') {
+            $tarball = Get-FlowTarball
+            Publish-FlowPackage 'linux-x64' $tarball
+        }
+        if ($Only -in 'all', 'linux') { Invoke-FlowWsl $tarball }
+        if ($Only -eq 'deck' -or ($Only -eq 'all' -and (Test-DeckConfigured))) {
+            if (-not (Test-DeckConfigured)) { throw "No Deck configured - see deck-config." }
+            try { Invoke-FlowDeck $tarball } catch { Warn "deck: $($_.Exception.Message)" }
+        }
+        if ($Only -in 'all', 'windows') { Invoke-FlowWindows }
+    }
 
     'deck-config' {
         # $DeckHost/$DeckServerUrl already reflect explicit flag > saved file > env var by this

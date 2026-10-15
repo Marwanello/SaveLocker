@@ -65,10 +65,46 @@ public static class AgentCli
 
                 case "enroll":
                 {
-                    var file = opts.GetValueOrDefault("file") ?? positionals.FirstOrDefault()
-                               ?? throw new ArgumentException(
-                                   "Pass the enrollment file, e.g. enroll --file savelocker-enroll.json");
-                    return await EnrollAsync(file, opts, config, detection);
+                    // The join link is the whole credential now (tasks/enrollment-options, option B).
+                    // A bare code plus the server address is accepted too — it is the same thing,
+                    // assembled — so a person reading a code off the console never has to retype a URL.
+                    var url = opts.GetValueOrDefault("url") ?? positionals.FirstOrDefault();
+                    var code = opts.GetValueOrDefault("code");
+                    var serverOpt = opts.GetValueOrDefault("server");
+                    string joinUrl;
+                    if (!string.IsNullOrWhiteSpace(url))
+                    {
+                        joinUrl = url.Trim();
+                    }
+                    else if (!string.IsNullOrWhiteSpace(code))
+                    {
+                        var normalized = JoinCodes.NormalizeJoinCode(code)
+                            ?? throw new ArgumentException($"'{code}' does not look like a join code (8 letters and digits).");
+                        var serverUrl = serverOpt
+                            ?? (string.IsNullOrWhiteSpace(config.ServerUrl) ? null : config.ServerUrl);
+                        if (string.IsNullOrWhiteSpace(serverUrl))
+                            throw new ArgumentException(
+                                "Give the server too, e.g. enroll --code K7QM-4H2X --server http://192.168.1.10:5080 " +
+                                "(or pass the whole join link with --url).");
+                        joinUrl = serverUrl.TrimEnd('/') + "/join/" + normalized;
+                    }
+                    else
+                    {
+                        throw new ArgumentException(
+                            "Pass the join link, e.g. enroll --url http://192.168.1.10:5080/join/K7QM-4H2X " +
+                            "(or --code K7QM-4H2X --server http://192.168.1.10:5080).");
+                    }
+
+                    var policy = await AgentEnroller.FetchPolicyAsync(joinUrl);
+                    var outcome = await AgentEnroller.ApplyAsync(
+                        config, policy, detection, opts.GetValueOrDefault("name"), Log);
+
+                    Console.WriteLine(outcome.Mapped + outcome.Unmapped > 0
+                        ? $"Pre-seeded {outcome.Mapped + outcome.Unmapped} game(s): {outcome.Mapped} mapped to a local save folder, {outcome.Unmapped} still need one."
+                        : "No games in the policy — the agent will adopt whatever the server has on its next poll.");
+                    Console.WriteLine($"Config: {config.ConfigPath}");
+                    Console.WriteLine("Next:   doctor    (then: daemon)");
+                    return 0;
                 }
 
                 case "trust":
@@ -602,69 +638,6 @@ public static class AgentCli
     }
 
     /// <summary>
-    /// <c>enroll --file &lt;policy&gt;</c> — the one-command setup for a new machine, and the only
-    /// practical one for a headless Deck. Trades the policy's single-use token for this machine's
-    /// real API key, records the TOFU pin, and pre-seeds the games so the agent is useful before
-    /// its first poll rather than 20 seconds after it.
-    /// </summary>
-    private static async Task<int> EnrollAsync(
-        string file, Dictionary<string, string> opts, AgentConfig config, Detection detection)
-    {
-        if (!File.Exists(file))
-            throw new FileNotFoundException($"Enrollment file not found: {file}");
-
-        var policy = JsonSerializer.Deserialize<EnrollmentPolicy>(File.ReadAllText(file), PolicyJson)
-                     ?? throw new InvalidOperationException("Enrollment file is empty or not valid JSON.");
-
-        if (policy.Version > EnrollmentPolicy.CurrentVersion)
-            throw new InvalidOperationException(
-                $"This enrollment file is version {policy.Version}; this agent understands up to " +
-                $"{EnrollmentPolicy.CurrentVersion}. Update the agent.");
-        if (string.IsNullOrWhiteSpace(policy.ServerUrl) || string.IsNullOrWhiteSpace(policy.Token))
-            throw new InvalidOperationException("Enrollment file is missing the server URL or the token.");
-
-        // Expiry is enforced by the server; checking it here only buys a clearer error than a 401.
-        if (policy.ExpiresAt <= DateTime.UtcNow)
-            throw new InvalidOperationException(
-                $"This enrollment file expired at {policy.ExpiresAt:u}. Mint a new one from the console.");
-
-        var serverUrl = policy.ServerUrl.TrimEnd('/');
-        if (!ServerTrust.IsPinnable(serverUrl))
-            Console.WriteLine(
-                $"Note: {serverUrl} is plain http. The token is sent in the clear and the server's " +
-                "identity cannot be pinned — fine on a trusted LAN, not over the internet.");
-
-        // No pin yet, by definition: this IS the first use that trust-on-first-use trusts.
-        var api = new ApiClient(serverUrl, apiKey: null);
-        var name = opts.GetValueOrDefault("name") ?? policy.MachineName ?? config.MachineName;
-        var reg = await api.EnrollAsync(policy.Token, name);
-
-        config.ServerUrl = serverUrl;
-        config.MachineName = reg.MachineName; // the server decides: a token minted for a machine binds the name
-        config.ApiKey = reg.ApiKey;
-        config.MachineId = reg.MachineId;
-        if (policy.SettleQuietSeconds is { } quiet) config.SettleQuietSeconds = quiet;
-        if (policy.SettleMaxWaitSeconds is { } max) config.SettleMaxWaitSeconds = max;
-        if (api.ObservedPin is { } pin) config.ServerPin = pin;
-
-        Console.WriteLine($"Enrolled '{reg.MachineName}' (id {reg.MachineId}) with {serverUrl}.");
-        if (config.ServerPin is not null)
-            Console.WriteLine($"Pinned the server's TLS key: {config.ServerPin}");
-
-        // From here on the agent has an identity and a pin, so it talks to the server as itself —
-        // the enroll client above was built before either existed and carries no key.
-        var (mapped, unmapped) = await SeedGamesAsync(policy, config, detection, ApiClient.For(config));
-        config.Save();
-
-        Console.WriteLine(mapped + unmapped > 0
-            ? $"Pre-seeded {mapped + unmapped} game(s): {mapped} mapped to a local save folder, {unmapped} still need one."
-            : "No games in the policy — the agent will adopt whatever the server has on its next poll.");
-        Console.WriteLine($"Config: {config.ConfigPath}");
-        Console.WriteLine("Next:   doctor    (then: daemon)");
-        return 0;
-    }
-
-    /// <summary>
     /// After a scan, offer to map any tracked game that has no save folder but whose name matches a
     /// candidate the scan found. This is the common case on a Deck, where the alternative is typing
     /// <c>add-game --name "…" --dir /home/deck/.local/share/Steam/steamapps/compatdata/…</c> into an
@@ -734,75 +707,6 @@ public static class AgentCli
             catch (Exception ex) { AgentLogger.LogException("scan.SetMachinePath", ex); }
         }
     }
-
-    /// <summary>
-    /// Pre-seed the policy's games. The server stays authoritative — the poller's reconcile would
-    /// adopt these anyway and will correct anything set here — so this is a head start, not a second
-    /// source of truth. Save folders are resolved on THIS machine; the console cannot know them.
-    /// </summary>
-    private static async Task<(int mapped, int unmapped)> SeedGamesAsync(
-        EnrollmentPolicy policy, AgentConfig config, Detection detection, ApiClient api)
-    {
-        var mapped = 0;
-        var unmapped = 0;
-
-        foreach (var pg in policy.Games ?? Array.Empty<EnrollmentGame>())
-        {
-            var dir = await ResolveForEnrollAsync(pg, detection);
-
-            var existing = config.Games.FirstOrDefault(g => g.GameId == pg.GameId);
-            var tracked = existing ?? new TrackedGame();
-            tracked.GameId = pg.GameId;
-            tracked.Name = pg.Name;
-            tracked.ManifestKey = pg.ManifestKey;
-            tracked.ExcludeGlobs = (pg.ExcludeGlobs ?? Array.Empty<string>()).ToList();
-            if (!string.IsNullOrEmpty(dir)) tracked.SaveDirectory = dir;
-            // Copy-on-write like every other writer: the last direct mutation of the live list.
-            if (existing is null) config.MutateGames(list => list.Add(tracked));
-
-            if (string.IsNullOrEmpty(tracked.SaveDirectory))
-            {
-                unmapped++;
-                Console.WriteLine($"  {pg.Name}: no save folder found here — map it with: add-game --name \"{pg.Name}\" --dir <path>");
-                continue;
-            }
-
-            mapped++;
-            Console.WriteLine($"  {pg.Name}: {tracked.SaveDirectory}");
-            // Tell the server where this machine put it, so the console can show it.
-            try { await api.SetMachinePathAsync(pg.GameId, tracked.SaveDirectory); }
-            catch (Exception ex) { AgentLogger.LogException("enroll.SetMachinePath", ex); }
-        }
-
-        return (mapped, unmapped);
-    }
-
-    /// <summary>The policy's hint if that folder exists here, else Ludusavi detection, else nothing.</summary>
-    private static async Task<string?> ResolveForEnrollAsync(EnrollmentGame pg, Detection detection)
-    {
-        // A template first — enroll is the Deck's whole setup, so if the console describes a save
-        // location generically this is the first place that has to understand it. Expanding here is
-        // also what keeps a newly enrolled machine's save root at the SAME logical level as every
-        // other machine's; adopting another machine's literal path is what makes them diverge.
-        if (PathResolver.IsTemplate(pg.SuggestedSaveDir) &&
-            Detection.HostResolver()?.ResolveToDirectory(pg.SuggestedSaveDir!) is { } expanded &&
-            Directory.Exists(expanded))
-            return Path.GetFullPath(expanded);
-
-        if (!string.IsNullOrWhiteSpace(pg.SuggestedSaveDir) &&
-            !PathResolver.IsTemplate(pg.SuggestedSaveDir) &&
-            Directory.Exists(pg.SuggestedSaveDir))
-            return Path.GetFullPath(pg.SuggestedSaveDir);
-        try
-        {
-            var dirs = await detection.ResolveSaveDirectoriesAsync(pg.ManifestKey ?? pg.Name);
-            return dirs.FirstOrDefault();
-        }
-        catch { return null; }
-    }
-
-    /// <summary>The server writes the policy file with ASP.NET's camelCase; read it back forgivingly.</summary>
-    private static readonly JsonSerializerOptions PolicyJson = new() { PropertyNameCaseInsensitive = true };
 
     /// <summary>
     /// <c>add-path &lt;game&gt; --key &lt;k&gt; --dir &lt;d&gt; [--include a,b] [--label L] [--keep local|cloud]</c>:

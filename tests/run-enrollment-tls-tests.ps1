@@ -87,11 +87,8 @@ try {
         -ContentType "application/json" `
         -Body (@{ machineName = "tls-deck-$stamp"; ttlMinutes = 15; serverUrl = $server } | ConvertTo-Json)
 
-    $policyFile = Join-Path $state "policy.json"
-    $mint.policy | ConvertTo-Json -Depth 6 | Set-Content -Path $policyFile -Encoding utf8
-
     $cfg = Join-Path $state "agent-config.json"
-    $out = Agent enroll --file $policyFile --config $cfg
+    $out = Agent enroll --url $mint.joinUrl --config $cfg
     $saved = Get-Content $cfg -Raw | ConvertFrom-Json
 
     # SHA-256 of the SPKI, base64 -> always 44 chars ending in '='.

@@ -218,18 +218,22 @@ that expires after about 15 minutes — if it does, just make another.
 
 ### 3 — Install the agent
 
-**Windows** — download `SaveLocker-Agent-Setup-x.x.x.exe` from
-[Releases](https://github.com/Marwanello/SaveLocker/releases) and run it. On the **Enroll this machine**
-page, pick the policy file; the machine is online in the console before the installer closes.
+**Windows** — create a join link in the console (**Configuration → Enroll a machine**) and open it on
+the PC: the pairing page downloads the installer and copies the link. On the **Enroll this machine**
+page, paste the link (Ctrl+V); the machine is online in the console before the installer closes.
 (SmartScreen warns because the installer isn't code-signed yet — *More info → Run anyway*.) Unattended:
-`Setup.exe /SILENT /ENROLL="C:\path\policy.json"`.
+`Setup.exe /SILENT /ENROLL-URL="http://your-server:5080/join/K7QM-4H2X"`.
 
-**Steam Deck / Linux** — in Desktop Mode:
+**Steam Deck / Linux** — in Desktop Mode, open the join link and press **Download installer**: a
+double-clickable launcher that installs and enrolls in one go (a one-line command is beside it).
+Without a link yet, take **[SaveLocker-Installer.desktop](https://github.com/Marwanello/SaveLocker/releases/latest/download/SaveLocker-Installer.desktop)**
+from the latest release — double-click it, and it installs the newest agent and opens its **Join a
+server** card for the link. By hand:
 
 ```sh
 tar -xzf savelocker-x.x.x-linux-x64.tar.gz
 ./SaveLocker/install.sh
-savelocker enroll --file ~/Downloads/policy.json
+savelocker enroll --url http://your-server:5080/join/K7QM-4H2X
 savelocker doctor            # checks the whole chain — the command to remember
 ```
 

@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:5179/"
+      "url": "http://127.0.0.1:5179/"
     }
   ],
   "paths": {
@@ -167,6 +167,123 @@
         "parameters": [
           {
             "name": "ticket",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/join/{code}": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/join/{code}/policy": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentPolicy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/join/{code}/install.sh": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/join/{code}/install.desktop": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/join/{code}/setup.exe": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "code",
             "in": "path",
             "required": true,
             "schema": {
@@ -5379,37 +5496,15 @@
               "null",
               "string"
             ]
-          },
-          "gameIds": {
-            "type": [
-              "null",
-              "array"
-            ],
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "settleQuietSeconds": {
-            "type": [
-              "null",
-              "integer"
-            ],
-            "format": "int32"
-          },
-          "settleMaxWaitSeconds": {
-            "type": [
-              "null",
-              "integer"
-            ],
-            "format": "int32"
           }
         }
       },
       "CreateEnrollmentResponse": {
         "required": [
           "id",
-          "policy"
+          "code",
+          "joinUrl",
+          "expiresAt"
         ],
         "type": "object",
         "properties": {
@@ -5417,8 +5512,15 @@
             "type": "string",
             "format": "uuid"
           },
-          "policy": {
-            "$ref": "#/components/schemas/EnrollmentPolicy"
+          "code": {
+            "type": "string"
+          },
+          "joinUrl": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

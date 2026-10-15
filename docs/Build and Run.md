@@ -264,6 +264,45 @@ an error instead of a silent no-op. Because the Deck is only awake when woken (s
 handoff section in [[CONTEXT]]), every SSH/`scp` call has a short connect timeout and reports
 "unreachable" rather than hanging or aborting the rest of the rig.
 
+### Testing a fresh install (`flow`)
+
+The rest of the rig runs a pre-built agent beside the real one, so it never exercises what comes
+**before** an agent exists: the join link's `.desktop` launcher, the release's
+`SaveLocker-Installer.desktop`, `install.sh`, the menu entry's `savelocker://` handler and enrolling.
+All of those write to `$HOME`, so `flow` runs each in a **throwaway HOME** (`~/savelocker-flow/…`), with
+install.sh's test-only `SAVELOCKER_INSTALL_SANDBOX` keeping it off the one thing `$HOME` does not
+separate — the user's systemd manager ([[Gotchas]] → *Test-only environment variables*). The real
+`~/.local/share/SaveLocker`, `savelocker.service`, port 5178, menu entry and Steam are never touched.
+
+```powershell
+.\tests\testenv.ps1 sync; .\tests\testenv.ps1 build -Only console; .\tests\testenv.ps1 up -Only console
+.\tests\testenv.ps1 flow -Only linux        # WSL, headless: both launchers run and are checked
+.\tests\testenv.ps1 flow -Only deck         # stages two launchers on the Deck's desktop
+.\tests\testenv.ps1 flow -Only deck -Headless
+.\tests\testenv.ps1 flow -Only windows      # the real installer, in Windows Sandbox
+.\tests\testenv.ps1 clean                   # also removes every flow sandbox
+```
+
+`flow` hosts the Deck build (built first if missing — `sync` first so it is this branch's) as the
+console's Linux package, mints join links, and mirrors a GitHub release locally
+(`SAVELOCKER_RELEASE_BASE`) for the GitHub installer. It refuses a build whose install.sh predates the
+sandbox. **WSL** runs both launchers through GLib's own `.desktop` parser and checks: installed,
+enrolled, daemon on the sandbox port, the `savelocker://` default written, the GitHub install ending at
+the Join step; then `open savelocker://enroll?link=…` and the Join card's API call enroll that second
+sandbox. **Deck**: in Desktop Mode, double-click `SaveLocker TEST - join link` and
+`SaveLocker TEST - GitHub installer` on the desktop (KDE's trust prompt included), then run
+`~/savelocker-flow/open-link.sh` for the handler; the pairing page's own *Download installer* must not
+be used there — that one installs for real. **Windows**: the Inno installer writes Program Files, the
+Run key and the installed agent's mutex, so it only runs in **Windows Sandbox** —
+`flow -Only windows` builds it stamped `-Version`, hosts it, and writes
+`artifacts\testenv-flow\SaveLocker-flow.wsb` (in the repo, not AppData: a terminal inside the Claude
+desktop app has its AppData writes hidden from WSL and the sandbox), which opens a join link inside the sandbox (needs the
+*Windows Sandbox* feature: `Enable-WindowsOptionalFeature -Online -FeatureName
+Containers-DisposableClientVM -All` from an elevated shell, then a reboot).
+
+Not covered by any sandbox: a real browser handing a `savelocker://` link to the desktop (the handler
+is registered in the sandbox's own `mimeapps.list`, which the real session's browser does not read).
+
 ### Testing emulator saves (a fake EmuDeck folder)
 
 ```powershell

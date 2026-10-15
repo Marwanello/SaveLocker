@@ -2156,6 +2156,88 @@ gamescope on a real Deck — Phase 7's checklist still owns that.
 
 ---
 
+**Enrollment join links — option B implemented (2026-10-14, branch `enrollment-join-link`, worktree
+`.claude/worktrees/enrollment-mockups`; the three option mockups are committed on branch
+`enrollment-mockups` as `9ab48b7`, under `docs/tasks/enrollment-options/`).** Asked for directly: the
+enrollment file is disliked, replace it. Option B picked from the mockups — the console mints a short
+code (8 Crockford chars, `JoinCodes` in Shared) into `GET /join/{code}`, a self-contained pairing page:
+Windows tab starts the installer download and copies the link, Linux tab is a `curl …/install.sh | sh`
+one-liner, and an already-installed agent is reached by `127.0.0.1:5178/#enroll:<link>`. The agent
+side is `enroll --url` (CLI; `--code` + `--server` accepted as sugar) over `GET /join/{code}/policy` —
+the policy (games, effective excludes) is now built **at delivery**, not minted into a file — and
+`POST /api/join` on the local API, which the agent-UI Join card and the `#enroll:` deep link use
+(`AgentEnroller` is the one implementation both call). `enroll --file` and the JSON download are
+**removed**; the installer's enroll page now takes a pasted join link (`/ENROLL-URL` for silent), and
+`install.sh`/help/README/[[API Reference]]/[[Decisions]] were updated. Because 40 bits is short,
+`JoinThrottle` guards every lookup (15 failures / 15 min / client + a global backstop; only unknown
+codes count; a successful redeem resets) — that throttle is a security property, asserted end to end
+including 429 + `Retry-After`. Console card rewritten (code + link + QR via `uqr`, a new web dep).
+<br>**Verified:** `run-enrollment-tests` **25/25** (rewritten for links: pairing page, both enroll
+forms, single-use / revoked / forged, throttle against its own low-limit server), `run-local-api-tests`
+**128/128** (run with `SL_LOCALAPI_PORT=5197` — another worktree's tray held :5188; +3 `/api/join`
+checks), `run-server-bugbounty-tests` **216/216** (CS-06/CS-10 updated to the link shape; one
+transient CS-01 crash on the first attempt, not reproducible), `run-agent-tests` 47/47, `dotnet test`
+**552/552**, `run-appearance-consistency-tests` 50/50 (the QR's colours needed `currentColor` +
+keyword black — hex literals are banned in views), `web` and `agent-ui` build + lint clean, installer
+compiles (`installer/dist/SaveLocker-Agent-Setup-0.7.1.exe`). `openapi.json` + both `api-types.ts`
+regenerated against live scratch instances.
+<br>**Not verified (manual pass owed):** the real Windows wizard paste-round-trip against a real
+tray install, and a Steam Deck running the pairing page's one-liner — steps were given in the
+session's report (testenv walkthrough). `run-enrollment-tls-tests` is blocked on this box: the dev
+cert exists but is **untrusted** (`dotnet dev-certs https --trust` needs its dialog accepted).
+<br>**Session note:** for a while the headless tooling wrote edits into the **main checkout** instead
+of this worktree (opencode's default cwd); recovered with a stash move — builds/tests in a worktree
+must always be driven with the worktree's absolute paths. The implementation is committed on
+`enrollment-join-link` and in review as PR #76. A review pass then fixed the pairing page's script —
+inline under the dashboard's `script-src 'self'` it was silently blocked, so the page lost its Copy
+buttons and the Linux tab; it is now served same-origin as `/join.js` — plus `Cache-Control:
+no-store` on every `/join/*` response, a pwsh-only `Retry-After` read in the suite (the one Linux CI
+failure), a missed `--file` banner in `UiApp.cs`, two stale "file" strings, an empty `#enroll`
+banner, and the pre-seed's game-list writes now going through `MutateGames`. Release notes for the
+next tag must cover the enrollment-file removal (old agents/installers cannot enroll until updated —
+they can still `savelocker register`).
+<br>**Follow-up (2026-10-15, same branch) — Linux `.desktop` installer + `savelocker://`.** The pairing
+page's Linux tab now leads with **Download installer**: `GET /join/{code}/install.desktop`, a launcher
+(`JoinLinks.InstallLauncher` in Shared) whose `Exec=sh -c '…'` fetches and runs the same `install.sh`
+in a terminal — the Decky/EmuDeck pattern, single quotes because GLib and KDE both parse them; a URL
+needing any quoting gets no launcher (409). Fetching it does not spend the code. The installed menu
+entry now registers `x-scheme-handler/savelocker` (`Exec=… open %u`; install.sh runs `xdg-mime
+default`, and the daemon rewrites an entry *it* wrote that predates this — `DesktopEntry.OfferOnce`).
+`savelocker open savelocker://enroll?link=<join url>` opens the Join card pre-filled (only a
+well-formed join link is accepted, still one click to enroll), and `open` now starts the systemd
+unit when the daemon is down. The same session also found the pairing page's script blocked by the dashboard CSP and fixed it
+with a per-page hash; merging the review commit replaced that with its `/join.js` (the better fix — the
+dashboard policy stays as it is), carrying over only the tab switch for the Linux hand-off. **Verified:** `run-enrollment-tests` **31/31** (+6: launcher served,
+terminal + exec line, not spending the code, refused once spent, the Linux agent link, the script's tab switch),
+`run-console-security-tests` 378/378, `run-server-bugbounty-tests` 216/216, `JoinLinksTests` +
+`DesktopEntryTests` 25/25 (`dotnet test` **574/574** overall); the launcher parsed by GLib (`Gio.DesktopAppInfo`, WSL Ubuntu) to
+`sh -c <one script>`, and that script run against a scratch server shows the refusal for a bad code
+and runs `install.sh` for a good one; pairing page checked in the browser. **Not verified:** KDE
+on a real Deck (trust prompt, Konsole), the `savelocker://` link from a Deck browser (Flatpak
+Firefox/Chrome go through the portal), and the Windows agent has no `savelocker://` handler.
+<br>**Second follow-up (2026-10-15) — a release `.desktop` installer + `testenv flow`.** Releases now
+carry `SaveLocker-Installer.desktop` + `savelocker-install.sh` (rendered by build-linux.sh with the
+repo, attached by release.yml): double-clicked, it finds the tarball through `SHA256SUMS-linux.txt`,
+checks it, runs install.sh and opens the Join card — the EmuDeck pattern for installing without a join
+link. README and the install help lead with it. **`testenv.ps1 flow`** tests the fresh-install flow in
+throwaway HOMEs (`tests/testenv-flow.sh`, `tests/linux/run-desktop-launcher.py`): install.sh gained
+test-only `SAVELOCKER_INSTALL_SANDBOX=<port>` (never touches the user's systemd manager — `$HOME` does
+not separate it — and runs the daemon on that port), and both installers honour
+`SAVELOCKER_RELEASE_BASE` ([[Gotchas]]). WSL headless, Deck staged for double-clicking (or
+`-Headless`), Windows via a generated Windows Sandbox `.wsb`. `flow` refuses a Linux build without the
+sandboxed install.sh. CI's package-linux job now runs the release installer end to end through GLib,
+and its menu-entry check was updated for `open %u` (the previous commit would have failed it).
+**Verified:** `flow -Only linux` **10/10** against a separate console container (:5081, this branch)
+and a Linux build from a private WSL copy — the shared rig was in use by another worktree
+(`duplicate-shortcut-warnings`) and was not rebuilt; WSL's real `~/.local/share/SaveLocker` unchanged
+since 2026-09-22, no systemd unit touched. `flow -Only windows` built and hosted the installer and
+wrote the `.wsb`; the pairing page answered on the LAN URL. **Not verified:** Windows Sandbox itself
+(the feature is not enabled on this PC), the Deck target, and the CI workflow changes (not run).
+Testing through `flow` from a sandboxed shell: its writes under `%LOCALAPPDATA%` are invisible to WSL,
+so `-StateRoot` had to point into the session scratchpad.
+
+---
+
 **Manifest path constraints + scheduled refresh, console-controlled (2026-10-14, branch
 `manifest-path-constraints`, worktree `.claude/worktrees/manifest-path-constraints`, three commits —
 not merged).** The backlog item *Constrain manifest paths*, built after the maintainer revised the
