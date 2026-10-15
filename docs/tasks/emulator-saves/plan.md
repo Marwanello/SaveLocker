@@ -772,6 +772,32 @@ copies card still there; the controller drove the agent UI while another app had
 - The controller drives the agent UI only while its window has focus (`pad.ts`).
 - Tests +3 (two installs of one emulator; a device save landing in the device save with either machine joining first).
 
+Follow-up, 2026-10-16, later (maintainer: after the re-enroll, Animal Crossing on the PC's Eden says the save data is
+damaged):
+- **Cause: the game version, not the copy.** The PC's island is byte for byte the Deck's (MD5 of every file). Its
+  `mainHeader.dat` says save revision 15, which NHSE's `RevisionChecker` maps to **1.6.0**; the Deck's Yuzu log boots
+  `| 1.6.0` (the update is in Yuzu's NAND), the PC's Eden log boots `| 1.0.0` (only the `[v0]` NSP, nothing installed).
+  A Switch game can't read a save from a newer version of itself. General to Switch games; Animal Crossing changes its
+  save format with almost every update (35 revisions), so it shows the most.
+- **The user ID matters to Animal Crossing.** Decrypted with NHSE's scheme (`main.dat` at `0x1E2280`, 1.6.0): an
+  8-slot table of user ID (the profile UUID's bytes) + `PersonalId`, slot 0 = the Deck's Yuzu user `DBBE23FA…` → resident
+  *Maro* of *Al Jazzira*. The PC's Eden user `C4D7AB8B…` is not in it, so once the version matches, the game will ask to
+  relink the resident, then the Deck will. The fix is one user ID on every device (`profiles.dat` copied); documented in
+  the help article, not automated yet.
+- **Built: the DLC check now covers a Switch game's version.** `SwitchGameVersion` reads it per install from the fork's
+  log (`Booting game: <TID> | … | 1.6.0`), Yuzu's `game_list/<TID>.pv.txt` (`Update (x)`, `[D]` = off; Eden writes none),
+  or Ryujinx's `Logs` (`Application Loaded: … v1.6.0 [tid]`), newest wins. `ContentInventory.For` reports it for the
+  install that holds the game's folder (never one matched by name): `Update <v>` (`<TID>800`, size 0, `version`), empty for
+  the base game, null when unknown. `ContentPackageDto.Version` (optional): an update counts as present only when the
+  version here is the same or newer. A pull of a newer version's save is held with a message naming the update; Switch
+  updates can't be handed over (`DlcCheckDto.CanHandOver`, the agent's hand-over route refuses). The picker shows *Runs
+  version x* per card, warns in the switch dialog, and the page leads with "Eden here can't open the cloud save" when the
+  cloud save (`SaveVsCloudDto.HeadGameVersion`) is newer than the synced emulator's.
+- Tests +5 (`SwitchGameVersionTests` 4: real log and cache lines, Ryujinx, the version compare, only the holding
+  install; `GroupFSyncTests` +1: the version reaches the server and the PC's base game lacks it). Agent tests **647**.
+  Picker clicked through against the stand-in agent (Yuzu 1.6.0, Eden 1.0.0). `api-types.ts` regenerated from a running
+  Linux agent; `openapi.json` from a scratch server (also adds the existing `/join.js` it had missed).
+
 ### The other emulators — researched 2026-10-07
 
 The maintainer asked to add **Cemu, Azahar, Model 2, PPSSPP and the Switch family (Yuzu, Ryujinx and Citron

@@ -2022,6 +2022,11 @@ Eden — **remove the game and add it again** on machines enrolled before this. 
 picked, shows each install (EmuDeck/Standalone) separately and always lists Eden, Citron, Yuzu and Ryujinx; the copies
 card is gone; the controller only drives a focused agent window. `api-types.ts` regenerated from a running agent (the
 `package-linux` CI check). Playthroughs (named save forks) added to the backlog.
+<br>**2026-10-16, later:** "the save data is damaged" in the PC's Eden was the **game version** (Deck's Yuzu runs ACNH
+1.6.0, the PC's Eden the base 1.0.0; the save copied byte for byte). The DLC check now covers a Switch game's version,
+read from the emulator's log or game list cache: a newer version's save holds the pull, and the picker shows each
+emulator's version and warns. Animal Crossing also ties residents to the emulator user's ID (decrypted `main.dat`),
+so the Deck and PC need one user ID or the game asks to relink on each switch — documented, not automated.
 <br>**Next action for this item:** the rest of the testenv pass for Group F (`Build and Run` → *Testing emulator saves*,
 Group F steps 1–7, plus the emulator picker), then the Switch row of Group H on the Deck (Yuzu ↔ Ryujinx) and the PC (Eden).
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
