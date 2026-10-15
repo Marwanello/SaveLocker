@@ -544,6 +544,7 @@ button.sl-tree__twist:focus-visible { outline: 2px solid var(--color-accent); ou
 .sl-ask__versus b { font-size: 13.5px; }
 .sl-ask__steps { margin: 0 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .sl-ask__working { color: var(--color-fg); }
+.sl-ask__body p.sl-ask__warn { padding: 8px 10px; border: 1px solid var(--color-watch-line); border-radius: 8px; background: var(--color-watch-soft); color: var(--color-watch-ink); }
 .sl-ask__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
 /* ---- Controller layer (agent-ui/src/gamepad) ------------------------------------------------- */

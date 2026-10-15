@@ -3730,6 +3730,7 @@ export interface components {
             name: string;
             /** Format: int64 */
             size: number;
+            version?: null | string;
         };
         ContentTransferDto: {
             /** Format: uuid */
@@ -3774,6 +3775,7 @@ export interface components {
             headMachineId?: null | string;
             handover?: null | components["schemas"]["ContentTransferDto"];
             asked?: components["schemas"]["ContentTransferDto"][];
+            canHandOver?: boolean;
         };
         DlcHoldDto: {
             /** Format: uuid */
@@ -4171,6 +4173,7 @@ export interface components {
             /** Format: date-time */
             headCreatedAt: null | string;
             emulators: string[];
+            headGameVersion?: null | string;
         };
         SetConflictPolicyRequest: {
             policy: components["schemas"]["ConflictPolicy"];
@@ -4199,6 +4202,7 @@ export interface components {
             tellWhenReady: boolean;
             saves: null | string;
             install: null | string;
+            gameVersion: null | string;
         };
         SyncNowResponse: {
             message: string;

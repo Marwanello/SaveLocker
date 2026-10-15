@@ -6,7 +6,8 @@ namespace SaveLocker.Agent;
 /// <summary>
 /// What DLC and title updates a tracked game has on this machine (tasks/emulator-saves Phase 5c, the DLC check). Each push
 /// sends it so the server knows what the save was made with, and every report tells the console what this machine has.
-/// Xenia only for now; other emulators answer null, which turns the check off for their games.
+/// Xenia's packages, and a Switch game's version (<see cref="SwitchGameVersion"/>); other emulators answer null, which turns
+/// the check off for their games.
 /// </summary>
 public static partial class ContentInventory
 {
@@ -17,7 +18,11 @@ public static partial class ContentInventory
     public static ContentPackageDto[]? For(TrackedGame game) =>
         Home(game) is { } home
             ? [.. XeniaContent.Inventory(home.Content, home.TitleId).Select(p => new ContentPackageDto(p.Kind, p.Id, p.Name, p.Size))]
-            : null;
+            : SwitchGameVersion.Inventory(game);
+
+    /// <summary>Can this game's missing packs be handed over from another machine? Xenia's only: a Switch update is
+    /// installed into the emulator from the user's own copy.</summary>
+    public static bool CanHandOver(TrackedGame game) => Home(game) is not null;
 
     /// <summary>
     /// Where a Xenia game's packages live: Xenia's <c>content</c> folder, the title ID, and whether the game is in the layout

@@ -1213,6 +1213,7 @@ public sealed class AgentApiServer : IDisposable
                     HeadMachineId = head?.MachineId,
                     Handover = transfers.LastOrDefault(t => t.ToMachineId == _config.MachineId),
                     Asked = [.. transfers.Where(t => t.FromMachineId == _config.MachineId)],
+                    CanHandOver = ContentInventory.CanHandOver(game),
                 });
             }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
@@ -1244,6 +1245,8 @@ public sealed class AgentApiServer : IDisposable
         {
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             if (game is null || !game.IsEnrolledHere) return TypedResults.NotFound();
+            if (!ContentInventory.CanHandOver(game))
+                return TypedResults.BadRequest(new ErrorResponse("This game's update can't be handed over. Install it in the emulator yourself."));
             try
             {
                 var api = ApiClient.For(_config);
@@ -1354,11 +1357,12 @@ public sealed class AgentApiServer : IDisposable
                 .Select(s => SwitchEmulators.Names.First(n => string.Equals(n, s.Detail, StringComparison.OrdinalIgnoreCase)))
                 .Distinct().ToArray();
             if (state?.Head is not { } head) return TypedResults.Ok(new SaveVsCloudDto(SaveVsCloud.NoCloud, null, null, emulators));
+            var headVersion = SwitchCopies.TitleId(game) is null ? null : SwitchGameVersion.VersionOf(head.Content);
             _config.RefreshGameSyncState(game);
             var local = game.IsEnrolledHere && Directory.Exists(game.SaveDirectory)
                 ? await Task.Run(() => game.LocalHash(_config.StateDir)) : null;
             return TypedResults.Ok(new SaveVsCloudDto(SaveVsCloud.Of(local, head.ContentHash, game.LastSyncedHash),
-                head.MachineName, head.CreatedAt, emulators));
+                head.MachineName, head.CreatedAt, emulators, headVersion));
         }).Produces<SaveVsCloudDto>();
 
         // One action on one emulator's copy: copy the synced save there, keep it in step (on/off), make it the one that
@@ -2038,7 +2042,8 @@ public sealed class AgentApiServer : IDisposable
 
     private SwitchCopyDto[] SwitchCopyRows(TrackedGame game) =>
         SwitchCopies.List(_config, game).Select(r => new SwitchCopyDto(r.Emulator, r.User, r.Folder,
-            r.Synced, r.State, r.WrittenUtc, r.KeepInSync, r.CanCopyHere, r.CanMakeSynced, r.Note, r.TellWhenReady, r.Saves, r.Install)).ToArray();
+            r.Synced, r.State, r.WrittenUtc, r.KeepInSync, r.CanCopyHere, r.CanMakeSynced, r.Note, r.TellWhenReady, r.Saves, r.Install,
+            r.GameVersion)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -2559,11 +2564,14 @@ public sealed record TestConnectionDto(bool Ok, int? Status, long LatencyMs, str
 /// <see cref="SwitchCopies.States"/>.</summary>
 public sealed record SwitchCopyDto(
     string Emulator, string? User, string? Folder, bool Synced, string State, DateTime? WrittenUtc,
-    bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note, bool TellWhenReady, string? Saves, string? Install);
+    bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note, bool TellWhenReady, string? Saves, string? Install,
+    string? GameVersion);
 
 /// <summary>A game's save here next to the cloud's head: <see cref="State"/> is one of <see cref="SaveVsCloud"/>.
-/// <see cref="Emulators"/>: the Switch emulators the game's machines say they play it in, this one's too.</summary>
-public sealed record SaveVsCloudDto(string State, string? HeadMachineName, DateTime? HeadCreatedAt, string[] Emulators);
+/// <see cref="Emulators"/>: the Switch emulators the game's machines say they play it in, this one's too.
+/// <see cref="HeadGameVersion"/>: the version of the game the cloud's save was made with, when its machine said.</summary>
+public sealed record SaveVsCloudDto(string State, string? HeadMachineName, DateTime? HeadCreatedAt, string[] Emulators,
+    string? HeadGameVersion = null);
 
 public static class SaveVsCloud
 {

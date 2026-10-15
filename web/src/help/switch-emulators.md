@@ -43,6 +43,18 @@ The emulator you leave keeps its save as it was.
 - Nothing is copied while any Switch emulator is open.
 - A save about to be overwritten is zipped first, in the agent's `emulator-copies` folder. The last five per game are kept.
 
+## Game versions: "The save data is damaged"
+
+A Switch game writes its save in its own version's format, and an older version of the game can't read it. Animal Crossing says the save data is damaged; other games refuse it, crash, or ask for an update. The save itself is fine: it opens again in the version that made it. So **every device must run the same update of the game** (on PC and Deck alike, the update is installed in the emulator: *File → Install Files to NAND* in a Yuzu fork, *Manage Title Updates* in Ryujinx).
+
+SaveLocker reads which version each emulator runs: a Yuzu fork logs it each time it starts a game, Yuzu's game list also notes an installed update, and Ryujinx logs it too. So an emulator that has never started the game shows no version yet. Every upload says the version it was made with, and:
+
+- **Emulator settings** shows the version on each emulator's card, and warns when the cloud save is from a newer version than the emulator here runs, or when picking an emulator would put a save from a newer version into it.
+- **A pull is held** when the latest save is from a newer version than the one here, instead of putting in a save the game can't open. The game's page says which update to install. Once you've installed it, pull the save from the game's page. Holding off until the emulator has started the game with the new update also works: the pull then goes ahead by itself.
+- **A newer version here than on your other devices:** once you play here, the save is in the newer format, and the other devices can't open it until they have that update too.
+
 ## Users
 
-A Switch save's files don't record which user they belong to. Each emulator files them under a user: a Yuzu fork by the user's folder, Ryujinx in its index. A copy goes under that emulator's current user (Yuzu's *current user*, Ryujinx's last-opened profile), which the Emulator settings page shows. Nothing else about the user needs to match.
+Each emulator files a save under a user: a Yuzu fork by the user's folder, Ryujinx in its index. A copy goes under that emulator's current user (Yuzu's *current user*, Ryujinx's last-opened profile), which the Emulator settings page shows.
+
+Most games don't record the user in their save files, so nothing else about the user needs to match. Some do. Animal Crossing links each island resident to the ID of the user who made them. On an emulator whose user has another ID, the game can't find that user and asks to link the resident to a user here, and the next device then asks again. To avoid that, give the Yuzu-based emulators on all your devices the same user: copy one's `profiles.dat` (`nand/system/save/8000000000000010/su/avators/`, which EmuDeck links as `Emulation/saves/<emulator>/profiles`) over the others'. Then move each device's own account saves (`…/save/0000000000000000/<old user>/…`) to the new user's folder, so its other games still find them.

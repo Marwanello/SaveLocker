@@ -428,6 +428,37 @@ public sealed class GroupFSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal("deck-island", File.ReadAllText(Path.Combine(pcIsland, "main.dat")));
     }
 
+    [Fact]
+    public async Task The_version_a_save_was_made_with_reaches_the_cloud_and_an_older_game_here_lacks_it()
+    {
+        // The maintainer's rig, 2026-10-16: the Deck's Yuzu runs 1.6.0, the PC's Eden the base game, which says the
+        // island's save data is damaged. The Deck's upload says 1.6.0; the PC sees it lacks that update.
+        static void Boots(string data, string title, string version) => S.Write(Path.Combine(data, "log", "yuzu_log.txt"),
+            $"[   2.860222] Frontend <Info> yuzu/main.cpp:BootGame:2057: Booting game: {title} | Island (64-bit) | {version}\n");
+        var deckSetup = S.Eden(P("deck/Emulation"), EdenUser) with { Data = P("deck/yuzu") };
+        var pcSetup = S.Eden(P("pc/Emulation"), EdenUser) with { Data = P("pc/eden") };
+        Boots(P("deck/yuzu"), Title, "1.6.0");
+        Boots(P("pc/eden"), Title, "1.0.0");
+        S.Write(Path.Combine(S.EdenSave(P("deck/Emulation"), SwitchEmulators.DeviceProfile, Title), "main.dat"), "island-1.6.0");
+        S.Write(Path.Combine(S.EdenSave(P("pc/Emulation"), SwitchEmulators.DeviceProfile, Title), "main.dat"), "island-1.0.0");
+        var deck = await Machine("deck");
+        var pc = await Machine("pc");
+        var deckGame = await Enroll(deck, SwitchEmulators.Scan([deckSetup], []), Title);
+        var pcGame = await Enroll(pc, SwitchEmulators.Scan([pcSetup], []), Title);
+
+        await using var deckEngine = new SyncEngine(deck, ApiClient.For(deck));
+        var pushed = (await deckEngine.PushAsync(deckGame, force: true))!.Version!;
+        await ApiClient.For(deck).ReportContentAsync(deckGame.GameId, SwitchGameVersion.Inventory(deckGame, [deckSetup])!, pushed.Id);
+
+        var head = (await ApiClient.For(pc).GetStateAsync(pcGame.GameId))!.Head!;
+        Assert.Equal("1.6.0", SwitchGameVersion.VersionOf(head.Content));
+        var here = SwitchGameVersion.Inventory(pcGame, [pcSetup]);
+        Assert.Equal("1.0.0", SwitchGameVersion.VersionOf(here));
+        Assert.Equal(["Update 1.6.0"], DlcCheck.Missing(head.Content, here).Select(p => p.Name));
+        Assert.Equal("Eden", Assert.Single(SwitchCopies.List(pc, pcGame, [pcSetup])).Emulator);
+        Assert.Equal("1.0.0", SwitchCopies.List(pc, pcGame, [pcSetup])[0].GameVersion);
+    }
+
     [Theory]
     [InlineData("a", "a", "a", SaveVsCloud.Same)]
     [InlineData("a", "b", "a", SaveVsCloud.CloudNewer)]

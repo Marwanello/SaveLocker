@@ -1060,7 +1060,11 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         var known = holds.For(game.GameId)?.VersionId == head.Id;
         holds.Hold(game.GameId, head.Id, missing);
         if (!known)
-            Alert($"[{game.Name}] held the pull: {head.MachineName}'s save was made with {DlcCheck.Summary(missing)} " +
+            Alert(SwitchCopies.TitleId(game) is not null && missing.All(p => p.Version is not null)
+                ? $"[{game.Name}] held the pull: {head.MachineName}'s save was made with version {missing[0].Version} of the game, and " +
+                  $"{SwitchCopies.SyncedEmulator(game) ?? "the emulator"} here runs {SwitchGameVersion.VersionOf(here)}, which can't open it " +
+                  $"(the game says the save data is damaged). Install update {missing[0].Version} in it, the one {head.MachineName} has, then pull it from the game's page."
+                : $"[{game.Name}] held the pull: {head.MachineName}'s save was made with {DlcCheck.Summary(missing)} " +
                   "this machine doesn't have. Open the game in SaveLocker to pull anyway, or install them and it goes ahead.",
                 AgentEventCodes.PullHeldForDlc, AgentEventSeverity.Warning, game.GameId);
         return true;

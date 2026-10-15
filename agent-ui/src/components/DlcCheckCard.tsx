@@ -56,7 +56,10 @@ export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled
   const missing = packages.filter(p => !p.here)
   const handover = check.handover ?? null
   const handoverOpen = !!handover && OPEN.includes(handover.status)
-  const canHandOver = !!check.headMachineId && !handoverOpen && missing.length > 0
+  // A Switch game's update is installed in the emulator by hand: only Xenia's packs can be handed over.
+  const canHandOver = check.canHandOver !== false && !!check.headMachineId && !handoverOpen && missing.length > 0
+  const noun = missing.length > 0 && missing.every(p => p.kind === 'update') ? 'title update' : 'DLC pack'
+  const missingSize = check.missingSize > 0 ? `${formatBytes(check.missingSize)}. ` : ''
   if (show === 'packs' && packages.length === 0 && !handover) {
     return (
       <Card title="DLC this save was made with">
@@ -143,8 +146,8 @@ export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled
       {check.held && missing.length > 0 && !handoverOpen && (
         <Banner
           tone="warn"
-          title={`Pull on hold: ${gameName}'s latest save needs ${missing.length} DLC pack${missing.length === 1 ? '' : 's'} this device doesn't have`}
-          detail={`${formatBytes(check.missingSize)}. Install them and the pull goes ahead by itself, or choose another way.`}
+          title={`Pull on hold: ${gameName}'s latest save needs ${missing.length} ${noun}${missing.length === 1 ? '' : 's'} this device doesn't have`}
+          detail={`${missing.map(p => p.name || p.id).join(', ')}. ${missingSize}Install ${missing.length === 1 ? 'it' : 'them'} and the pull goes ahead by itself, or choose another way.`}
           action={<Button variant="primary" onClick={() => setAsking(true)}>Choose</Button>}
         />
       )}
@@ -170,7 +173,7 @@ export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled
                   <td style={{ padding: '8px 18px' }}>
                     {p.name || p.id}{p.kind === 'update' && <span style={{ color: 'var(--color-dim)' }}> · title update</span>}
                   </td>
-                  <td style={{ padding: '8px 18px', color: 'var(--color-dim)' }}>{formatBytes(p.size)}</td>
+                  <td style={{ padding: '8px 18px', color: 'var(--color-dim)' }}>{p.size > 0 ? formatBytes(p.size) : '—'}</td>
                   <td style={{ padding: '8px 18px', color: p.here ? 'var(--color-safe-ink)' : 'var(--color-watch-ink)', fontWeight: p.here ? 400 : 600 }}>
                     {p.here ? 'Has it' : 'Missing'}
                   </td>
@@ -201,11 +204,12 @@ export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled
               Before pulling {gameName}
             </div>
             <div style={{ fontSize: 15, fontWeight: 700, margin: '6px 0 6px' }}>
-              {check.headMachineName ?? 'Another machine'} made this save with {missing.length} pack{missing.length === 1 ? '' : 's'} this device doesn't have
+              {check.headMachineName ?? 'Another machine'} made this save with {missing.length} {noun}{missing.length === 1 ? '' : 's'} this device doesn't have
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--color-dim)', lineHeight: 1.5, marginBottom: 14 }}>
-              {missing.map(p => p.name || p.id).join(', ')} · {formatBytes(check.missingSize)}. A game may refuse to load such a
-              save, or leave out what came from those packs.
+              {missing.map(p => p.name || p.id).join(', ')}{check.missingSize > 0 ? ` · ${formatBytes(check.missingSize)}` : ''}. {noun === 'title update'
+                ? 'A game can’t open a save made by a newer version of itself, and may say the save data is damaged.'
+                : 'A game may refuse to load such a save, or leave out what came from those packs.'}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {canHandOver && (

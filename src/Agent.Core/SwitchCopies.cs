@@ -17,8 +17,10 @@ namespace SaveLocker.Agent;
 /// and on the poller's tick; a copy taken into the synced folder is then pushed by that folder's own watcher.
 /// </para>
 /// <para>
-/// No profile is copied: a Switch save's files do not name their user — Yuzu forks file one under the profile's folder,
-/// Ryujinx under its index entry — so a copy goes under the target emulator's current user, which the page shows.
+/// No profile is copied: Yuzu forks file a save under the profile's folder, Ryujinx under its index entry, so a copy goes
+/// under the target emulator's current user, which the page shows. Most saves don't name their user, but some do: Animal
+/// Crossing's island links each resident to a user ID (<c>main.dat</c>, read 2026-10-16), and asks to link them again on an
+/// emulator whose user has another ID.
 /// </para>
 /// </summary>
 public static class SwitchCopies
@@ -27,11 +29,12 @@ public static class SwitchCopies
 
     /// <summary>One emulator's row on the game's Emulator settings page. <see cref="TellWhenReady"/>: the user is told once
     /// it can sync the game (<see cref="SetTellWhenReady"/>). <see cref="Saves"/> is the install's saves folder, which tells
-    /// two installs of one emulator apart (EmuDeck's and a standalone one), and <see cref="Install"/> says which it is.</summary>
+    /// two installs of one emulator apart (EmuDeck's and a standalone one), and <see cref="Install"/> says which it is.
+    /// <see cref="GameVersion"/>: the version of the game the install runs (<see cref="SwitchGameVersion"/>), when known.</summary>
     public sealed record Row(
         string Emulator, string? User, string? Folder, bool Synced, string State, DateTime? WrittenUtc,
         bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note, bool TellWhenReady = false,
-        string? Saves = null, string? Install = null);
+        string? Saves = null, string? Install = null, string? GameVersion = null);
 
     /// <summary>What a copy is, next to the synced one.</summary>
     public static class States
@@ -70,14 +73,15 @@ public static class SwitchCopies
             if (s == synced)
             {
                 rows.Insert(0, new Row(s.Emulator, slot?.UserName, game.SaveDirectory, true, States.Synced,
-                    syncedWritten == DateTime.MinValue ? null : syncedWritten, false, false, false, null, false, s.Saves, InstallOf(s)));
+                    syncedWritten == DateTime.MinValue ? null : syncedWritten, false, false, false, null, false, s.Saves, InstallOf(s),
+                    SwitchGameVersion.Of(s, title)));
                 continue;
             }
             if (slot is null)
             {
                 rows.Add(new Row(s.Emulator, null, null, false, States.NoSlot, null, saved?.KeepInSync ?? false, false, false,
                     s.IsRyujinx ? $"Start the game once in {s.Emulator}: it makes the game's save folder the first time." : "No user in this emulator yet.",
-                    saved?.TellWhenReady ?? false, s.Saves, InstallOf(s)));
+                    saved?.TellWhenReady ?? false, s.Saves, InstallOf(s), SwitchGameVersion.Of(s, title)));
                 continue;
             }
             var (mine, theirs) = Pair(game.Roots(config.StateDir), CopyRoots(s, title, slot, game));
@@ -87,7 +91,7 @@ public static class SwitchCopies
                 : hash == Hash(mine) ? States.Same
                 : slot.WrittenUtc > syncedWritten ? States.Newer : States.Older;
             rows.Add(new Row(s.Emulator, slot.UserName, slot.Dir, false, state, slot.Exists ? slot.WrittenUtc : null,
-                saved?.KeepInSync ?? false, state != States.Same, slot.Exists, null, false, s.Saves, InstallOf(s)));
+                saved?.KeepInSync ?? false, state != States.Same, slot.Exists, null, false, s.Saves, InstallOf(s), SwitchGameVersion.Of(s, title)));
         }
         foreach (var waiting in game.EmulatorCopies.Where(c => c.TellWhenReady && !setups.Any(s => Is(s.Emulator, c.Emulator))))
             rows.Add(new Row(waiting.Emulator, null, null, false, States.NotInstalled, null, false, false, false, null, true));
@@ -466,12 +470,15 @@ public static class SwitchCopies
     }
 
     /// <summary>The setup whose folder for the title is the game's synced folder here.</summary>
-    private static SwitchEmulators.Setup? SyncedSetup(TrackedGame game, IReadOnlyList<SwitchEmulators.Setup> setups)
+    /// <summary>The install whose saves folder holds the game's folder, or null — never one picked by name alone.</summary>
+    public static SwitchEmulators.Setup? HoldingSetup(TrackedGame game, IReadOnlyList<SwitchEmulators.Setup> setups)
     {
         var dir = Normalize(game.SaveDirectory);
-        return setups.FirstOrDefault(s => dir.StartsWith(Normalize(s.Saves) + "/", Comparison))
-               ?? setups.FirstOrDefault(s => Is(s.Emulator, game.Source?.Detail));
+        return setups.FirstOrDefault(s => dir.StartsWith(Normalize(s.Saves) + "/", Comparison));
     }
+
+    private static SwitchEmulators.Setup? SyncedSetup(TrackedGame game, IReadOnlyList<SwitchEmulators.Setup> setups) =>
+        HoldingSetup(game, setups) ?? setups.FirstOrDefault(s => Is(s.Emulator, game.Source?.Detail));
 
     /// <summary>One install of <paramref name="emulator"/>: the one whose saves folder is <paramref name="saves"/> when
     /// given (two installs of one emulator, EmuDeck's and a standalone one), else the first.</summary>

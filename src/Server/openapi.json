@@ -138,6 +138,18 @@
         }
       }
     },
+    "/join.js": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/agent/installer/download": {
       "get": {
         "tags": [
@@ -5412,6 +5424,12 @@
           "size": {
             "type": "integer",
             "format": "int64"
+          },
+          "version": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

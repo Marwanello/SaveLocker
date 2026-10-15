@@ -25,6 +25,19 @@ const LISTED = ['Eden', 'Citron', 'Yuzu', 'Ryujinx']
 /** Which save goes into the emulator picked: the one played here (the synced copy's), the cloud's, or its own. */
 type Carry = 'here' | 'cloud' | 'own'
 
+/** Is `save` ("1.6.0") from a newer version of the game than `runs`? False when either is unknown. A Switch game can't open
+ *  a save made by a newer version of itself: Animal Crossing says the save data is damaged. */
+function newerVersion(save: string | null | undefined, runs: string | null | undefined): boolean {
+  const parse = (v: string) => v.replace(/^v/i, '').split('.').map(n => Number.parseInt(n, 10))
+  if (!save || !runs) return false
+  const [a, b] = [parse(save), parse(runs)]
+  if (a.some(Number.isNaN) || b.some(Number.isNaN)) return false
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0)
+  }
+  return false
+}
+
 type Ask =
   | { kind: 'switch'; to: Choice }
   | { kind: 'absent'; to: Choice }
@@ -48,7 +61,7 @@ export function SwitchPlaysIn({ gameId, gameName, machineName, refreshKey, onCha
   const [message, setMessage] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null)
 
   const loadCloud = useCallback(() => {
-    api.vsCloud(gameId).then(setCloud).catch(() => setCloud({ state: 'unreachable', headMachineName: null, headCreatedAt: null, emulators: [] }))
+    api.vsCloud(gameId).then(setCloud).catch(() => setCloud({ state: 'unreachable', headMachineName: null, headCreatedAt: null, emulators: [], headGameVersion: null }))
   }, [gameId])
   const load = useCallback(() => {
     api.switchCopies(gameId).then(setRows).catch(() => setRows([]))
@@ -61,7 +74,7 @@ export function SwitchPlaysIn({ gameId, gameName, machineName, refreshKey, onCha
   const S = synced?.emulator ?? ''
   const absent = (e: string): Choice => ({
     emulator: e, user: null, folder: null, synced: false, state: 'not-installed', writtenUtc: null, keepInSync: false,
-    canCopyHere: false, canMakeSynced: false, note: null, tellWhenReady: false, saves: null, install: null,
+    canCopyHere: false, canMakeSynced: false, note: null, tellWhenReady: false, saves: null, install: null, gameVersion: null,
   })
   const has = (e: string) => rows.some(r => r.emulator.toLowerCase() === e.toLowerCase())
   const choices: Choice[] = [
@@ -139,7 +152,9 @@ export function SwitchPlaysIn({ gameId, gameName, machineName, refreshKey, onCha
 
   return (
     <>
-      {synced && cloud && <Status cloud={cloud} synced={synced} gameName={gameName} cloudFrom={cloudFrom}
+      {synced && cloud && <Versions cloud={cloud} synced={synced} gameName={gameName} cloudFrom={cloudFrom} />}
+      {synced && cloud && !(cloud.state === 'same' && newerVersion(cloud.headGameVersion, synced.gameVersion)) &&
+        <Status cloud={cloud} synced={synced} gameName={gameName} cloudFrom={cloudFrom}
         busy={working != null} onTakeCloud={() => setAsk({ kind: 'take-cloud' })} onUpload={() => setAsk({ kind: 'upload' })} />}
       {message && <Banner tone={message.tone} title={message.text} />}
 
@@ -207,10 +222,30 @@ function lines(c: Choice, synced: string, machineName: string, elsewhere: boolea
     case 'no-slot': out.push({ text: c.note?.startsWith('No user') ? 'Installed · no user yet' : 'Installed · hasn’t started this game' }); break
     case 'not-installed': out.push({ text: `Not installed on ${machineName}` }); break
   }
+  if (c.gameVersion && c.state !== 'not-installed') out.push({ text: `Runs version ${c.gameVersion}` })
   if (c.synced) out.push({ text: 'Syncs with the cloud', tone: 'acc' })
   else if (elsewhere && c.state === 'not-installed') out.push({ text: `Another device plays it in ${c.emulator}`, tone: 'info' })
   if (c.tellWhenReady) out.push({ text: 'You’ll be told when it’s ready', tone: 'info' })
   return out
+}
+
+/** The game version here against the cloud save's: the reason a save that moved over whole still won't open. */
+function Versions({ cloud, synced, gameName, cloudFrom }: {
+  cloud: SaveVsCloud; synced: SwitchCopy; gameName: string; cloudFrom: string
+}) {
+  const S = synced.emulator
+  const made = cloud.headGameVersion
+  const runs = synced.gameVersion
+  const from = cloud.headMachineName ?? 'the other device'
+  if (newerVersion(made, runs)) {
+    return <Banner tone="crit" title={`${S} here can’t open the cloud save: it runs ${gameName} ${runs}, and the save is from ${made}.`}
+      detail={`A Switch game can’t read a save made by a newer version of itself, and says the save data is damaged. Install update ${made} in ${S}, the one ${from} has. SaveLocker sees it once ${S} has started ${gameName} with it. The cloud save is from ${cloudFrom}.`} />
+  }
+  if (newerVersion(runs, made) && cloud.headMachineName) {
+    return <Banner tone="warn" title={`${S} here runs ${gameName} ${runs}, newer than ${from}’s ${made}.`}
+      detail={`Once you play here, the save is ${runs}’s, and ${from} can’t open it until it has update ${runs} too.`} />
+  }
+  return null
 }
 
 function Status({ cloud, synced, gameName, cloudFrom, busy, onTakeCloud, onUpload }: {
@@ -280,6 +315,13 @@ function AskDialog({ ask, synced, label, gameName, machineName, cloud, cloudFrom
     const fromCloud = hasCloud && (!synced || state === 'cloud-newer')
     const both = !!synced && state === 'different'
     const playedHere = synced?.writtenUtc ? `saved ${formatAgo(synced.writtenUtc)}` : 'here'
+    // The version each save is from, against the one the emulator picked runs.
+    const carries: { what: string; made: string | null | undefined }[] = [
+      ...(both || fromCloud ? [{ what: 'The cloud save', made: cloud?.headGameVersion }] : []),
+      ...(both || fromHere ? [{ what: `${S}’s save`, made: synced?.gameVersion }] : []),
+    ]
+    const tooNew = [...new Set(carries.filter(c => newerVersion(c.made, to.gameVersion)).map(c => c.made!))]
+      .map(made => ({ made, what: carries.filter(c => c.made === made).map(c => c.what) }))
     title = `Play ${gameName} in ${name}?`
     body = <>
       <p>{name} becomes the emulator {gameName} syncs through on {machineName}. {both
@@ -293,6 +335,12 @@ function AskDialog({ ask, synced, label, gameName, machineName, cloud, cloudFrom
         {synced && <div><span>Stops syncing</span><b>{S}</b>{synced.writtenUtc ? `Keeps its save, ${formatAgo(synced.writtenUtc)}` : 'No save'}</div>}
         <div><span>Plays it from now</span><b>{name}</b>{ownSave ? `Its own save is zipped first` : 'No save of its own yet'}</div>
       </div>
+      {tooNew.map(c => (
+        <p key={c.made} className="sl-ask__warn">
+          {c.what.length > 1 ? 'Both saves are' : `${c.what[0]} is`} from {gameName} {c.made}, and {name} runs {to.gameVersion}: it
+          can’t open a save from a newer version, and says the save data is damaged. Install update {c.made} in {name} first.
+        </p>
+      ))}
     </>
     const keepOwn = ownSave && <Button variant="quiet" data-pad-label="Keep its own save" disabled={busy}
       onClick={() => onSwitch(to, 'own')}>Keep {name}’s own save</Button>

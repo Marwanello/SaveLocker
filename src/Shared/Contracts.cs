@@ -497,23 +497,38 @@ public record SaveVersionDto(
 /// <summary>
 /// One installed package of a game — DLC (<see cref="Dlc"/>) or a title update (<see cref="Update"/>) — as the DLC check
 /// knows it (tasks/emulator-saves Phase 5c): the package's own ID, its display name, its size. Never its data.
+/// <see cref="Version"/> is the game version a title update brings ("1.6.0"), when the emulator says it (Switch).
 /// </summary>
-public record ContentPackageDto(string Kind, string Id, string Name, long Size)
+public record ContentPackageDto(string Kind, string Id, string Name, long Size, string? Version = null)
 {
     public const string Dlc = "dlc", Update = "update";
-    public const int MaxPackages = 1000;
+    public const int MaxPackages = 1000, MaxVersionLength = 32;
 
     /// <summary>
     /// The packages of <paramref name="needed"/> that <paramref name="here"/> lacks. DLC matches by kind and ID. A title
-    /// update is there when any title update is installed: each one replaces the last, nothing on disk says which is
-    /// newer, and a machine that updated since must not be held against a save made with the update before.
+    /// update is there when any title update is installed: each one replaces the last, and a machine that updated since
+    /// must not be held against a save made with the update before. When both sides name versions, it is there only when
+    /// the version here is the same or newer: a game can't open a save made by a newer version of itself.
     /// </summary>
     public static ContentPackageDto[] Missing(IReadOnlyList<ContentPackageDto>? needed, IReadOnlyList<ContentPackageDto>? here)
     {
         if (needed is null || needed.Count == 0) return [];
         var have = new HashSet<string>((here ?? []).Select(p => p.Kind + "/" + p.Id), StringComparer.OrdinalIgnoreCase);
-        var anyUpdate = (here ?? []).Any(p => p.Kind == Update);
-        return [.. needed.Where(p => !(p.Kind == Update ? anyUpdate : have.Contains(p.Kind + "/" + p.Id)))];
+        var updates = (here ?? []).Where(p => p.Kind == Update).ToList();
+        var newest = updates.Select(p => ParseVersion(p.Version)).Where(v => v is not null).Max();
+        return [.. needed.Where(p => !(p.Kind == Update ? HasUpdate(p) : have.Contains(p.Kind + "/" + p.Id)))];
+
+        bool HasUpdate(ContentPackageDto p) =>
+            updates.Count > 0 && (ParseVersion(p.Version) is not { } wanted || newest is null || newest >= wanted);
+    }
+
+    /// <summary>A display version ("1.6.0", "v2.0.8") as a comparable one, or null.</summary>
+    public static System.Version? ParseVersion(string? text)
+    {
+        var t = text?.Trim().TrimStart('v', 'V');
+        if (string.IsNullOrEmpty(t)) return null;
+        if (!t.Contains('.')) t += ".0";
+        return System.Version.TryParse(t, out var v) ? v : null;
     }
 
     /// <summary>Null when a reported list can be stored, else why not.</summary>
@@ -527,6 +542,7 @@ public record ContentPackageDto(string Kind, string Id, string Name, long Size)
             if (string.IsNullOrWhiteSpace(p.Id) || p.Id.Length > 128) return "A package needs an ID of at most 128 characters.";
             if ((p.Name?.Length ?? 0) > 256) return "A package name is at most 256 characters.";
             if (p.Size < 0) return "A package size cannot be negative.";
+            if ((p.Version?.Length ?? 0) > MaxVersionLength) return $"A package version is at most {MaxVersionLength} characters.";
         }
         return null;
     }

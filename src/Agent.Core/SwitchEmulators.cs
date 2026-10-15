@@ -58,9 +58,10 @@ public static partial class SwitchEmulators
     /// One installed Switch emulator. <see cref="Saves"/> is the NAND's <c>user/save</c> (a fork) or <c>bis/user/save</c>
     /// (Ryujinx), by its real path. A fork's <see cref="Profiles"/> is its <c>profiles.dat</c> and <see cref="Config"/> its
     /// <c>qt-config.ini</c>; Ryujinx's are <c>Profiles.json</c> and the <c>imkvdb.arc</c> in <see cref="SystemSaves"/>.
+    /// <see cref="Data"/> is the emulator's own folder, which holds its logs (<see cref="SwitchGameVersion"/>).
     /// </summary>
     public sealed record Setup(string Emulator, string Saves, string? Profiles = null, string? Config = null,
-        string? SystemSaves = null, string? Games = null, bool EmuDeck = false)
+        string? SystemSaves = null, string? Games = null, bool EmuDeck = false, string? Data = null)
     {
         public bool IsRyujinx => string.Equals(Emulator, Ryujinx, StringComparison.OrdinalIgnoreCase);
     }
@@ -104,7 +105,7 @@ public static partial class SwitchEmulators
                 if (YuzuSetup(fork.Name, config, data) is { } s) yield return s;
         foreach (var dir in RyujinxFolders())
             yield return new Setup(Ryujinx, Path.Combine(dir, "bis", "user", "save"), Profiles: Path.Combine(dir, "system", "Profiles.json"),
-                SystemSaves: Path.Combine(dir, "bis", "system", "save"), Games: Path.Combine(dir, "games"));
+                SystemSaves: Path.Combine(dir, "bis", "system", "save"), Games: Path.Combine(dir, "games"), Data: dir);
     }
 
     private static IEnumerable<(string Config, string Data)> ForkFolders(Fork fork)
@@ -147,7 +148,7 @@ public static partial class SwitchEmulators
             ? EmulatorPaths.IniFolder(configured, Path.GetDirectoryName(config)!) ?? Path.Combine(data, "nand")
             : Path.Combine(data, "nand");
         return new Setup(emulator, Path.Combine(nand, "user", "save"),
-            Profiles: Path.Combine(nand, "system", "save", "8000000000000010", "su", "avators", "profiles.dat"), Config: config);
+            Profiles: Path.Combine(nand, "system", "save", "8000000000000010", "su", "avators", "profiles.dat"), Config: config, Data: data);
     }
 
     /// <summary>One per real saves folder that exists. A later row of the same folder fills in what the first lacked — an
@@ -172,6 +173,7 @@ public static partial class SwitchEmulators
                 SystemSaves = ExistingDir(f.SystemSaves) ?? s.SystemSaves,
                 Games = ExistingDir(f.Games) ?? s.Games,
                 EmuDeck = f.EmuDeck || s.EmuDeck,
+                Data = f.Data ?? s.Data,
             };
         }
         return found;
