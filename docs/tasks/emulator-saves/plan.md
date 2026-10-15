@@ -734,6 +734,26 @@ for good, Switch rows had no **Change**, and a title ID is no name anyone recogn
 - Tests: `SwitchNamesAndLinksTests` 4, `GroupFSyncTests` +3 against real servers (the WSL-first rename, a game picked by
   hand taking the title, the eShop icon from a stand-in host); both server changes mutation-checked. Unit **558**.
 
+Follow-up, 2026-10-15 (maintainer, on the Deck: "I chose the cloud save and nothing changed" — it went into Yuzu, the
+emulator Animal Crossing synced through there, while the maintainer plays in Eden, which isn't on the Deck; nothing on
+screen said which). Three directions were mocked up (`which-emulator`); the maintainer chose **A, the emulator as one
+visible choice**, built on the Emulator settings page (`SwitchPlaysIn`):
+- A status line compares the synced emulator's save with the cloud's (`GET vs-cloud`, `SaveVsCloud.Of`) and names it in
+  every button: **Put the cloud save in Yuzu** (`take-cloud`: `SyncEngine.TakeSideAsync`, the save zipped first with the
+  copies' backups, then a forced pull) and **Keep Yuzu's and upload it** (`upload`, a forced push). Both are refused when
+  the page named an emulator that isn't the one that syncs any more.
+- **On this device, you play it in**: one radio card per Switch emulator here, plus any the game's other machines report
+  (`GameStateDto.Sources`) that isn't installed. Picking one with a save asks whether to keep its save or put the cloud's
+  in (`make-synced`, then `take-cloud`); one with no save offers only the cloud's; Ryujinx with no slot and an emulator
+  not installed explain the steps (EmuDeck → Manage Emulators) and offer **Tell me when … is ready**
+  (`EmulatorCopy.TellWhenReady`; the poller's `SwitchCopies.NowReady` raises one `NoticeCatalog.EmulatorReady`).
+- The copies card lost **Make this the synced copy** (the picker does it) and was renamed *Copies in the other emulators*.
+- Not built: B (the save map) and a Deck Game Mode (ImGui) screen; the agent UI page works with the controller.
+- Tests: `GroupFSyncTests` +7 (the Deck case end to end against a real server: waiting for Eden, the cloud save into the
+  synced emulator with its own zipped, Eden ready once, switched to, filled, then uploaded with the PC's kept as a version;
+  `SaveVsCloud.Of`'s six cases). Agent tests **639**. Checked by hand against a stand-in agent (every dialog, Escape,
+  1280×800); not yet on the rig or the Deck.
+
 ### The other emulators — researched 2026-10-07
 
 The maintainer asked to add **Cemu, Azahar, Model 2, PPSSPP and the Switch family (Yuzu, Ryujinx and Citron

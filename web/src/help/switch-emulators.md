@@ -19,11 +19,21 @@ On **Add games**, a Switch row says which server game it joins. **Change** shows
 
 ## Several Switch emulators on one machine
 
-Maybe you play a game in Eden one day and in Ryujinx the next, for performance. One emulator's copy syncs with the server. Open the game's page → **Emulator settings** to see every Switch emulator on this machine, with what each one holds:
+Maybe you play a game in Eden one day and in Ryujinx the next, for performance. One emulator's copy syncs with the server: a cloud save goes into it, and it's what uploads. Open the game's page → **Emulator settings**.
+
+**The status line** compares that emulator's save with the cloud's and names the emulator in every button: *The cloud has a newer save than Yuzu here*, **Put the cloud save in Yuzu**, **Keep Yuzu's and upload it**. Putting the cloud save in zips the emulator's own save first; uploading keeps the cloud's old one under Versions.
+
+**On this device, you play it in** has one card per Switch emulator here, with what each one holds, plus any emulator your other devices play the game in that isn't installed here. Pick one to make it the emulator that syncs:
+
+- **One with a save:** switch and keep its save, or switch and put the cloud save in it. The emulator you left keeps its save as it was.
+- **One with no save of the game yet:** switch and put the cloud save in it.
+- **Ryujinx before it has started the game:** start the game in Ryujinx once, then pick it.
+- **One not installed here:** the steps to install it with EmuDeck. **Tell me when it's ready** sends a notification once it's installed and can take the game.
+
+**Copies in the other emulators:**
 
 - **Copy the synced save here:** gives that emulator the synced save, once.
 - **Keep in sync:** whichever copy you played last is copied over the other. A change in the other emulator is taken into the synced copy and pushed.
-- **Make this the synced copy:** that emulator's copy syncs with the server from now on. If it holds a different save, the next sync pushes it.
 
 **Safety:**
 

@@ -2009,8 +2009,15 @@ an instant "Both changed". Copy actions and the poller's reconcile run under the
 and changes nothing when it can't (the poller applies the server's folder back), and refuses a target with no device
 save when the game keeps one. The server never joins or edits a same-named game keyed to another title; the poller
 renames only a `Switch <title ID>` placeholder. Unit **566**.
+<br>**2026-10-15, same PR: which emulator plays it (direction A).** The maintainer's "I chose the cloud save and nothing
+changed" on the Deck was the save going into Yuzu, the emulator the game synced through there, with Eden (where they
+play) not installed. The Switch Emulator settings page now leads with a status line naming that emulator (**Put the cloud
+save in Yuzu** / **Keep Yuzu's and upload it**, forced, refused if it no longer syncs) and an **On this device, you play it
+in** picker (switch keeping its save or taking the cloud's; not-installed and no-slot emulators explained, with **Tell me
+when … is ready**). New local route `vs-cloud`, actions `take-cloud`/`upload`/`tell-when-ready`/`stop-telling`. Agent
+tests **639**. Details: `tasks/emulator-saves/plan.md` → Group F follow-ups, 2026-10-15.
 <br>**Next action for this item:** the rest of the testenv pass for Group F (`Build and Run` → *Testing emulator saves*,
-Group F steps 1–7), then the Switch row of Group H on the Deck (Yuzu ↔ Ryujinx) and the PC (Eden).
+Group F steps 1–7, plus the emulator picker), then the Switch row of Group H on the Deck (Yuzu ↔ Ryujinx) and the PC (Eden).
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
 steps 1–5 of the profile and 1–11 of the DLC hand-over), then Forza Horizon for real between PC and Deck (Group H).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.
