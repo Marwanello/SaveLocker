@@ -102,6 +102,7 @@ public sealed class LinkByHandTests : IClassFixture<ServerProcess>, IDisposable
         // An empty manifest of the test's own: a game adopted with no folder falls back to manifest detection,
         // which must neither download the real one nor touch this machine's cache.
         config.ManifestCachePath = Path.Combine(Path.GetDirectoryName(config.ConfigPath)!, "manifest.yaml");
+        config.ManifestRefreshDays = 0; // and the background refresher must never replace it either
         if (!File.Exists(config.ManifestCachePath)) File.WriteAllText(config.ManifestCachePath, "{}\n");
         await using var engine = new SyncEngine(config, ApiClient.For(config));
         var poller = new CommandPoller(config, () => ApiClient.For(config), () => engine, new Detection(config), new NoScan(),

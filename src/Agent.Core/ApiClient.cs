@@ -355,24 +355,8 @@ public sealed class ApiClient
         var type = resp.Content.Headers.ContentType?.MediaType ?? "";
         if (!ArtContentTypes.Contains(type, StringComparer.OrdinalIgnoreCase)) return null;
         if (resp.Content.Headers.ContentLength > MaxArtBytes) return null;
-        var bytes = await ReadAtMostAsync(resp.Content, MaxArtBytes, budget.Token);
+        var bytes = await HttpBodies.ReadAtMostAsync(resp.Content, MaxArtBytes, budget.Token);
         return bytes is null ? null : (bytes, type);
-    }
-
-    /// <summary>The body, or null if it is longer than <paramref name="max"/> — read as it arrives, so a
-    /// body with no declared length is stopped at the cap rather than buffered whole.</summary>
-    private static async Task<byte[]?> ReadAtMostAsync(HttpContent content, int max, CancellationToken ct)
-    {
-        await using var stream = await content.ReadAsStreamAsync(ct);
-        using var ms = new MemoryStream();
-        var buffer = new byte[81920];
-        int read;
-        while ((read = await stream.ReadAsync(buffer, ct)) > 0)
-        {
-            if (ms.Length + read > max) return null;
-            ms.Write(buffer, 0, read);
-        }
-        return ms.ToArray();
     }
 
     public async Task<LeaseAcquireResponse> AcquireLeaseAsync(Guid gameId)

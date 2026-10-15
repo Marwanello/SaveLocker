@@ -21,7 +21,6 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 - [QAM left-stick scrolling](tasks/decky-qam-scrolling/summary.md)
 - [Duplicate-shortcut warnings outside doctor](tasks/duplicate-shortcut-warnings/summary.md)
 - [Linux agent: separate app files from mutable state](tasks/linux-agent-secrets/plan-split.md)
-- [Constrain manifest paths](tasks/manifest-path-constraints/summary.md)
 - [One state owner (deferred)](tasks/linux-single-state-owner/summary.md)
 
 ## Planned / future

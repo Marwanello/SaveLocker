@@ -2129,6 +2129,88 @@ gamescope on a real Deck — Phase 7's checklist still owns that.
 
 ---
 
+**Manifest path constraints + scheduled refresh, console-controlled (2026-10-14, branch
+`manifest-path-constraints`, worktree `.claude/worktrees/manifest-path-constraints`, three commits —
+not merged).** The backlog item *Constrain manifest paths*, built after the maintainer revised the
+approach: the first plan pinned the manifest to an approved revision; the maintainer rejected the pin
+(a reliable live feed, and a pinned copy makes every game released after the pin undetectable) and the
+plan was re-cut to **constrain what an entry may resolve to** and to actually **refresh the feed on a
+schedule** — which the agent had never done (the cache was downloaded once and served forever unless
+someone ran `refresh-manifest`). The maintainer also asked for the window to be editable in the
+console with a "refresh now" button, which is where the server/dashboard/agent plumbing below
+comes from. Full write-up: `logs/2026-10-14_manifest-path-constraints.md`; decisions in
+[[Decisions]] (two new bullets: the live feed and the constrained paths).
+<br>**What shipped:** (1) `PathResolver` refuses any template that is not absolute, canonicalises
+before the token-root prefix check (the old check compared the RAW
+string, so `<winAppData>/../../../x` passed), and requires the link-resolved path — every symlink/
+junction component, via the new `Shared/RealPath.cs` — to stay under a link-resolved resolver root;
+the user-mapped path classes (`SavePathGuard`'s floor) are untouched. (2) `ManifestLoader.DownloadAsync`
+streams with a 64 MB cap and validates (parses, ≥ 5,000 games) before replacing the cache by a
+temp-file move; `Detection.RefreshManifestIfDueAsync` refreshes a stale cache in the background
+(attempt gap 1 h / 30 s forced, never throws, failure keeps the old copy), driven from `CommandPoller`
+on both hosts; `AgentConfig` carries `ManifestRefreshDays` (default 3), the pushed window, and the
+handled request timestamp. (3) Server: audited admin routes `POST /api/settings/manifest` (0–365,
+400 otherwise) and `POST /api/settings/manifest/refresh`; `AgentHeartbeatResponse` and
+`ServerSettingsDto` carry the window + requested-at (append-only, version-skew-safe — the appearance
+pattern); Configuration → Defaults & maintenance has the **Manifest refresh** row (window select +
+**Refresh now**, "Last requested … ago"). `openapi.json` + `web/src/api-types.ts` regenerated,
+additions only.
+<br>**Verified:** xunit **571** (`ManifestPathConstraintTests` 11, `ManifestRefreshTests` 8 — an
+`HttpListener` stub; guards removed flip 4 + 3 of them); `run-hardening-tests` **37/37 Windows** (+4,
+section 5: a real traversal entry and a real junction escape in a fake prefix, clean-sibling control —
+**both new checks FAIL against the pre-fix resolver** via a live mutation pass); `run-agent-tests`
+**49/49** against a fresh scratch server (+2; hostile entry refused with its target created); live wire
+check (`POST` window → `GET /api/settings` → heartbeat response carries both fields; 9999 → 400);
+Server/Agent/`Agent.Linux` builds clean, `web` build + lint clean. All fixture configs that point
+`ManifestCachePath` at a file now set `ManifestRefreshDays: 0` (five suites + two xunit fixtures) so
+no suite can download over its fixture.
+<br>**A real trap the mutation check caught:** the hardening fixture's first traversal target sat one
+directory above where six `..` segments actually land, so the check passed against BOTH fixed and
+mutated code — a vacuous test, invisible without the "must FAIL pre-fix" pass. Fixed and re-proven.
+<br>**Not verified:** `run-linux-tests` (WSL) and `run-winagent-tests` (interactive desktop) were not
+run; the console card was not eyeballed in a browser (it type-checks/builds; the wire was checked
+live); console-button → live-daemon download is covered by unit tests + wiring, not a live daemon.
+**Next actions:** merge when reviewed; next release notes need a line about the scheduled refresh +
+Configuration control; watch a real machine's log for "Manifest refreshed: N games." after the first
+window or a console press. Deliberately not done: `SavePathGuard.Canonicalize` still resolves only the
+leaf (an intermediate-link upgrade for user paths is a separate item), and the on-disk cache is not
+re-hashed at load.
+<br>**Reviewed at depth on 2026-10-14 (ten angles), every finding fixed on the branch.** The
+load-bearing fixes: a non-YAML body (a proxy HTML page — the `YamlException` that used to escape the
+fire-and-forget refresh task) is wrapped as `InvalidDataException`, so "never throws, keeps the
+cache" is real and logged; the console's "Refresh now" is marked handled only once an attempt
+actually starts (a press the 30 s gap refused used to be consumed with nothing downloaded), and the
+due check is "differs from", not "newer than", so a server clock step-back cannot strand a press;
+the download runs OUTSIDE the manifest lock (a first-ever reader used to wait out the whole transfer;
+it now serves the cached file immediately); one shared `HttpClient` with a 30-minute timeout instead
+of a fresh 100 s-default client per refresh (a ~17 MB manifest on a slow link could never finish
+while the console reported success); PID+Guid temp names (the fixed `.tmp` was shared across
+processes) plus a declared-vs-delivered length check; conditional GETs via an ETag stored beside the
+cache (a 304 restarts the window without re-downloading); `Detection` reloads its in-memory manifest
+when another process replaces the file (Game Mode and the daemon used to serve it forever); `..` is
+canonicalised-and-contained rather than flat-banned — the ban contradicted real entries
+(`<base>/cfg/../*.json`, the shape the detection harness itself collapses) — and `ManifestPathConstraintTests`
+now pins both the escape and the contained-collapse cases; `SetManifestRefreshRequest.RefreshDays`
+is nullable so `{}` is a 400 instead of silently meaning "never"; `ApplyManifestSettings(null)` keeps
+the last pushed window (an old server no longer clears it) and `TrySetServerUrl` clears the
+server-scoped window/handled stamps on an origin change; the effective window is clamped on read so
+a hand-edited config cannot overflow `TimeSpan.FromDays`. Test/suite fixes: the Linux, regression,
+concurrency and winagent suites pin the SERVER's window (`Manifest__RefreshDays=0`) — the fixtures'
+agent-side `0` never won, because the heartbeat's pushed value overrides it, so a daemon on a >3-day-old
+checkout would have replaced `tests/linux/manifest.yaml` with the live feed; the hardening "traversal
+target was never touched" check (unfailable — the suite created the target) is now "never named",
+with the section numbers and header counts corrected; run-agent-tests' traversal fixture escapes to
+`C:\Users` (exists on every box, under no root) instead of staying inside `<home>`, which the new
+containment deliberately allows. **Re-verified:** xunit **576/576** (`ManifestPathConstraintTests`
+12, `ManifestRefreshTests` 12), `run-agent-tests` **49/49**, `run-hardening-tests` **37/37 Windows**,
+`run-delta-upload-tests` 33/33, `run-local-api-tests` 128/128, `run-console-security-tests`
+378/378, `openapi.json` + `web/src/api-types.ts` regenerated (only schema change: `refreshDays`
+nullable; live wire: `{}` → 400, `5` → stored round-trip, `9999` → 400), `web` build + lint clean,
+`bash -n` on both Linux scripts. **Still not run:** `run-linux-tests` (WSL) and `run-winagent-tests`
+(interactive desktop), and the console row still has not been eyeballed in a browser.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

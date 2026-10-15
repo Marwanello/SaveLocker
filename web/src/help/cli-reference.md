@@ -59,7 +59,7 @@ If you must run the `.exe`, redirect its output to a file:
 | `scan` | `[--no-cloud]`<br>`[--yes]`<br>`[--no-prompt]` | Discover enrollment candidates — non-Steam shortcuts, installed Steam games, and folders under common save roots that match the manifest. `--no-cloud` hides games that already have Steam Cloud. **If a candidate matches a tracked game that has no save folder, `scan` offers to map it** — answer `y` and you never have to type the path. `--yes` applies every match without asking; `--no-prompt` only lists. Prompting is skipped automatically when the output is piped or the command runs under systemd. A candidate whose manifest entry has more locations that exist here lists them as *also found*, with the `add-path` command that adds each one once the game is enrolled. Local only. |
 | `search` | `<term>` | List Ludusavi manifest game names containing the term. |
 | `resolve` | `<name>` | Show the save folder the manifest resolves to **on this machine**. Reports nothing if the folder doesn't exist yet. Local only. |
-| `refresh-manifest` | | Re-download the Ludusavi manifest into the local cache. |
+| `refresh-manifest` | | Re-download the Ludusavi manifest into the local cache now. Agents also refresh it in the background once the cached copy passes the console's refresh window (Configuration → Manifest refresh; default 3 days, and a "Refresh now" there reaches every machine on its next heartbeat). The download is validated before it replaces the cache; a failure leaves the existing copy serving. |
 
 ### Syncing
 

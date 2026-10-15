@@ -98,8 +98,11 @@ public sealed class HealthService
 
         // The look rides the heartbeat because it is already the cheapest channel every agent polls
         // (~20 s): no new schedule, no new route. Null when the admin turned pushing off, which the
-        // agent reads as "no opinion" — it keeps what it last applied.
+        // agent reads as "no opinion" — it keeps what it last applied. The manifest guidance rides
+        // the same channel for the same reason: the window, and the console's "Refresh now" (which
+        // an agent acts on once, when the timestamp is newer than the request it last handled).
         var appearance = await _settings.GetAppearanceAsync();
+        var manifest = await _settings.GetManifestRefreshAsync();
 
         return new AgentHeartbeatResponse(conflicts.Select(c => new ConflictEscalationDto(
             c.Id,
@@ -108,7 +111,9 @@ public sealed class HealthService
             c.MachineId is { } stuckId ? machineNames.GetValueOrDefault(stuckId) : null,
             c.CreatedAt,
             c.Count)).ToArray(),
-            appearance.PushToAgents ? appearance.Look : null);
+            appearance.PushToAgents ? appearance.Look : null,
+            manifest.RefreshDays,
+            manifest.RequestedAt);
     }
 
     /// <summary>

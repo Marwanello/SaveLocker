@@ -1,4 +1,6 @@
-﻿namespace SaveLocker.Shared;
+﻿using System.Collections.Concurrent;
+
+namespace SaveLocker.Shared;
 
 /// <summary>
 /// Expands Ludusavi manifest path placeholders (e.g. &lt;winAppData&gt;) into
@@ -295,18 +297,11 @@ public sealed class PathResolver
     /// True when an expanded path actually sits under one of this resolver's own roots. Anything
     /// else came from a template we did not fully expand, and is not ours to return.
     /// </summary>
-    private bool StartsWithKnownRoot(string path)
-    {
-        var cmp = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-
-        return _tokens
+    private bool StartsWithKnownRoot(string path) =>
+        _tokens
             .Where(t => !NonPathTokens.Contains(t.Key) && !string.IsNullOrEmpty(t.Value))
-            .Select(t => t.Value.TrimEnd(Path.DirectorySeparatorChar))
-            .Any(root => path.Equals(root, cmp) ||
-                         path.StartsWith(root + Path.DirectorySeparatorChar, cmp));
-    }
+            .Select(t => TrimSeparators(t.Value))
+            .Any(root => IsUnder(path, root));
 
     /// <summary>True when this value is a template rather than a concrete path.</summary>
     public static bool IsTemplate(string? value) =>
@@ -499,10 +494,29 @@ public sealed class PathResolver
     /// The half of resolution that operates on an already-expanded path: trim at the first wildcard,
     /// reduce a filename to its directory, and refuse anything not rooted in one of our tokens.
     /// Shared so a &lt;storeUserId&gt; fan-out gets identical treatment to a straight expansion.
+    /// <para>
+    /// A template is refused outright unless it is an absolute path, and the path it yields must
+    /// survive <see cref="WithinRealRoots"/> — its link-resolved form has to sit under the
+    /// link-resolved form of one of this resolver's own roots. The manifest is a downloaded
+    /// document, so its templates are treated as input to be constrained, not trusted: this is the
+    /// resolver-side counterpart of "a pulled archive is hostile input" (Decisions).
+    /// </para>
     /// </summary>
     private string? ResolveConcrete(string expanded)
     {
         expanded = expanded.Replace('/', Path.DirectorySeparatorChar);
+
+        // Not an absolute path: refused before anything else.
+        //
+        // A ".." segment is deliberately NOT refused here. The community manifest contains real
+        // entries whose wildcard trim leaves one — "<base>/cfg/../*.json", the shape the detection
+        // harness collapses on both sides because production used to return those paths — and a
+        // flat ban silently drops them. The containment below is what closes traversal instead:
+        // Path.GetFullPath canonicalises ".." away first, and the canonicalised path must then sit
+        // under a token root AND survive link resolution inside one. That is exactly what the old
+        // raw-string prefix check missed: "<winAppData>/../../../x" began with the token's value,
+        // passed, and Path.GetFullPath collapsed it somewhere else on the machine.
+        if (!Path.IsPathRooted(expanded)) return null;
 
         // Trim at the first wildcard segment so we return a concrete directory.
         var segments = expanded.Split(Path.DirectorySeparatorChar);
@@ -515,7 +529,9 @@ public sealed class PathResolver
         }
 
         if (kept.Count == 0) return null;
-        var path = string.Join(Path.DirectorySeparatorChar, kept);
+        string path;
+        try { path = Path.GetFullPath(string.Join(Path.DirectorySeparatorChar, kept)); }
+        catch { return null; } // invalid characters, or a too-long path
 
         // A template that expands to something not rooted in one of OUR tokens is refused.
         //
@@ -536,13 +552,71 @@ public sealed class PathResolver
         // false there, and NTFS would have resolved a mis-cased Directory.Exists above anyway.
         if (_caseInsensitiveFilesystem && !Directory.Exists(path) &&
             ResolveCaseInsensitive(kept, path, trailingIsFile) is { } corrected)
-            return corrected;
+            return WithinRealRoots(corrected) ? corrected : null;
 
         // If the template pointed at a specific file (last kept segment has an
         // extension and there were no wildcards after it), use its directory.
         if (trailingIsFile && !Directory.Exists(path))
             path = Path.GetDirectoryName(path) ?? path;
 
-        return path;
+        return WithinRealRoots(path) ? path : null;
     }
+
+    /// <summary>
+    /// True when the link-resolved form of <paramref name="path"/> still sits under the
+    /// link-resolved form of one of this resolver's own roots.
+    /// <para>
+    /// A save folder reached through a symlink or junction that points outside the root is not ours
+    /// to return: everything downstream follows links for real, so a path that only LOOKS contained
+    /// is exactly the shape a malformed entry, or a link a game (or anything else) planted inside a
+    /// prefix, produces. Roots are resolved the same way, so a root that is itself legitimately a
+    /// link (a symlinked Steam library, a relocated Documents folder) does not read as an escape.
+    /// </para>
+    /// </summary>
+    private bool WithinRealRoots(string path)
+    {
+        if (RealPath.Resolve(path) is not { } real) return false;
+        return RealRoots().Any(root => IsUnder(real, root));
+    }
+
+    /// <summary>This resolver's roots, link-resolved once for its lifetime (like the child-listing
+    /// cache: a root is a fact about the filesystem a single game's resolution relies on).</summary>
+    private List<string>? _realRoots;
+
+    /// <summary>
+    /// Root VALUES resolve once per process. A scan builds one resolver per game, so without this a
+    /// 200-title scan re-walks the same ~14 known folders 200 times (~5k metadata probes) before
+    /// touching a single template. Only roots are cached, never the FINAL path: a link planted
+    /// after an earlier resolve must still be seen, and that is the attack this containment exists
+    /// for. A stale root can only narrow what is accepted, never widen it.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, string?> ResolvedRootValues = new();
+
+    private List<string> RealRoots()
+    {
+        if (_realRoots is not null) return _realRoots;
+
+        var roots = new List<string>();
+        foreach (var (token, value) in _tokens)
+        {
+            if (NonPathTokens.Contains(token) || string.IsNullOrEmpty(value)) continue;
+            if (ResolvedRootValues.GetOrAdd(value, RealPath.Resolve) is { } real)
+                roots.Add(TrimSeparators(real));
+        }
+        return _realRoots = roots;
+    }
+
+    /// <summary>Equals or sits strictly underneath <paramref name="root"/> (already separator-trimmed).</summary>
+    private static bool IsUnder(string path, string root)
+    {
+        var p = TrimSeparators(path);
+        var cmp = PathComparison;
+        if (p.Equals(root, cmp)) return true;
+        return p.Length > root.Length && p.StartsWith(root, cmp) &&
+               (p[root.Length] == Path.DirectorySeparatorChar ||
+                p[root.Length] == Path.AltDirectorySeparatorChar);
+    }
+
+    private static string TrimSeparators(string p) =>
+        p.Length > 1 ? p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) : p;
 }
