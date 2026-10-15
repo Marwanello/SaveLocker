@@ -254,6 +254,28 @@
         }
       }
     },
+    "/join/{code}/install.desktop": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/join/{code}/setup.exe": {
       "get": {
         "tags": [

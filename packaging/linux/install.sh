@@ -80,6 +80,8 @@ if mkdir -p "${appsdir}" 2>/dev/null \
    && sed "s|@PREFIX@|${prefix_for_sed}|g" "${src}/savelocker.desktop" > "${appsdir}/savelocker.desktop" 2>/dev/null
 then
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "${appsdir}" >/dev/null 2>&1 || true
+  # The entry also opens savelocker:// links — a join page's "Open the agent and finish" button.
+  command -v xdg-mime >/dev/null 2>&1 && xdg-mime default savelocker.desktop x-scheme-handler/savelocker >/dev/null 2>&1 || true
   echo "==> Added SaveLocker to the application menu"
 else
   echo "!! could not write ${appsdir}/savelocker.desktop — open the UI with:  savelocker open"
@@ -155,8 +157,8 @@ Installed. Next:
      ever copied by hand. It sets the server URL, registers this machine, and
      picks up the games already defined on the server.
 
-     (The pairing page at that link installs and enrolls in one line, too:
-      curl -fsSL <link>/install.sh | sh)
+     (The pairing page at that link installs and enrolls in one go, too: a
+      double-click launcher, or  curl -fsSL <link>/install.sh | sh)
 
      (No console access? The manual path still works:
         savelocker set-server --url https://your-server

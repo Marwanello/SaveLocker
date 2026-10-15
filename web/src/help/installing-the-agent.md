@@ -114,8 +114,15 @@ If `install.sh` warns that `~/.local/bin` is not on your `PATH`, add it (or use 
 
 ## Enroll it
 
-Open the join link in this device's browser: the pairing page's **one-line installer** downloads the
-agent, installs it and enrolls it in one go. Or do each half by hand:
+Open the join link in this device's browser (on a Deck, in Desktop Mode) and pick **Linux & Steam
+Deck**. **Download installer** saves `Install SaveLocker.desktop`; double-click it in the file manager
+and a terminal opens that downloads the agent, installs it and enrolls it in one go. The first time,
+the file manager asks whether to trust a downloaded launcher — choose **Execute** (KDE, the Deck's
+desktop) or **Allow Launching** (GNOME). The launcher holds nothing but the link: the code inside is
+spent by the install it runs, and a launcher opened after the link expired just says so.
+
+The same page shows the **one-line installer** for a terminal or an SSH session — it does exactly what
+the launcher does. Or do each half by hand:
 
 ```bash
 tar -xzf savelocker-<version>-linux-x64.tar.gz && ./SaveLocker/install.sh
@@ -125,6 +132,12 @@ savelocker doctor
 
 (That is the same command the one-liner runs. The code inside the link is single-use and expires in
 ~15 minutes; the agent fetches what it needs from your server itself.)
+
+**Agent already installed?** The pairing page's **Open the agent and finish** opens the SaveLocker
+window on the **Join a server** card with the link filled in — one click to enroll. On Linux it is a
+`savelocker://` link, handled by the agent's application-menu entry, and it starts the agent's service
+first if it is not running. An agent older than these links ignores it; use the page's *open it here
+instead* link while that agent is running.
 
 Enrollment over HTTPS also records the server's TLS public key. If that identity later changes, the
 agent warns but does not stop syncing — a legitimate certificate renewal may rotate the key, and a

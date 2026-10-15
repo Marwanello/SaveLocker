@@ -34,7 +34,8 @@ public sealed class DesktopEntryTests : IDisposable
     public void TheEntry_RunsTheInstalledBinarysOpen_AndLeavesNoPlaceholder()
     {
         var text = DesktopEntry.Render(Prefix);
-        Assert.Contains($"Exec={Prefix}/savelocker open\n", text);
+        Assert.Contains($"Exec={Prefix}/savelocker open %u\n", text);
+        Assert.Contains("MimeType=x-scheme-handler/savelocker;\n", text);
         Assert.Contains($"Icon={Prefix}/artwork/icon.png\n", text);
         Assert.StartsWith("[Desktop Entry]\n", text);
         Assert.DoesNotContain("@PREFIX@", text);
@@ -51,6 +52,18 @@ public sealed class DesktopEntryTests : IDisposable
         File.Delete(Entry);
         Assert.False(DesktopEntry.OfferOnce(Prefix, _apps, _state, _ => { }));
         Assert.False(File.Exists(Entry));
+    }
+
+    [Fact]
+    public void AnEntryThisAgentWroteBeforeLinks_IsBroughtUpToDate()
+    {
+        Assert.True(DesktopEntry.OfferOnce(Prefix, _apps, _state, _ => { }));
+        var older = DesktopEntry.Render(Prefix).Replace(" %u", "").Replace("MimeType=x-scheme-handler/savelocker;\n", "");
+        File.WriteAllText(Entry, older);
+
+        Assert.True(DesktopEntry.OfferOnce(Prefix, _apps, _state, _ => { }));
+        Assert.Equal(DesktopEntry.Render(Prefix), File.ReadAllText(Entry));
+        Assert.False(DesktopEntry.OfferOnce(Prefix, _apps, _state, _ => { }));
     }
 
     [Fact]

@@ -385,7 +385,9 @@ join.MapGet("/{code}", async (string code, HttpContext http, EnrollmentService e
 
     var serverUrl = PublicUrl.For(http, cfg);
     var html = JoinPages.PairingPage(JoinNormalize(code), state, serverUrl, token?.ExpiresAt,
-        installer.GetInstallerPath(AgentPlatform.Windows) is not null);
+        installer.GetInstallerPath(AgentPlatform.Windows) is not null,
+        installer.GetInstallerPath(AgentPlatform.Linux) is not null);
+    http.Response.Headers.ContentSecurityPolicy = JoinPages.PairingCsp;
     return Results.Content(html, "text/html; charset=utf-8");
 });
 
@@ -432,18 +434,47 @@ join.MapGet("/{code}/install.sh", async (string code, HttpContext http, Enrollme
     if (state != EnrollmentService.JoinCodeState.Valid)
     {
         if (state == EnrollmentService.JoinCodeState.Unknown) throttle.RecordFailure(client);
-        var why = state switch
-        {
-            EnrollmentService.JoinCodeState.Used => "this join link has already been used",
-            EnrollmentService.JoinCodeState.Expired => "this join link has expired",
-            _ => "this join link is not valid"
-        };
-        return Results.Text($"SaveLocker: {why}. Create a new one in the console: Configuration -> Enroll a machine.\n",
-            "text/plain; charset=utf-8", statusCode: StatusCodes.Status404NotFound);
+        return JoinScriptRefused(state);
     }
     return Results.Text(JoinPages.InstallScript(PublicUrl.For(http, cfg), normalized!),
         JoinPages.ShellContentType + "; charset=utf-8");
 });
+
+// The pairing page's Linux button: the one-liner wrapped in a .desktop launcher, so a Deck in Desktop
+// Mode installs with a double-click instead of a terminal. It fetches install.sh only when it runs, so a
+// launcher kept past its code's expiry prints the same refusal the one-liner would.
+join.MapGet("/{code}/install.desktop", async (string code, HttpContext http, EnrollmentService enrollment,
+    IConfiguration cfg, JoinThrottle throttle) =>
+{
+    var client = AuthThrottle.ClientKey(http);
+    if (throttle.RetryAfter(client) is { } wait) return AuthResults.JoinTooManyAttempts(http, wait);
+
+    var normalized = JoinCodes.NormalizeJoinCode(code);
+    var (state, _) = await enrollment.LookupAsync(normalized);
+    if (state != EnrollmentService.JoinCodeState.Valid)
+    {
+        if (state == EnrollmentService.JoinCodeState.Unknown) throttle.RecordFailure(client);
+        return JoinScriptRefused(state);
+    }
+    if (JoinPages.InstallLauncher(PublicUrl.For(http, cfg), normalized!) is not { } launcher)
+        return Results.Text("SaveLocker: this server's public URL cannot be written into a launcher. Use the one-line command instead.\n",
+            "text/plain; charset=utf-8", statusCode: StatusCodes.Status409Conflict);
+
+    http.Response.Headers.ContentDisposition = "attachment; filename=\"Install SaveLocker.desktop\"";
+    return Results.Text(launcher, JoinPages.DesktopContentType + "; charset=utf-8");
+});
+
+static IResult JoinScriptRefused(EnrollmentService.JoinCodeState state)
+{
+    var why = state switch
+    {
+        EnrollmentService.JoinCodeState.Used => "this join link has already been used",
+        EnrollmentService.JoinCodeState.Expired => "this join link has expired",
+        _ => "this join link is not valid"
+    };
+    return Results.Text($"SaveLocker: {why}. Create a new one in the console: Configuration -> Enroll a machine.\n",
+        "text/plain; charset=utf-8", statusCode: StatusCodes.Status404NotFound);
+}
 
 // The pairing page's Windows button: the hosted installer, by the short link. A valid code only —
 // an invalid one lands on the pairing page, which explains itself.

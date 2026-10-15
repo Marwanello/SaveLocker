@@ -1,4 +1,5 @@
 using SaveLocker.Agent;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent.Linux;
 
@@ -33,27 +34,36 @@ public static class DesktopEntry
     }
 
     /// <summary>
-    /// Write the entry if it is missing and has never been offered from this state directory. True
-    /// when it was written. Never throws: a menu entry is a bonus, like the auto-start unit.
+    /// Write the entry if it is missing and has never been offered from this state directory, or
+    /// bring one this agent wrote up to date (the entry learned <c>savelocker://</c> after it first
+    /// shipped). One that does not run this install's <c>open</c> is someone else's and is left alone.
+    /// True when it was written. Never throws: a menu entry is a bonus, like the auto-start unit.
     /// </summary>
     public static bool OfferOnce(string prefix, string applicationsDir, string stateDir, Action<string> log)
     {
         try
         {
             var marker = Path.Combine(stateDir, MarkerName);
-            if (File.Exists(marker)) return false;
-
             var entry = Path.Combine(applicationsDir, FileName);
-            var wrote = false;
-            if (!File.Exists(entry))
+            var current = Render(prefix);
+
+            if (File.Exists(entry))
             {
-                Directory.CreateDirectory(applicationsDir);
-                File.WriteAllText(entry, Render(prefix));
-                wrote = true;
-                log($"Added SaveLocker to the application menu ({entry}).");
+                var existing = File.ReadAllText(entry);
+                if (!File.Exists(marker)) File.WriteAllText(marker, "");
+                if (existing == current || !existing.Contains($"Exec={prefix}/savelocker open", StringComparison.Ordinal))
+                    return false;
+                File.WriteAllText(entry, current);
+                log($"Updated SaveLocker's application-menu entry ({entry}).");
+                return true;
             }
+
+            if (File.Exists(marker)) return false;
+            Directory.CreateDirectory(applicationsDir);
+            File.WriteAllText(entry, current);
             File.WriteAllText(marker, "");
-            return wrote;
+            log($"Added SaveLocker to the application menu ({entry}).");
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -77,6 +87,18 @@ public static class DesktopEntry
 
         // Beside the install prefix: ~/.local/share/SaveLocker -> ~/.local/share/applications, which is
         // where install.sh puts it.
-        OfferOnce(prefix, Path.Combine(Path.GetDirectoryName(prefix)!, "applications"), config.StateDir, log);
+        var applications = Path.Combine(Path.GetDirectoryName(prefix)!, "applications");
+        if (OfferOnce(prefix, applications, config.StateDir, log)) RegisterLinkHandler(applications);
+    }
+
+    /// <summary>
+    /// Make this entry the opener for <c>savelocker://</c> links, as install.sh does: refresh the
+    /// desktop's MIME cache and name it the scheme's default. Both tools are optional extras of a
+    /// desktop install; without them a browser asks which program to use, which still works.
+    /// </summary>
+    public static void RegisterLinkHandler(string applicationsDir)
+    {
+        ProcessRunner.Run("update-desktop-database", [applicationsDir], TimeSpan.FromSeconds(10));
+        ProcessRunner.Run("xdg-mime", ["default", FileName, "x-scheme-handler/" + JoinLinks.Scheme], TimeSpan.FromSeconds(10));
     }
 }

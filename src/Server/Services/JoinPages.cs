@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using SaveLocker.Shared;
 
 namespace SaveLocker.Server.Services;
@@ -12,6 +14,19 @@ namespace SaveLocker.Server.Services;
 public static class JoinPages
 {
     public const string ShellContentType = "text/x-shellscript";
+    public const string DesktopContentType = "application/x-desktop";
+
+    /// <summary>
+    /// The pairing page's own CSP: the dashboard's policy, plus its one inline script by hash. The
+    /// dashboard's <c>script-src 'self'</c> blocks inline script, which left the page's tabs and Copy
+    /// buttons dead; the page is self-contained on purpose, so the script stays inline and is allowed
+    /// by exactly its own digest.
+    /// </summary>
+    public static readonly string PairingCsp =
+        "default-src 'self'; " +
+        $"script-src 'sha256-{Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(Script)))}'; " +
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; " +
+        "base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 
     /// <summary>
     /// The pairing page. <paramref name="state"/> decides which card is shown; only a valid code
@@ -19,13 +34,13 @@ public static class JoinPages
     /// </summary>
     public static string PairingPage(
         string code, EnrollmentService.JoinCodeState state, string serverUrl,
-        DateTime? expiresAt, bool windowsInstallerHosted)
+        DateTime? expiresAt, bool windowsInstallerHosted, bool linuxPackageHosted)
     {
         var joinUrl = $"{serverUrl}/join/{code}";
         var host = WebUtility.HtmlEncode(Uri.TryCreate(serverUrl, UriKind.Absolute, out var u) ? u.Authority : serverUrl);
         var body = state switch
         {
-            EnrollmentService.JoinCodeState.Valid => ValidBody(code, joinUrl, serverUrl, expiresAt, windowsInstallerHosted),
+            EnrollmentService.JoinCodeState.Valid => ValidBody(code, joinUrl, serverUrl, expiresAt, windowsInstallerHosted, linuxPackageHosted),
             EnrollmentService.JoinCodeState.Used => StateBody(
                 "This link has already been used",
                 "A machine was enrolled with it. If you need to enroll another one, create a new link in the console — " +
@@ -39,15 +54,18 @@ public static class JoinPages
         };
 
         return Template
+            .Replace("@SCRIPT@", Script)
             .Replace("@BODY@", body)
             .Replace("@HOST@", host)
             .Replace("@SERVER@", WebUtility.HtmlEncode(serverUrl));
     }
 
-    private static string ValidBody(string code, string joinUrl, string serverUrl, DateTime? expiresAt, bool windowsInstallerHosted)
+    private static string ValidBody(string code, string joinUrl, string serverUrl, DateTime? expiresAt,
+        bool windowsInstallerHosted, bool linuxPackageHosted)
     {
         var shown = WebUtility.HtmlEncode(JoinCodes.FormatJoinCode(code));
         var link = WebUtility.HtmlEncode(joinUrl);
+        var localUi = WebUtility.HtmlEncode($"http://127.0.0.1:5178/#enroll:{Uri.EscapeDataString(joinUrl)}");
         var minutes = expiresAt is { } at ? (int)Math.Max(1, Math.Ceiling((at - DateTime.UtcNow).TotalMinutes)) : 0;
         var expiry = expiresAt is null ? "" : $"Link valid for about {minutes} more minute{(minutes == 1 ? "" : "s")}";
 
@@ -63,6 +81,28 @@ public static class JoinPages
                """
             : """
               <p class="lead">No Windows installer is hosted on this server yet.</p>
+              <p class="fine">Ask the server's admin to upload one under <b>Configuration → Agent updates</b>,
+                 then reopen this link.</p>
+              """;
+
+        var linux = linuxPackageHosted
+            ? $"""
+               <p class="lead">Download the installer and double-click it — a terminal opens, installs the agent and enrolls this device.
+                  On a Steam Deck, do this in Desktop Mode.</p>
+               <div class="row">
+                 <a class="btn primary" href="/join/{WebUtility.HtmlEncode(code)}/install.desktop" download="Install SaveLocker.desktop">Download installer</a>
+                 <span class="fine">Install SaveLocker.desktop</span>
+               </div>
+               <p class="fine">Your file manager asks once whether to trust a downloaded launcher — choose
+                  <b>Execute</b> (KDE) or <b>Allow Launching</b> (GNOME). Prefer a terminal, or on SSH? The same thing in one line:</p>
+               <div class="term"><span class="cmd">$ curl -fsSL {link}/install.sh | sh</span></div>
+               <div class="row">
+                 <button type="button" class="btn" data-copy="curl -fsSL {link}/install.sh | sh">Copy the command</button>
+                 <span class="fine">Also shown on the command line: <span class="mono">{shown}</span></span>
+               </div>
+               """
+            : """
+              <p class="lead">No Linux package is hosted on this server yet.</p>
               <p class="fine">Ask the server's admin to upload one under <b>Configuration → Agent updates</b>,
                  then reopen this link.</p>
               """;
@@ -83,20 +123,21 @@ public static class JoinPages
             </section>
 
             <section class="panel hidden" data-panel="linux">
-              <p class="lead">One line installs the agent and enrolls this device. On a Steam Deck, run it in Desktop Mode (or over SSH).</p>
-              <div class="term"><span class="cmd">$ curl -fsSL {link}/install.sh | sh</span></div>
-              <div class="row">
-                <button type="button" class="btn" data-copy="curl -fsSL {link}/install.sh | sh">Copy the command</button>
-                <span class="fine">Also shown on the command line: <span class="mono">{shown}</span></span>
-              </div>
+              {linux}
             </section>
 
             <div class="divider"><span>Already have an agent on this device?</span></div>
-            <p>
-              <a class="btn" href="http://127.0.0.1:5178/#enroll:{Uri.EscapeDataString(joinUrl)}">Open the agent and finish</a>
-            </p>
-            <p class="fine">Opens the agent UI on <i>this</i> device with the link filled in — one click to enroll.
-               (That only works when the agent is already installed and running here.)</p>
+            <div data-os="win">
+              <p><a class="btn" href="{localUi}">Open the agent and finish</a></p>
+              <p class="fine">Opens the agent UI on <i>this</i> device with the link filled in — one click to enroll.
+                 (That only works when the agent is already installed and running here.)</p>
+            </div>
+            <div data-os="linux" class="hidden">
+              <p><a class="btn" href="{WebUtility.HtmlEncode(JoinLinks.AgentLink(joinUrl))}">Open the agent and finish</a></p>
+              <p class="fine">Opens the SaveLocker window on <i>this</i> device with the link filled in — one click to enroll.
+                 It starts the agent if it is not running. Nothing happens? That agent predates the link;
+                 <a href="{localUi}">open it here instead</a> while it is running.</p>
+            </div>
 
             <p class="trust">Only continue if you recognise this server. Nothing is signed — the console that
                showed you this link is the trust anchor, and over plain http the traffic is unencrypted.
@@ -124,6 +165,14 @@ public static class JoinPages
             .Replace("@SERVER@", serverUrl)
             .Replace("@CODE@", code);
     }
+
+    /// <summary>
+    /// The launcher behind <c>/join/{code}/install.desktop</c> (see <see cref="JoinLinks.InstallLauncher"/>).
+    /// Null when the server's public URL is not plain enough to paste into a shell command.
+    /// </summary>
+    public static string? InstallLauncher(string serverUrl, string code) =>
+        JoinLinks.InstallLauncher($"{serverUrl}/join/{code}",
+            Uri.TryCreate(serverUrl, UriKind.Absolute, out var u) ? u.Authority : serverUrl);
 
     private const string Mark =
         """<svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true" style="flex-shrink:0"><rect x="12" y="3" width="8" height="4" fill="var(--accent)"/><rect x="8" y="7" width="4" height="5" fill="var(--accent)"/><rect x="20" y="7" width="4" height="5" fill="var(--accent)"/><rect x="5" y="12" width="22" height="16" fill="var(--accent)"/><rect x="14" y="16" width="4" height="4" fill="var(--on-accent)"/><rect x="15" y="20" width="2" height="5" fill="var(--on-accent)"/></svg>""";
@@ -175,7 +224,7 @@ public static class JoinPages
         .seg button.on{background:var(--panel);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.22)}
         .panel{display:flex;flex-direction:column;gap:11px;border:1px solid var(--line);border-radius:12px;
                padding:15px;background:var(--raise)}
-        .panel.hidden{display:none}
+        .hidden{display:none !important}
         .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
         .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;font:inherit;font-size:13px;font-weight:500;
              padding:9px 16px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--fg);
@@ -190,13 +239,19 @@ public static class JoinPages
         .divider:before,.divider:after{content:"";height:1px;background:var(--line);flex:1}
         .trust{border-top:1px solid var(--line);padding-top:11px;color:var(--faint);font-size:11.5px;line-height:1.6}
         .copied{color:var(--safe)}
+        .fine a{color:var(--accent-ink)}
         </style>
         </head>
         <body>
         <div class="card">
         @BODY@
         </div>
-        <script>
+        <script>@SCRIPT@</script>
+        </body>
+        </html>
+        """;
+
+    private const string Script = """
         (function () {
           function fallback(text, done) {
             var ta = document.createElement('textarea');
@@ -229,13 +284,13 @@ public static class JoinPages
             document.querySelectorAll('[data-panel]').forEach(function (p) {
               p.classList.toggle('hidden', p.dataset.panel !== which);
             });
+            document.querySelectorAll('[data-os]').forEach(function (p) {
+              p.classList.toggle('hidden', p.dataset.os !== which);
+            });
           }
           tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.tab); }); });
           if (!/Windows/i.test(navigator.userAgent)) show('linux');
         })();
-        </script>
-        </body>
-        </html>
         """;
 
     private const string ScriptTemplate = """

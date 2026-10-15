@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using SaveLocker.Agent;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent.Linux;
 
@@ -49,7 +50,7 @@ static class Program
                 return await Doctor.RunAsync(config);
 
             case "open":
-                return await OpenWindowAsync(opts, config);
+                return await OpenWindowAsync(opts, positionals, config);
 
             case "deck-shortcut":
                 return DeckShortcutCommand(positionals, opts, config);
@@ -663,28 +664,41 @@ static class Program
     }
 
     /// <summary>
-    /// <c>savelocker open [--port n] [--view route]</c> — the agent UI in its own window. This is what
-    /// the KDE-menu entry install.sh writes runs, and what the Steam "SaveLocker" entry (the same
-    /// window in Game Mode, added by <see cref="DeckShortcut"/>) runs. It does not start the daemon
-    /// (systemd does, at login): a launcher that quietly spawned a second one would race the first
-    /// over the same state, so it says how to start it.
+    /// <c>savelocker open [--port n] [--view route] [savelocker://…]</c> — the agent UI in its own
+    /// window. This is what the KDE-menu entry install.sh writes runs, and what the Steam "SaveLocker"
+    /// entry (the same window in Game Mode, added by <see cref="DeckShortcut"/>) runs. The menu entry
+    /// also handles <c>savelocker://</c> links: a join page's <c>savelocker://enroll?link=…</c> opens
+    /// on the Join card, pre-filled.
+    /// <para>
+    /// A daemon that is not running is started through its systemd unit, never spawned directly: a
+    /// launcher that started its own would race the unit's over the same state, while systemd starts
+    /// a unit at most once. Without the unit it says how to start the agent.
+    /// </para>
     /// </summary>
-    private static async Task<int> OpenWindowAsync(Dictionary<string, string> opts, AgentConfig config)
+    private static async Task<int> OpenWindowAsync(Dictionary<string, string> opts, List<string> positionals, AgentConfig config)
     {
+        var view = opts.GetValueOrDefault("view");
+        if (positionals.FirstOrDefault() is { } link)
+        {
+            if (JoinLinks.JoinUrlFromAgentLink(link) is not { } joinUrl)
+            {
+                Console.Error.WriteLine($"Not a SaveLocker link this agent understands: {link}");
+                return 2;
+            }
+            view = "enroll:" + Uri.EscapeDataString(joinUrl);
+        }
+
         var port = opts.ContainsKey("port") ? ParsePort(opts) : config.DaemonApiPort ?? 5178;
         var origin = $"http://localhost:{port}";
 
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-        var up = false;
-        try { up = (await http.GetAsync(origin + "/")).IsSuccessStatusCode; } catch { /* not listening */ }
-        if (!up)
+        if (!await AnswersAsync(http, origin) && !await StartServiceAndWaitAsync(http, origin))
         {
             Console.Error.WriteLine($"The agent is not answering on {origin}.");
             Console.Error.WriteLine("Start it with:  systemctl --user start savelocker.service");
             return 1;
         }
 
-        var view = opts.GetValueOrDefault("view");
         var url = origin + "/" + (string.IsNullOrWhiteSpace(view) ? "" : "#" + view.TrimStart('#'));
         if (AppWindow.TryOpen(url, out var plan))
         {
@@ -695,6 +709,27 @@ static class Program
         Console.Error.WriteLine("There is no desktop session to open a window on (this looks like a headless shell).");
         Console.Error.WriteLine($"Open {url} in a browser here, or tunnel it:  ssh -L {port}:localhost:{port} <user>@<this-machine>");
         return 1;
+    }
+
+    private static async Task<bool> AnswersAsync(HttpClient http, string origin)
+    {
+        try { return (await http.GetAsync(origin + "/")).IsSuccessStatusCode; }
+        catch { return false; }
+    }
+
+    private static async Task<bool> StartServiceAndWaitAsync(HttpClient http, string origin)
+    {
+        if (!File.Exists(SystemdAutoStart.UnitPath)) return false;
+        var (exit, _, _) = ProcessRunner.Run("systemctl", ["--user", "start", "savelocker.service"], TimeSpan.FromSeconds(15));
+        if (exit != 0) return false;
+
+        Console.WriteLine("Started the SaveLocker agent.");
+        for (var i = 0; i < 30; i++)
+        {
+            if (await AnswersAsync(http, origin)) return true;
+            await Task.Delay(500);
+        }
+        return false;
     }
 
     private static void PrintUsage() => Console.WriteLine(
@@ -728,6 +763,7 @@ static class Program
         Daemon
           daemon [--port <n>]                              Run headless; serves the agent UI on localhost:5178
           open [--port <n>] [--view <route>]               Open the agent UI in its own window (Desktop Mode)
+          open savelocker://enroll?link=<join link>        The same, on the Join card (what join pages link to)
           steam-art [--out <dir>] [--accent <id>] [--mark <id>]
                                                            Repaint the bundled Steam library art in the current look
           autostart --enable | --disable                   systemd --user unit

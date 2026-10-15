@@ -95,6 +95,25 @@ $page = Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)"
 Check "the pairing page renders"               ($page.StatusCode -eq 200 -and
                                                 $page.Content -match "Pair this device" -and
                                                 $page.Content -match [regex]::Escape($mint.code))
+# The dashboard's CSP blocks inline script, which left the page's tabs and Copy buttons dead in a real
+# browser. The page sends its own policy, allowing its one script by digest: it must match.
+$inline = [regex]::Match($page.Content, "<script>([\s\S]*?)</script>").Groups[1].Value
+$digest = [Convert]::ToBase64String([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($inline)))
+Check "the page's CSP allows exactly its own script" ($inline.Length -gt 0 -and
+                                                "$($page.Headers['Content-Security-Policy'])" -match [regex]::Escape("script-src 'sha256-$digest'"))
+Check "the page links an installed Linux agent" ($page.Content -match
+                                                [regex]::Escape("savelocker://enroll?link=" + [uri]::EscapeDataString($mint.joinUrl)))
+
+# ---- 1b. The Linux launcher: the one-liner as a double-clickable .desktop file ----
+$launcher = Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)/install.desktop"
+# Not a text/* type, so Windows PowerShell hands the body over as bytes.
+$launcherText = if ($launcher.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($launcher.Content) } else { $launcher.Content }
+Check "the launcher downloads as a file"       ($launcher.StatusCode -eq 200 -and
+                                                "$($launcher.Headers['Content-Disposition'])" -match 'attachment; filename="Install SaveLocker.desktop"')
+Check "the launcher runs install.sh in a terminal" ($launcherText -match "(?m)^Terminal=true$" -and
+                                                $launcherText -match ("(?m)^Exec=sh -c '.*curl -fsS -o install.sh " +
+                                                    [regex]::Escape("$($mint.joinUrl)/install.sh") + ";"))
+Check "fetching the launcher does not spend the code" ((Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)").Content -match "Pair this device")
 
 # ---- 2. The policy behind the link describes the server right now ----
 $policy = Invoke-RestMethod -Uri "$server/join/$($mint.code)/policy"
@@ -142,6 +161,10 @@ Check "replaying the link is refused"          ($LASTEXITCODE -ne 0 -and "$repla
 $pageUsed = Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)"
 Check "the pairing page says it was used"      ($pageUsed.StatusCode -eq 200 -and
                                                 $pageUsed.Content -match "already been used")
+
+$usedLauncher = try { Invoke-WebRequest -UseBasicParsing -Uri "$server/join/$($mint.code)/install.desktop"; $null }
+                catch { $_.Exception.Response }
+Check "a spent link serves no launcher"        ($usedLauncher -and [int]$usedLauncher.StatusCode -eq 404)
 
 # ---- 5. Revoked link is refused ----
 $revokable = Mint @{ machineName = "phase4-revoked-$stamp"; ttlMinutes = 15 }

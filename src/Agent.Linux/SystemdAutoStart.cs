@@ -14,7 +14,7 @@ public sealed class SystemdAutoStart : IAutoStart
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".config", "systemd", "user");
 
-    private static string UnitPath => Path.Combine(UnitDir, Unit);
+    internal static string UnitPath => Path.Combine(UnitDir, Unit);
 
     public bool IsEnabled()
     {
