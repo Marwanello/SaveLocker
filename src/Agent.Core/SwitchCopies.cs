@@ -25,10 +25,11 @@ public static class SwitchCopies
 {
     public const int BackupsKept = 5;
 
-    /// <summary>One emulator's row on the game's Emulator settings page.</summary>
+    /// <summary>One emulator's row on the game's Emulator settings page. <see cref="TellWhenReady"/>: the user is told once
+    /// it can sync the game (<see cref="SetTellWhenReady"/>).</summary>
     public sealed record Row(
         string Emulator, string? User, string? Folder, bool Synced, string State, DateTime? WrittenUtc,
-        bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note);
+        bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note, bool TellWhenReady = false);
 
     /// <summary>What a copy is, next to the synced one.</summary>
     public static class States
@@ -39,6 +40,8 @@ public static class SwitchCopies
         public const string Older = "older";
         public const string Empty = "empty";
         public const string NoSlot = "no-slot";
+        /// <summary>Not on this machine: a row only for one the user is waiting for.</summary>
+        public const string NotInstalled = "not-installed";
         public const string Conflict = "conflict";
     }
 
@@ -71,7 +74,8 @@ public static class SwitchCopies
             if (slot is null)
             {
                 rows.Add(new Row(s.Emulator, null, null, false, States.NoSlot, null, saved?.KeepInSync ?? false, false, false,
-                    s.IsRyujinx ? $"Start the game once in {s.Emulator}: it makes the game's save folder the first time." : "No user in this emulator yet."));
+                    s.IsRyujinx ? $"Start the game once in {s.Emulator}: it makes the game's save folder the first time." : "No user in this emulator yet.",
+                    saved?.TellWhenReady ?? false));
                 continue;
             }
             var (mine, theirs) = Pair(game.Roots(config.StateDir), CopyRoots(s, title, slot, game));
@@ -83,7 +87,59 @@ public static class SwitchCopies
             rows.Add(new Row(s.Emulator, slot.UserName, slot.Dir, false, state, slot.Exists ? slot.WrittenUtc : null,
                 saved?.KeepInSync ?? false, state != States.Same, slot.Exists, null));
         }
+        foreach (var waiting in game.EmulatorCopies.Where(c => c.TellWhenReady && !setups.Any(s => Is(s.Emulator, c.Emulator))))
+            rows.Add(new Row(waiting.Emulator, null, null, false, States.NotInstalled, null, false, false, false, null, true));
         return rows;
+    }
+
+    /// <summary>
+    /// Ask to be told, or stop, once <paramref name="emulator"/> can sync this game here: installed, and with a save folder
+    /// for it (Ryujinx makes one the first time it starts the game). Null when set, else why not.
+    /// </summary>
+    public static string? SetTellWhenReady(AgentConfig config, TrackedGame game, string emulator, bool tell)
+    {
+        if (!SwitchEmulators.IsSwitch(emulator)) return $"{emulator} isn't a Switch emulator SaveLocker knows.";
+        var name = SwitchEmulators.Names.First(n => Is(n, emulator));
+        var copies = game.EmulatorCopies.Select(c => c with { }).ToList();
+        var copy = copies.FirstOrDefault(c => Is(c.Emulator, name));
+        if (copy is null)
+        {
+            if (!tell) return null;
+            copies.Add(copy = new EmulatorCopy { Emulator = name });
+        }
+        copy.TellWhenReady = tell;
+        // A row kept only for the waiting has nothing left to say.
+        if (!tell && !copy.KeepInSync && copy.LastHash is null && !copy.Conflict) copies.Remove(copy);
+        Save(config, game, copies);
+        return null;
+    }
+
+    /// <summary>The emulators the user waits for that can now sync this game; each is told once, so the flag is cleared.</summary>
+    public static IReadOnlyList<string> NowReady(AgentConfig config, TrackedGame game, IReadOnlyList<SwitchEmulators.Setup>? setups = null)
+    {
+        if (TitleId(game) is not { } title || !game.EmulatorCopies.Any(c => c.TellWhenReady)) return [];
+        setups ??= SwitchEmulators.Find();
+        var ready = new List<string>();
+        var copies = game.EmulatorCopies.Select(c => c with { }).ToList();
+        foreach (var copy in copies.Where(c => c.TellWhenReady))
+            if (setups.FirstOrDefault(s => Is(s.Emulator, copy.Emulator)) is { } setup && SwitchEmulators.Slot(setup, title) is not null)
+            {
+                copy.TellWhenReady = false;
+                ready.Add(setup.Emulator);
+            }
+        if (ready.Count > 0) Save(config, game, copies);
+        return ready;
+    }
+
+    /// <summary>The emulator whose copy syncs, or null when none here holds the game's folder.</summary>
+    public static string? SyncedEmulator(TrackedGame game, IReadOnlyList<SwitchEmulators.Setup>? setups = null) =>
+        SyncedSetup(game, setups ?? SwitchEmulators.Find())?.Emulator;
+
+    /// <summary>Zip the synced copy as it is, beside the copies' own backups, before something replaces it.</summary>
+    public static void BackupSynced(AgentConfig config, TrackedGame game, string label)
+    {
+        var roots = game.Roots(config.StateDir).Select(r => r with { IncludeGlobs = null }).ToList();
+        if (roots.Any(r => SwitchEmulators.HasFiles(r.Directory))) Backup(config, game, roots, label);
     }
 
     /// <summary>Copy the synced save to <paramref name="emulator"/>'s copy now. Null when done, else why not.</summary>

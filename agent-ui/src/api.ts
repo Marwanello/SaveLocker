@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, SwitchCopy, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, SaveVsCloud, SwitchCopy, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -186,6 +186,7 @@ export const api = {
   xbox360Settings: () => req<Xbox360Settings>('/api/settings/xbox360'),
   xeniaProfile: (id: string) => req<XeniaProfile>(`/api/games/${id}/xenia-profile`),
   switchCopies: (id: string) => req<SwitchCopy[]>(`/api/games/${id}/switch-copies`),
+  vsCloud: (id: string) => req<SaveVsCloud>(`/api/games/${id}/vs-cloud`),
   switchCopyAction: (id: string, emulator: string, action: string) =>
     post<SwitchCopy[]>(`/api/games/${id}/switch-copies/${encodeURIComponent(emulator)}`, { action }),
   setGameProfileAtLaunch: (id: string, profileAtLaunch: XeniaProfile['policy'] | null) =>

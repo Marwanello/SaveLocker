@@ -1154,7 +1154,8 @@ public sealed class TrackedSavePath
 /// One other copy of a game's save on this machine, in another emulator (tasks/emulator-saves Phase 6): <see cref="Emulator"/>
 /// says which, <see cref="KeepInSync"/> whether it follows the copy that syncs, and <see cref="LastHash"/> the content both
 /// had when they were last made the same — so a copy changed since can be told from one that only fell behind.
-/// <see cref="Conflict"/>: both changed since then, and the user is asked which to keep.
+/// <see cref="Conflict"/>: both changed since then, and the user is asked which to keep. <see cref="TellWhenReady"/>: the
+/// emulator isn't installed here or hasn't started the game, and the user asked to be told once it can sync it.
 /// </summary>
 public sealed record EmulatorCopy
 {
@@ -1162,4 +1163,5 @@ public sealed record EmulatorCopy
     public bool KeepInSync { get; set; }
     public string? LastHash { get; set; }
     public bool Conflict { get; set; }
+    public bool TellWhenReady { get; set; }
 }

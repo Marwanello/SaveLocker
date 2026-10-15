@@ -137,12 +137,13 @@ public sealed class CommandPoller : IDisposable
     /// <summary>
     /// A Switch game's copies kept in step on this machine (<see cref="SwitchCopies"/>): one played in another emulator is
     /// taken into the synced folder, whose watcher then pushes it. Before the server is asked, so it works offline too.
-    /// Under the game's sync lock, and skipped for a game a sync holds: the next tick takes it.
+    /// Under the game's sync lock, and skipped for a game a sync holds: the next tick takes it. An emulator the user waits
+    /// for (<see cref="EmulatorCopy.TellWhenReady"/>) that can now sync the game is announced, once.
     /// </summary>
     private async Task KeepSwitchCopiesAsync()
     {
         IReadOnlyList<SwitchEmulators.Setup>? setups = null;
-        foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && g.EmulatorCopies.Any(c => c.KeepInSync)).ToList())
+        foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && g.EmulatorCopies.Any(c => c.KeepInSync || c.TellWhenReady)).ToList())
         {
             try
             {
@@ -151,6 +152,11 @@ public sealed class CommandPoller : IDisposable
                 var (ran, lines) = await _engine().WithGameLockAsync(game,
                     () => Task.FromResult(SwitchCopies.Reconcile(_config, game, AgentLogger.Log, found)), TimeSpan.Zero);
                 if (ran) foreach (var line in lines) _notify(line);
+                foreach (var emulator in SwitchCopies.NowReady(_config, game, found))
+                {
+                    _notify($"[{game.Name}] {emulator} can sync it now.");
+                    _notices?.Raise(NoticeCatalog.EmulatorReady(game.GameId, game.Name, emulator));
+                }
             }
             catch (Exception ex) { AgentLogger.LogException($"CommandPoller.KeepSwitchCopies '{game.Name}'", ex); }
         }

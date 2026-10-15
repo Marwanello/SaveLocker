@@ -1,21 +1,18 @@
-import { useCallback, useEffect, useState } from 'react'
-import { api } from '../api'
 import { formatAgo } from '../format'
 import type { SwitchCopy } from '../types'
-import { Banner } from './ui/Banner'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { Chip, type Tone } from './ui/Chip'
 import { Switch } from './ui/Switch'
 
 interface Props {
-  gameId: string
+  /** Every Switch emulator here, the synced one first, as SwitchPlaysIn loaded them. */
+  rows: SwitchCopy[]
   gameName: string
   machineName: string
-  /** Bumped by the page after every sync it runs. */
-  refreshKey: number
-  /** The synced copy moved to another emulator: the shell re-reads the game, so the page's header and source follow. */
-  onChanged: () => void
+  busy: boolean
+  /** Run one action on one emulator's copy; `done` is said when it worked. */
+  onAct: (emulator: string, action: string, done: string) => Promise<void>
 }
 
 const STATE: Record<string, { label: string; tone: Tone }> = {
@@ -29,39 +26,18 @@ const STATE: Record<string, { label: string; tone: Tone }> = {
 
 /**
  * A Switch game in every Switch emulator on this machine (SaveLocker tasks/emulator-saves Phase 6). One copy syncs with
- * the server and is marked; any other can take the synced save once, be kept in step with it (the one played last wins),
- * or become the copy that syncs. When both changed since they were last the same, the user picks.
+ * the server and is marked; any other can take the synced save once, or be kept in step with it (the one played last
+ * wins). When both changed since they were last the same, the user picks. Which one syncs is picked on SwitchPlaysIn.
  * <p>
  * Every action is a real button or switch, in reading order down each panel's right column, so the controller's spatial
  * navigation reaches them with up/down and A presses the one in focus; the synced panel has none and is passed over.
  */
-export function SwitchCopiesCard({ gameId, gameName, machineName, refreshKey, onChanged }: Props) {
-  const [rows, setRows] = useState<SwitchCopy[] | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null)
-  const load = useCallback(() => { api.switchCopies(gameId).then(setRows).catch(() => setRows([])) }, [gameId])
-  useEffect(() => { load() }, [load, refreshKey])
-  if (!rows) return null
-
+export function SwitchCopiesCard({ rows, gameName, machineName, busy, onAct: act }: Props) {
   const synced = rows.find(r => r.synced)
   const syncedName = synced?.emulator ?? 'the synced copy'
 
-  async function act(emulator: string, action: string, done: string) {
-    setBusy(true)
-    try {
-      setRows(await api.switchCopyAction(gameId, emulator, action))
-      setMessage({ tone: 'ok', text: done })
-      if (action === 'make-synced') onChanged()
-    } catch (e) {
-      setMessage({ tone: 'warn', text: e instanceof Error ? e.message : String(e) })
-      load()
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
-    <Card title="Switch emulators on this device">
+    <Card title="Copies in the other emulators">
       <div className="sl-stack">
         <p style={{ fontSize: 12.5, color: 'var(--color-dim)', margin: 0, lineHeight: 1.55 }}>
           {synced
@@ -70,7 +46,6 @@ export function SwitchCopiesCard({ gameId, gameName, machineName, refreshKey, on
                 was played last wins, and nothing is copied while an emulator is open.</>
             : <>No Switch emulator here holds the folder this game syncs.</>}
         </p>
-        {message && <Banner tone={message.tone} title={message.text} />}
         <div className="sl-emucopies">
           {rows.map(r => {
             const state = STATE[r.state] ?? { label: r.state, tone: 'default' as Tone }
@@ -118,12 +93,6 @@ export function SwitchCopiesCard({ gameId, gameName, machineName, refreshKey, on
                       <Button size="sm" data-pad-label="Copy here" disabled={busy}
                         onClick={() => void act(r.emulator, 'copy-here', `Copied the synced save to ${r.emulator}. The old one is backed up.`)}>
                         Copy the synced save here
-                      </Button>
-                    )}
-                    {r.canMakeSynced && (
-                      <Button size="sm" variant="quiet" data-pad-label="Make synced" disabled={busy}
-                        onClick={() => void act(r.emulator, 'make-synced', `${r.emulator}'s copy now syncs with the server.`)}>
-                        Make this the synced copy
                       </Button>
                     )}
                   </div>

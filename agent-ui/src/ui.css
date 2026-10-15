@@ -521,6 +521,50 @@ button.sl-tree__twist:focus-visible { outline: 2px solid var(--color-accent); ou
   .sl-emucopy__actions { min-width: 0; }
 }
 
+/* Which emulator a Switch game plays in here (Emulator settings): one radio card per emulator, the one that syncs checked. */
+.sl-plays__lede { font-size: 12.5px; color: var(--color-dim); margin: 0; line-height: 1.55; }
+.sl-plays { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.sl-plays__opt {
+  display: flex; align-items: flex-start; gap: 11px; text-align: left; font: inherit; color: var(--color-fg);
+  background: var(--color-raise); border: 1px solid var(--color-line); border-radius: 12px; padding: 13px 14px; cursor: pointer;
+}
+.sl-plays__opt:hover:not(:disabled) { border-color: var(--color-accent-line); background: var(--color-hover); }
+.sl-plays__opt:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-plays__opt[aria-checked="true"] { background: var(--color-accent-soft); border-color: var(--color-accent-line); cursor: default; }
+.sl-plays__opt:disabled { cursor: progress; }
+.sl-plays__opt--absent { border-style: dashed; background: transparent; }
+.sl-plays__opt--absent b { color: var(--color-dim); }
+.sl-plays__radio {
+  flex: none; width: 16px; height: 16px; margin-top: 1px; border-radius: 50%;
+  border: 1.5px solid var(--color-faint); display: grid; place-items: center;
+}
+.sl-plays__opt[aria-checked="true"] .sl-plays__radio { border-color: var(--color-accent); }
+.sl-plays__opt[aria-checked="true"] .sl-plays__radio::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); }
+.sl-plays__txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sl-plays__txt b { font-size: 14px; font-weight: 600; }
+.sl-plays__txt span { font-size: 12px; color: var(--color-dim); line-height: 1.4; }
+.sl-plays__txt .sl-plays__line--acc { color: var(--color-accent-ink); }
+.sl-plays__txt .sl-plays__line--info { color: var(--color-watch-ink); }
+.sl-plays__acts { display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* A Switch emulator choice's question: what changes, and the named way forward. */
+.sl-ask {
+  width: 100%; max-width: 540px; max-height: calc(100vh - 48px); overflow: auto;
+  background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 14px; padding: 18px 20px;
+}
+.sl-ask__title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.sl-ask__body { font-size: 12.5px; color: var(--color-dim); line-height: 1.55; }
+.sl-ask__body p { margin: 0 0 10px; }
+.sl-ask__body b { color: var(--color-fg); }
+.sl-ask__path { display: block; margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: var(--color-raise); font-size: 11.5px; overflow-wrap: anywhere; }
+.sl-ask__versus { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 0 0 10px; }
+.sl-ask__versus > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-raise); }
+.sl-ask__versus span { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-faint); }
+.sl-ask__versus b { font-size: 13.5px; }
+.sl-ask__steps { margin: 0 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.sl-ask__working { color: var(--color-fg); }
+.sl-ask__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
 /* ---- Controller layer (agent-ui/src/gamepad) ------------------------------------------------- */
 /* The pointer's outline, borrowed for the pad. Applied by nav.ts to the focused control (the
    checkbox's own label when the focusable is the box itself). */

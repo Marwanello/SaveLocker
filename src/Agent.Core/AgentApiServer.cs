@@ -88,6 +88,7 @@ public sealed class AgentApiServer : IDisposable
     // POST /api/conflicts/{id}/resolve — SyncEngine.ResolveOwnConflictAsync in whichever engine is current.
     // Null on a host with no engine, where the route only tells the server.
     private readonly Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? _resolveConflict;
+    private readonly Func<TrackedGame, bool, CancellationToken, Task<(bool Ok, string Message)>> _takeSide;
     // "Also found" for tracked games (tasks/multiple-save-paths plan §8). Reads the manifest and a few
     // folders per game, so it is computed on request, never on a timer.
     private readonly FolderSuggestions _suggestions;
@@ -153,9 +154,11 @@ public sealed class AgentApiServer : IDisposable
         Func<TrackedGame, string, Task<bool>>? forgetFolder = null,
         Func<string, string?>? prefixForAppId = null,
         Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? resolveConflict = null,
-        Func<TrackedGame, Func<Task<string?>>, Task<(bool Ran, string? Result)>>? withGameLock = null)
+        Func<TrackedGame, Func<Task<string?>>, Task<(bool Ran, string? Result)>>? withGameLock = null,
+        Func<TrackedGame, bool, CancellationToken, Task<(bool Ok, string Message)>>? takeSide = null)
     {
         _resolveConflict = resolveConflict;
+        _takeSide = takeSide ?? ((_, _, _) => Task.FromResult((false, "Not available.")));
         _withGameLock = withGameLock ?? (async (_, work) => (true, await work()));
         _forgetFolder = forgetFolder ?? ((_, _) => Task.FromResult(false));
         _suggestions = new FolderSuggestions(config, detection, prefixForAppId);
@@ -1332,9 +1335,37 @@ public sealed class AgentApiServer : IDisposable
             return TypedResults.Ok(SwitchCopyRows(game));
         }).Produces<SwitchCopyDto[]>();
 
+        // The save the emulator that syncs holds here next to the cloud's, for the Emulator settings page's status line, and
+        // which Switch emulators the game's machines play it in (to show one not installed here). Hashes the save like
+        // sync-status; asked for when the page opens and after each action, never polled.
+        app.MapGet("/api/games/{id:guid}/vs-cloud",
+            async Task<Results<Ok<SaveVsCloudDto>, NotFound>> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+            GameStateDto? state;
+            try { state = await ApiClient.For(_config).GetStateAsync(id); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+            {
+                return TypedResults.Ok(new SaveVsCloudDto(SaveVsCloud.Unreachable, null, null, []));
+            }
+            var emulators = (state?.Sources ?? [])
+                .Where(s => s.Kind == GameSourceKinds.Emulator && SwitchEmulators.IsSwitch(s.Detail))
+                .Select(s => SwitchEmulators.Names.First(n => string.Equals(n, s.Detail, StringComparison.OrdinalIgnoreCase)))
+                .Distinct().ToArray();
+            if (state?.Head is not { } head) return TypedResults.Ok(new SaveVsCloudDto(SaveVsCloud.NoCloud, null, null, emulators));
+            _config.RefreshGameSyncState(game);
+            var local = game.IsEnrolledHere && Directory.Exists(game.SaveDirectory)
+                ? await Task.Run(() => game.LocalHash(_config.StateDir)) : null;
+            return TypedResults.Ok(new SaveVsCloudDto(SaveVsCloud.Of(local, head.ContentHash, game.LastSyncedHash),
+                head.MachineName, head.CreatedAt, emulators));
+        }).Produces<SaveVsCloudDto>();
+
         // One action on one emulator's copy: copy the synced save there, keep it in step (on/off), make it the one that
-        // syncs, or settle a copy where both sides changed. Under the game's sync lock (_withGameLock), so it never lands in
-        // the middle of a push or a pull, whichever process or surface started it.
+        // syncs, settle a copy where both sides changed, or be told once it can sync. Under the game's sync lock
+        // (_withGameLock), so it never lands in the middle of a push or a pull, whichever process or surface started it.
+        // Putting the cloud save in it, or uploading it, is for the copy that syncs only, and refused when the page named
+        // another: the page says which emulator the save goes into, and that must be where it goes.
         app.MapPost("/api/games/{id:guid}/switch-copies/{emulator}",
             async Task<Results<Ok<SwitchCopyDto[]>, BadRequest<ErrorResponse>, Conflict<ErrorResponse>, NotFound>> (Guid id, string emulator, SwitchCopyActionRequest body) =>
         {
@@ -1343,6 +1374,20 @@ public sealed class AgentApiServer : IDisposable
             var gate = _gameSyncGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
             if (!await gate.WaitAsync(0))
                 return TypedResults.Conflict(new ErrorResponse("A sync of this game is running. Try again when it is done."));
+            if (body.Action is SwitchCopyActions.TakeCloud or SwitchCopyActions.Upload)
+            {
+                try
+                {
+                    var synced = SwitchCopies.SyncedEmulator(game);
+                    if (!string.Equals(synced, emulator, StringComparison.OrdinalIgnoreCase))
+                        return TypedResults.BadRequest(new ErrorResponse(synced is null
+                            ? $"No Switch emulator here holds the folder {game.Name} syncs, so nothing was changed."
+                            : $"{game.Name} syncs through {synced} here, not {emulator}, so nothing was changed."));
+                    var (ok, message) = await _takeSide(game, body.Action == SwitchCopyActions.TakeCloud, CancellationToken.None);
+                    return ok ? TypedResults.Ok(SwitchCopyRows(game)) : TypedResults.BadRequest(new ErrorResponse(message));
+                }
+                finally { gate.Release(); }
+            }
             Func<Task<string?>>? work = body.Action switch
             {
                 SwitchCopyActions.CopyHere => () => Task.FromResult(SwitchCopies.CopyHere(_config, game, emulator, AgentLogger.Log)),
@@ -1351,6 +1396,8 @@ public sealed class AgentApiServer : IDisposable
                 SwitchCopyActions.MakeSynced => () => SwitchCopies.MakeSyncedAsync(_config, game, emulator, ApiClient.For(_config), AgentLogger.Log),
                 SwitchCopyActions.KeepCopy => () => Task.FromResult(SwitchCopies.Resolve(_config, game, emulator, keepCopy: true, AgentLogger.Log)),
                 SwitchCopyActions.KeepSynced => () => Task.FromResult(SwitchCopies.Resolve(_config, game, emulator, keepCopy: false, AgentLogger.Log)),
+                SwitchCopyActions.TellWhenReady => () => Task.FromResult(SwitchCopies.SetTellWhenReady(_config, game, emulator, true)),
+                SwitchCopyActions.StopTelling => () => Task.FromResult(SwitchCopies.SetTellWhenReady(_config, game, emulator, false)),
                 _ => null,
             };
             if (work is null) return TypedResults.BadRequest(new ErrorResponse($"Unknown action '{body.Action}'."));
@@ -1991,7 +2038,7 @@ public sealed class AgentApiServer : IDisposable
 
     private SwitchCopyDto[] SwitchCopyRows(TrackedGame game) =>
         SwitchCopies.List(_config, game).Select(r => new SwitchCopyDto(r.Emulator, r.User, r.Folder,
-            r.Synced, r.State, r.WrittenUtc, r.KeepInSync, r.CanCopyHere, r.CanMakeSynced, r.Note)).ToArray();
+            r.Synced, r.State, r.WrittenUtc, r.KeepInSync, r.CanCopyHere, r.CanMakeSynced, r.Note, r.TellWhenReady)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -2512,7 +2559,32 @@ public sealed record TestConnectionDto(bool Ok, int? Status, long LatencyMs, str
 /// <see cref="SwitchCopies.States"/>.</summary>
 public sealed record SwitchCopyDto(
     string Emulator, string? User, string? Folder, bool Synced, string State, DateTime? WrittenUtc,
-    bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note);
+    bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note, bool TellWhenReady);
+
+/// <summary>A game's save here next to the cloud's head: <see cref="State"/> is one of <see cref="SaveVsCloud"/>.
+/// <see cref="Emulators"/>: the Switch emulators the game's machines say they play it in, this one's too.</summary>
+public sealed record SaveVsCloudDto(string State, string? HeadMachineName, DateTime? HeadCreatedAt, string[] Emulators);
+
+public static class SaveVsCloud
+{
+    public const string Same = "same";
+    /// <summary>The cloud moved on since the last sync here, and the save here didn't.</summary>
+    public const string CloudNewer = "cloud-newer";
+    /// <summary>The save here changed since the last sync, and the cloud didn't.</summary>
+    public const string HereNewer = "here-newer";
+    /// <summary>Both changed since they were last the same.</summary>
+    public const string Different = "different";
+    public const string NoCloud = "no-cloud";
+    public const string Unreachable = "unreachable";
+
+    public static string Of(string? local, string cloud, string? lastSynced)
+    {
+        if (string.Equals(local, cloud, StringComparison.OrdinalIgnoreCase)) return Same;
+        var cloudMoved = !string.Equals(cloud, lastSynced, StringComparison.OrdinalIgnoreCase);
+        var hereMoved = local is not null && !string.Equals(local, lastSynced, StringComparison.OrdinalIgnoreCase);
+        return cloudMoved && hereMoved ? Different : hereMoved ? HereNewer : CloudNewer;
+    }
+}
 
 /// <summary>What to do with one emulator's copy: one of <see cref="SwitchCopyActions"/>.</summary>
 public sealed record SwitchCopyActionRequest(string Action);
@@ -2525,4 +2597,10 @@ public static class SwitchCopyActions
     public const string MakeSynced = "make-synced";
     public const string KeepCopy = "keep-copy";
     public const string KeepSynced = "keep-synced";
+    public const string TellWhenReady = "tell-when-ready";
+    public const string StopTelling = "stop-telling";
+    /// <summary>A forced pull into the copy that syncs; what it holds is zipped first.</summary>
+    public const string TakeCloud = "take-cloud";
+    /// <summary>A forced push of the copy that syncs; the cloud's head stays a version.</summary>
+    public const string Upload = "upload";
 }

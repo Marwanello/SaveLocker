@@ -200,6 +200,7 @@ public sealed class Daemon : IAsyncDisposable
             forgetFolder: (game, key) => _engine.ForgetSavePathAsync(game, key),
             withGameLock: (game, work) => _engine.WithGameLockAsync(game, work, TimeSpan.FromSeconds(2)),
             resolveConflict: (conflict, winner, keepBoth, ct) => _engine.ResolveOwnConflictAsync(conflict, winner, keepBoth, ct),
+            takeSide: (game, cloud, ct) => _engine.TakeSideAsync(game, cloud, ct),
             prefixForAppId: PrefixForAppId,
             openFile: DesktopEnvironment.TryOpenFile);
         _apiServer.Start();

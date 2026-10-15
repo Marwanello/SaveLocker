@@ -956,6 +956,30 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// The Emulator settings page's two named choices for a Switch game whose save here and the cloud's differ: put the
+    /// cloud save in the emulator that syncs (<paramref name="cloud"/>), or keep that emulator's and upload it. The person
+    /// chose a side, so both are forced; neither loses anything — the save replaced here is zipped first with the copies'
+    /// backups, and the cloud's replaced head stays a version on the server.
+    /// </summary>
+    public async Task<(bool Ok, string Message)> TakeSideAsync(TrackedGame game, bool cloud, CancellationToken ct = default)
+    {
+        if (!cloud)
+        {
+            var push = await PushAsync(game, force: true, ct: ct);
+            return (push?.Status is UploadStatus.Created or UploadStatus.NoChange, DescribePush(game, push));
+        }
+        if (GameActivity.IsActive(game)) return (false, $"{game.Name} is running, so its save was not replaced.");
+        var (ran, _) = await WithGameLockAsync(game, () =>
+        {
+            SwitchCopies.BackupSynced(_config, game, "before-cloud");
+            return Task.FromResult(true);
+        }, TimeSpan.FromSeconds(2), ct);
+        if (!ran) return (false, $"A sync of {game.Name} is running. Try again when it is done.");
+        var outcome = await PullAsync(game, force: true, ct: ct);
+        return (outcome is PullOutcome.Restored or PullOutcome.UpToDate, DescribePull(game, outcome));
+    }
+
+    /// <summary>
     /// A person at this machine settles its own conflict (<paramref name="conflict"/>: VersionA is the
     /// cloud's, VersionB this machine's rejected push), and the save here follows the choice at once.
     /// <para>

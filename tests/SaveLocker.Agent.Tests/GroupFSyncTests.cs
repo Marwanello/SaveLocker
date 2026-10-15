@@ -314,6 +314,71 @@ public sealed class GroupFSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal([("Ryujinx", "synced"), ("Eden", "same")], SwitchCopies.List(pc, moved, setups).Select(r => (r.Emulator, r.State)));
     }
     [Fact]
+    public async Task The_deck_waits_for_eden_switches_to_it_and_takes_the_cloud_save_named()
+    {
+        // The PC plays it in Eden and uploads; the Deck syncs it through Ryujinx, with a save of its own, and has no Eden.
+        var pcEden = S.Eden(P("pc/Emulation"), EdenUser);
+        S.Write(Path.Combine(S.EdenSave(P("pc/Emulation"), EdenUser, Title), "save.bin"), "pc-island");
+        var deckRyu = S.Ryujinx(P("deck/ryu"), RyuUser, (Title, RyuUser, RyujinxSaveIndex.SaveType.Account, 3));
+        var ryuSave = Path.Combine(S.RyujinxSave(P("deck/ryu"), 3), "save.bin");
+        S.Write(ryuSave, "deck-own");
+        var pc = await Machine("pc");
+        var deck = await Machine("deck");
+        var pcGame = await Enroll(pc, SwitchEmulators.Scan([pcEden], []), Title);
+        await using var pcEngine = new SyncEngine(pc, ApiClient.For(pc));
+        Assert.NotNull(await pcEngine.PushAsync(pcGame, force: true));
+        IReadOnlyList<SwitchEmulators.Setup> setups = [deckRyu];
+        var game = await Enroll(deck, SwitchEmulators.Scan(setups, []), Title);
+        Assert.Equal(pcGame.GameId, game.GameId);
+        await using var engine = new SyncEngine(deck, ApiClient.For(deck));
+        var head = (await ApiClient.For(deck).GetStateAsync(game.GameId))!;
+        Assert.Contains(head.Sources!, s => s.Detail == "Eden");
+        Assert.Equal(SaveVsCloud.Different, SaveVsCloud.Of(game.LocalHash(deck.StateDir), head.Head!.ContentHash, game.LastSyncedHash));
+
+        // Waiting for Eden: a row on the page, and nothing to tell until it is installed.
+        Assert.Null(SwitchCopies.SetTellWhenReady(deck, game, "eden", true));
+        Assert.Contains(SwitchCopies.List(deck, game, setups), r => r is { Emulator: "Eden", State: SwitchCopies.States.NotInstalled, TellWhenReady: true });
+        Assert.Empty(SwitchCopies.NowReady(deck, game, setups));
+
+        // The cloud save into Ryujinx, the emulator that syncs: Ryujinx's own is zipped first.
+        var (ok, _) = await engine.TakeSideAsync(game, cloud: true);
+        Assert.True(ok);
+        Assert.Equal("pc-island", File.ReadAllText(ryuSave));
+        Assert.Single(Directory.GetFiles(Path.Combine(deck.StateDir, "emulator-copies", game.GameId.ToString("N")), "*before-cloud.zip"));
+
+        // Eden is installed: told once, then it syncs and takes the cloud save.
+        var deckEden = S.Eden(P("deck/Emulation"), EdenUser);
+        setups = [deckRyu, deckEden];
+        Assert.Equal(["Eden"], SwitchCopies.NowReady(deck, game, setups));
+        Assert.Empty(SwitchCopies.NowReady(deck, game, setups));
+        Assert.DoesNotContain(AgentConfig.Load(deck.ConfigPath).Games.Single(g => g.GameId == game.GameId).EmulatorCopies, c => c.TellWhenReady);
+        Assert.Null(await SwitchCopies.MakeSyncedAsync(deck, game, "Eden", ApiClient.For(deck), _ => { }, setups));
+        Assert.Equal("Eden", SwitchCopies.SyncedEmulator(game, setups));
+        (ok, _) = await engine.TakeSideAsync(game, cloud: true);
+        Assert.True(ok);
+        var edenSave = Path.Combine(S.EdenSave(P("deck/Emulation"), EdenUser, Title), "save.bin");
+        Assert.Equal("pc-island", File.ReadAllText(edenSave));
+
+        // Played on the Deck, and kept over the cloud's: uploaded, and the PC's stays a version.
+        S.Write(edenSave, "deck-played");
+        (ok, _) = await engine.TakeSideAsync(game, cloud: false);
+        Assert.True(ok);
+        var after = (await ApiClient.For(deck).GetStateAsync(game.GameId))!.Head!;
+        Assert.Equal(game.LocalHash(deck.StateDir), after.ContentHash);
+        Assert.Contains(await ApiClient.For(deck).GetGameVersionsAsync(game.GameId), v => v.Id == head.Head!.Id);
+    }
+
+    [Theory]
+    [InlineData("a", "a", "a", SaveVsCloud.Same)]
+    [InlineData("a", "b", "a", SaveVsCloud.CloudNewer)]
+    [InlineData("b", "a", "a", SaveVsCloud.HereNewer)]
+    [InlineData("b", "c", "a", SaveVsCloud.Different)]
+    [InlineData("b", "a", null, SaveVsCloud.Different)]
+    [InlineData(null, "a", null, SaveVsCloud.CloudNewer)]
+    public void The_save_here_against_the_clouds(string? here, string cloud, string? lastSynced, string state) =>
+        Assert.Equal(state, SaveVsCloud.Of(here, cloud, lastSynced));
+
+    [Fact]
     public async Task A_device_save_only_one_emulator_has_a_place_for_is_not_copied_again_every_tick()
     {
         var eden = S.Eden(P("pc/Emulation"), EdenUser);
