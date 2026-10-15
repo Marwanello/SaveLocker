@@ -2184,6 +2184,26 @@ terminal + exec line, not spending the code, refused once spent, the Linux agent
 and runs `install.sh` for a good one; pairing page checked in the browser. **Not verified:** KDE
 on a real Deck (trust prompt, Konsole), the `savelocker://` link from a Deck browser (Flatpak
 Firefox/Chrome go through the portal), and the Windows agent has no `savelocker://` handler.
+<br>**Second follow-up (2026-10-15) — a release `.desktop` installer + `testenv flow`.** Releases now
+carry `SaveLocker-Installer.desktop` + `savelocker-install.sh` (rendered by build-linux.sh with the
+repo, attached by release.yml): double-clicked, it finds the tarball through `SHA256SUMS-linux.txt`,
+checks it, runs install.sh and opens the Join card — the EmuDeck pattern for installing without a join
+link. README and the install help lead with it. **`testenv.ps1 flow`** tests the fresh-install flow in
+throwaway HOMEs (`tests/testenv-flow.sh`, `tests/linux/run-desktop-launcher.py`): install.sh gained
+test-only `SAVELOCKER_INSTALL_SANDBOX=<port>` (never touches the user's systemd manager — `$HOME` does
+not separate it — and runs the daemon on that port), and both installers honour
+`SAVELOCKER_RELEASE_BASE` ([[Gotchas]]). WSL headless, Deck staged for double-clicking (or
+`-Headless`), Windows via a generated Windows Sandbox `.wsb`. `flow` refuses a Linux build without the
+sandboxed install.sh. CI's package-linux job now runs the release installer end to end through GLib,
+and its menu-entry check was updated for `open %u` (the previous commit would have failed it).
+**Verified:** `flow -Only linux` **10/10** against a separate console container (:5081, this branch)
+and a Linux build from a private WSL copy — the shared rig was in use by another worktree
+(`duplicate-shortcut-warnings`) and was not rebuilt; WSL's real `~/.local/share/SaveLocker` unchanged
+since 2026-09-22, no systemd unit touched. `flow -Only windows` built and hosted the installer and
+wrote the `.wsb`; the pairing page answered on the LAN URL. **Not verified:** Windows Sandbox itself
+(the feature is not enabled on this PC), the Deck target, and the CI workflow changes (not run).
+Testing through `flow` from a sandboxed shell: its writes under `%LOCALAPPDATA%` are invisible to WSL,
+so `-StateRoot` had to point into the session scratchpad.
 
 ---
 
