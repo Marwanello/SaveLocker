@@ -1639,6 +1639,64 @@
         }
       }
     },
+    "/api/agent/switch/users": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwitchUsersDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/switch/shared-user": {
+      "put": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwitchUserDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwitchUserDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/agent/health": {
       "post": {
         "tags": [
@@ -4492,6 +4550,15 @@
               "null",
               "boolean"
             ]
+          },
+          "switchUsers": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SwitchUserReport"
+            }
           }
         }
       },
@@ -4530,6 +4597,16 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "switchSharedUser": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SwitchUserDto"
+              }
+            ]
           }
         }
       },
@@ -6636,6 +6713,34 @@
           }
         }
       },
+      "MachineSwitchUsersDto": {
+        "required": [
+          "machineId",
+          "machineName",
+          "users",
+          "reportedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "machineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "machineName": {
+            "type": "string"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SwitchUserReport"
+            }
+          },
+          "reportedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "ManifestRefreshSettingsDto": {
         "required": [
           "refreshDays",
@@ -7235,6 +7340,73 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "SwitchUserDto": {
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "SwitchUserReport": {
+        "required": [
+          "emulator",
+          "install",
+          "id",
+          "name",
+          "current"
+        ],
+        "type": "object",
+        "properties": {
+          "emulator": {
+            "type": "string"
+          },
+          "install": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SwitchUsersDto": {
+        "required": [
+          "shared",
+          "machines"
+        ],
+        "type": "object",
+        "properties": {
+          "shared": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SwitchUserDto"
+              }
+            ]
+          },
+          "machines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineSwitchUsersDto"
+            }
           }
         }
       },

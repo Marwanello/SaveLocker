@@ -865,6 +865,31 @@ agent.MapPost("/agent/games/{id:guid}/conflict-policy", async (
     await sync.SetConflictPolicyAsync(id, req.Policy, req.PreferredMachineId)
         ? Results.Ok() : Results.NotFound());
 
+// One Switch user on every device (tasks/emulator-saves, 2026-10-16): every machine's Yuzu-based emulator users, as its
+// heartbeat reported them, and the one every device is to use. Any enrolled machine may choose it — the user picks it on
+// whichever device they are at — and each agent adopts it on its next heartbeat. Audited: it renames user folders fleet-wide.
+agent.MapGet("/agent/switch/users", async (HealthService health, SettingsService settings, CancellationToken ct) =>
+    Results.Ok(new SwitchUsersDto(await settings.GetSwitchSharedUserAsync(ct), await health.ListSwitchUsersAsync(ct))))
+    .Produces<SwitchUsersDto>();
+
+agent.MapPut("/agent/switch/shared-user", async (SwitchUserDto req, HttpContext http, SettingsService settings, SyncService sync, CancellationToken ct) =>
+{
+    if (!SwitchUserReport.IsUserId(req.Id)) return Results.BadRequest("A Switch user ID is 32 hex digits, and not all zero.");
+    var name = string.IsNullOrWhiteSpace(req.Name) ? "User" : req.Name.Trim();
+    if (name.Length > SwitchUserReport.MaxNameLength) name = name[..SwitchUserReport.MaxNameLength];
+    var user = new SwitchUserDto(req.Id.ToUpperInvariant(), name);
+    await settings.SetSwitchSharedUserAsync(user, ct);
+    await sync.LogAuditAsync("settings.switch_shared_user", $"{user.Name} ({user.Id}), chosen on {http.CurrentMachine().Name}");
+    return Results.Ok(user);
+}).Produces<SwitchUserDto>();
+
+agent.MapDelete("/agent/switch/shared-user", async (HttpContext http, SettingsService settings, SyncService sync, CancellationToken ct) =>
+{
+    await settings.SetSwitchSharedUserAsync(null, ct);
+    await sync.LogAuditAsync("settings.switch_shared_user", $"stopped sharing, on {http.CurrentMachine().Name}");
+    return Results.NoContent();
+});
+
 // ---- Agent health (agent) ----
 // Piggybacks the existing ~20 s poll, so it costs no new schedule. This is the channel that makes a
 // headless spoke visible at all: the Deck cannot toast, so it tells the server and the console shows it.

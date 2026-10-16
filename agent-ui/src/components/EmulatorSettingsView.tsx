@@ -3,6 +3,7 @@ import { EMULATOR_NAME, type EmulatorWithSettings } from '../emulators'
 import { DlcCheckCard } from './DlcCheckCard'
 import { SourceChip } from './SourceChip'
 import { SwitchPlaysIn } from './SwitchPlaysIn'
+import { SwitchUserCard } from './SwitchUserCard'
 import { Xbox360SettingsCard } from './Xbox360SettingsCard'
 import { XeniaProfileCard } from './XeniaProfileCard'
 import { Button } from './ui/Button'
@@ -49,6 +50,7 @@ export function EmulatorSettingsView({ game, emulator, machineName, tab, onTab, 
           actions={<SourceChip source={game.source} />}
         />
         <SwitchPlaysIn gameId={game.id} gameName={game.name} machineName={machineName} refreshKey={refreshKey} onChanged={onChanged} />
+        <SwitchUserCard onlyWhenNeeded />
       </div>
     )
   }

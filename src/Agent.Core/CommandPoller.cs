@@ -86,6 +86,7 @@ public sealed class CommandPoller : IDisposable
         try
         {
             await KeepSwitchCopiesAsync();
+            await ShareSwitchUserAsync();
             await ReconcileGamesAsync();
             // The first call of the tick is what tells us the server is there. A push that fails
             // reports nothing of the kind on its own — it is queued and retried — so this is the one
@@ -160,6 +161,45 @@ public sealed class CommandPoller : IDisposable
             }
             catch (Exception ex) { AgentLogger.LogException($"CommandPoller.KeepSwitchCopies '{game.Name}'", ex); }
         }
+    }
+
+    // The shared user last asked about here, so a choice the user has to make is said once, not every tick.
+    private string? _switchUserAsked;
+
+    /// <summary>
+    /// One Switch user on every device (<see cref="SwitchUserSharing"/>): once a user is chosen on any device (it rides the
+    /// heartbeat), every Yuzu-based install here adopts it — after a Switch emulator closes, and unless this device was put
+    /// back from it. Titles saved under both users wait for the user to pick, which is said once.
+    /// </summary>
+    private async Task ShareSwitchUserAsync()
+    {
+        if (_config.SwitchSharedUser is not { } shared ||
+            string.Equals(_config.SwitchSharedUserDeclined, shared.Id, StringComparison.OrdinalIgnoreCase)) return;
+        try
+        {
+            var setups = SwitchEmulators.Find();
+            var todo = SwitchUserSharing.States(_config, shared, setups).Where(s => s.UserId is not null && !s.Matches).ToList();
+            if (todo.Count == 0 || SwitchCopies.RunningEmulator() is not null) return;
+            if (todo.FirstOrDefault(s => s.Note is not null || s.Collisions.Length > 0) is { } waits)
+            {
+                if (_switchUserAsked == shared.Id) return;
+                _switchUserAsked = shared.Id;
+                _notify(waits.Note ?? $"{waits.Emulator} here and {shared.Name} both have saves of " +
+                        $"{string.Join(", ", waits.Collisions.Select(c => c.GameName ?? c.TitleId))}. Choose which to keep in Settings, under Switch user.");
+                return;
+            }
+            var outcome = await SwitchUserSharing.ApplyAsync(_config, shared, setups, _api(), SwitchUserSharing.LocksOf(_engine()), null, AgentLogger.Log);
+            if (outcome.Refusal is { } why)
+            {
+                if (_switchUserAsked == shared.Id) return;
+                _switchUserAsked = shared.Id;
+                _notify($"Could not switch to the shared Switch user {shared.Name}: {why}");
+                return;
+            }
+            foreach (var line in outcome.Done) _notify(line);
+            if (outcome.Done.Count > 0) _onGamesChanged?.Invoke();
+        }
+        catch (Exception ex) { AgentLogger.LogException("CommandPoller.ShareSwitchUser", ex); }
     }
 
     // ----- game-list reconciliation (server → agent propagation) -----

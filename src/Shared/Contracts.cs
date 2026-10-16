@@ -997,7 +997,33 @@ public record AgentHeartbeat(
     string? StagedVersion = null,
     // Whether this machine adopts the look the console pushes (its own Settings → Follow the console).
     // Null from an agent that predates the field: the console then cannot say, rather than guessing.
-    bool? FollowsConsoleAppearance = null);
+    bool? FollowsConsoleAppearance = null,
+    // The users of this machine's Yuzu-based Switch emulators, for "one Switch user on every device". Null from an agent
+    // that predates the field, which keeps what a newer one last reported.
+    SwitchUserReport[]? SwitchUsers = null);
+
+/// <summary>
+/// One user of one Yuzu-based Switch emulator install on a machine: <see cref="Id"/> is the user's save-folder name (its
+/// UUID's bytes reversed, 32 hex digits), <see cref="Current"/> whether the emulator is set to it. Display text and an ID
+/// to pick, never a save.
+/// </summary>
+public record SwitchUserReport(string Emulator, string Install, string Id, string Name, bool Current)
+{
+    public const int MaxUsers = 64, MaxNameLength = 64, MaxEmulatorLength = 32, MaxInstallLength = 16;
+
+    /// <summary>A user ID a save folder can be named by: 32 hex digits, not the all-zero device "user".</summary>
+    public static bool IsUserId(string? id) =>
+        id is { Length: 32 } && id.All(Uri.IsHexDigit) && id.Any(c => c != '0');
+}
+
+/// <summary>The Switch user every device's Yuzu-based emulators use, when one is chosen (<see cref="SwitchUserReport.Id"/>).</summary>
+public record SwitchUserDto(string Id, string Name);
+
+/// <summary>One machine's last report of its Switch users.</summary>
+public record MachineSwitchUsersDto(Guid MachineId, string MachineName, SwitchUserReport[] Users, DateTime ReportedAt);
+
+/// <summary>The shared Switch user, if one is chosen, and every machine's users to choose from.</summary>
+public record SwitchUsersDto(SwitchUserDto? Shared, MachineSwitchUsersDto[] Machines);
 
 /// <summary>
 /// Which operating system an agent runs on, so the console can put the right logo beside a machine.
@@ -1043,7 +1069,9 @@ public record AgentHeartbeatResponse(
     ConflictEscalationDto[] EscalatedConflicts,
     AppearanceDto? Appearance = null,
     int? ManifestRefreshDays = null,
-    DateTime? ManifestRefreshRequestedAt = null);
+    DateTime? ManifestRefreshRequestedAt = null,
+    // The Switch user every device is to use; null when none is chosen (or from a server that predates it).
+    SwitchUserDto? SwitchSharedUser = null);
 
 /// <summary>
 /// "This machine's scan found a save folder for a game it tracks but has not mapped." Reported so

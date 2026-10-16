@@ -55,6 +55,10 @@ public sealed class SettingsService
     /// every default ("[]") is told apart from one who never saved a list (no row: config applies).</summary>
     public const string DefaultExcludeGlobs = "Sync:DefaultExcludeGlobs";
 
+    /// <summary>The Switch user every device's Yuzu-based emulators use (<see cref="SwitchUserDto"/> as JSON); no row
+    /// when none is chosen.</summary>
+    public const string SwitchSharedUser = "Switch:SharedUser";
+
     /// <summary>
     /// Settings that are secrets the server must be able to USE (so they cannot be hashed like the admin
     /// password or machine keys): stored encrypted with ASP.NET Data Protection. Its key ring lives in
@@ -287,6 +291,23 @@ public sealed class SettingsService
     /// usable window: an unreadable or out-of-range stored value falls back to the default here, at
     /// the one place every reader — the console and every heartbeat — goes through.
     /// </summary>
+    /// <summary>The shared Switch user, or null when none is chosen or the stored one can't be read.</summary>
+    public async Task<SwitchUserDto?> GetSwitchSharedUserAsync(CancellationToken ct = default)
+    {
+        if (await GetEffectiveAsync(SwitchSharedUser, ct) is not { } json) return null;
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<SwitchUserDto>(json, System.Text.Json.JsonSerializerOptions.Web)
+                is { } user && SwitchUserReport.IsUserId(user.Id) ? user : null;
+        }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
+
+    /// <summary>Choose the shared Switch user, or stop sharing one (null).</summary>
+    public Task SetSwitchSharedUserAsync(SwitchUserDto? user, CancellationToken ct = default) =>
+        SetAsync(SwitchSharedUser, user is null ? null
+            : System.Text.Json.JsonSerializer.Serialize(user with { Id = user.Id.ToUpperInvariant() }, System.Text.Json.JsonSerializerOptions.Web), ct);
+
     public async Task<ManifestRefreshSettingsDto> GetManifestRefreshAsync(CancellationToken ct = default)
     {
         // Unset or unreadable means the product default; a stored value is honoured, 0 included.

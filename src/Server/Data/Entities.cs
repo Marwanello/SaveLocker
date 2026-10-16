@@ -406,6 +406,11 @@ public class AgentHealth
     /// <summary>Whether the agent adopts the console's pushed look. Null from an agent that predates the field.</summary>
     public bool? FollowsConsoleAppearance { get; set; }
 
+    /// <summary>The users of the machine's Yuzu-based Switch emulators (<see cref="SwitchUserReport"/>[] as JSON), with
+    /// when they were reported. Null until an agent that knows them reports.</summary>
+    public string? SwitchUsersJson { get; set; }
+    public DateTime? SwitchUsersAt { get; set; }
+
     /// <summary>The agent's own last successful sync — not the server's view of it.</summary>
     public DateTime? LastSyncTime { get; set; }
 

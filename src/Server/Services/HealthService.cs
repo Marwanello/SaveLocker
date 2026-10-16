@@ -55,6 +55,13 @@ public sealed class HealthService
         health.StagedVersion = Clean(beat.StagedVersion, 64);
         // Taken as sent, null included: unlike the OS, a downgrade to an agent that cannot follow does change it.
         health.FollowsConsoleAppearance = beat.FollowsConsoleAppearance;
+        // Kept when an older agent sends none: its emulators didn't change because it can't say.
+        if (beat.SwitchUsers is { } switchUsers)
+        {
+            health.SwitchUsersJson = System.Text.Json.JsonSerializer.Serialize(CleanSwitchUsers(switchUsers),
+                System.Text.Json.JsonSerializerOptions.Web);
+            health.SwitchUsersAt = now;
+        }
 
         // An agent that predates the field sends none: keep what a newer one reported rather than
         // blanking it, since a downgrade does not change the OS underneath.
@@ -103,6 +110,7 @@ public sealed class HealthService
         // an agent acts on once, when the timestamp is newer than the request it last handled).
         var appearance = await _settings.GetAppearanceAsync();
         var manifest = await _settings.GetManifestRefreshAsync();
+        var switchUser = await _settings.GetSwitchSharedUserAsync();
 
         return new AgentHeartbeatResponse(conflicts.Select(c => new ConflictEscalationDto(
             c.Id,
@@ -113,7 +121,33 @@ public sealed class HealthService
             c.Count)).ToArray(),
             appearance.PushToAgents ? appearance.Look : null,
             manifest.RefreshDays,
-            manifest.RequestedAt);
+            manifest.RequestedAt,
+            switchUser);
+    }
+
+    /// <summary>A machine's reported Switch users as stored: valid IDs only, clamped, at most <see cref="SwitchUserReport.MaxUsers"/>.</summary>
+    public static SwitchUserReport[] CleanSwitchUsers(IEnumerable<SwitchUserReport?> users) =>
+        [.. users.Where(u => u is not null && SwitchUserReport.IsUserId(u.Id)).Take(SwitchUserReport.MaxUsers)
+            .Select(u => new SwitchUserReport(
+                Clean(u!.Emulator, SwitchUserReport.MaxEmulatorLength) ?? "Switch emulator",
+                Clean(u.Install, SwitchUserReport.MaxInstallLength) ?? "",
+                u.Id.ToUpperInvariant(),
+                Clean(u.Name, SwitchUserReport.MaxNameLength) ?? "User",
+                u.Current))];
+
+    /// <summary>Every machine's last report of its Switch users, for picking the shared one.</summary>
+    public async Task<MachineSwitchUsersDto[]> ListSwitchUsersAsync(CancellationToken ct = default)
+    {
+        var rows = await _db.AgentHealth.Where(h => h.SwitchUsersJson != null)
+            .Join(_db.Machines, h => h.MachineId, m => m.Id, (h, m) => new { m.Id, m.Name, h.SwitchUsersJson, h.SwitchUsersAt })
+            .ToListAsync(ct);
+        return [.. rows.Select(r =>
+        {
+            SwitchUserReport[] users;
+            try { users = System.Text.Json.JsonSerializer.Deserialize<SwitchUserReport[]>(r.SwitchUsersJson!, System.Text.Json.JsonSerializerOptions.Web) ?? []; }
+            catch (System.Text.Json.JsonException) { users = []; }
+            return new MachineSwitchUsersDto(r.Id, r.Name, users, r.SwitchUsersAt ?? DateTime.MinValue);
+        }).OrderBy(m => m.MachineName, StringComparer.OrdinalIgnoreCase)];
     }
 
     /// <summary>

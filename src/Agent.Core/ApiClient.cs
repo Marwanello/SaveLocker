@@ -184,6 +184,17 @@ public sealed class ApiClient
     public async Task ReportLaunchProfileAsync(Guid gameId, LaunchProfileReport report, CancellationToken ct = default) =>
         (await _http.PutAsJsonAsync($"/api/agent/games/{gameId}/launch-profile", report, ct)).EnsureSuccessStatusCode();
 
+    // ----- One Switch user on every device (SwitchUserSharing) -----
+
+    public async Task<SwitchUsersDto> GetSwitchUsersAsync(CancellationToken ct = default) =>
+        await Read<SwitchUsersDto>(await _http.GetAsync("/api/agent/switch/users", ct), ct);
+
+    public async Task<SwitchUserDto> SetSwitchSharedUserAsync(SwitchUserDto user, CancellationToken ct = default) =>
+        await Read<SwitchUserDto>(await _http.PutAsJsonAsync("/api/agent/switch/shared-user", user, ct), ct);
+
+    public async Task ClearSwitchSharedUserAsync(CancellationToken ct = default) =>
+        (await _http.DeleteAsync("/api/agent/switch/shared-user", ct)).EnsureSuccessStatusCode();
+
     // ----- The DLC hand-over (tasks/emulator-saves Phase 5c, step 11) -----
 
     private static async Task<T> Read<T>(HttpResponseMessage resp, CancellationToken ct)

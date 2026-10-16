@@ -181,6 +181,12 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("StagedVersion")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("SwitchUsersAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SwitchUsersJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("TrackedGames")
                         .HasColumnType("INTEGER");
 

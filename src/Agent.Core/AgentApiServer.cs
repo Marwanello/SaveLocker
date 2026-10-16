@@ -1329,6 +1329,75 @@ public sealed class AgentApiServer : IDisposable
             return TypedResults.Ok(new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Auto));
         }).Produces<Xbox360SettingsDto>();
 
+        // One Switch user on every device (SwitchUserSharing): every device's Yuzu-based emulator users, the one chosen, and
+        // each install here against it. Reads the emulators' users files and asks the server; nothing is changed.
+        app.MapGet("/api/switch/users", async () => TypedResults.Ok(await SwitchUserStateAsync())).Produces<SwitchUserSharingDto>();
+
+        // Choose the user every device uses, and adopt it here at once; the other devices adopt it on their next heartbeat.
+        app.MapPost("/api/switch/shared-user",
+            async Task<Results<Ok<SwitchUserActionResponse>, BadRequest<ErrorResponse>, Conflict<ErrorResponse>>> (ShareSwitchUserRequest body) =>
+        {
+            if (!SwitchUserReport.IsUserId(body.Id)) return TypedResults.BadRequest(new ErrorResponse("That isn't a Switch user ID."));
+            if (!await _switchUserGate.WaitAsync(0)) return TypedResults.Conflict(new ErrorResponse("The Switch user is already being changed."));
+            try
+            {
+                SwitchUserDto shared;
+                try { shared = await ApiClient.For(_config).SetSwitchSharedUserAsync(new SwitchUserDto(body.Id, body.Name)); }
+                catch (HttpRequestException ex) { return TypedResults.BadRequest(new ErrorResponse(ServerErrors.Of(ex))); }
+                _config.UpdateSettings(c => { c.SwitchSharedUser = shared; c.SwitchSharedUserDeclined = null; });
+                var outcome = await ApplySwitchUserHereAsync(shared, null);
+                var message = outcome.Refusal is null
+                    ? $"Every device uses {shared.Name} now. {(outcome.Done.Count == 0 ? "This one already did." : string.Join(" ", outcome.Done))} The others follow on their next check."
+                    : $"Every device is to use {shared.Name}; the others follow on their next check. Here: {outcome.Refusal}";
+                return TypedResults.Ok(new SwitchUserActionResponse(await SwitchUserStateAsync(), message, outcome.Refusal is null));
+            }
+            finally { _switchUserGate.Release(); }
+        }).Produces<SwitchUserActionResponse>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
+        // Adopt the chosen user here now, with the answers for titles saved under both users; it also undoes "not on this device".
+        app.MapPost("/api/switch/shared-user/apply",
+            async Task<Results<Ok<SwitchUserActionResponse>, BadRequest<ErrorResponse>, Conflict<ErrorResponse>>> (ApplySwitchUserRequest body) =>
+        {
+            if (_config.SwitchSharedUser is not { } shared) return TypedResults.BadRequest(new ErrorResponse("No Switch user is shared yet."));
+            if (!await _switchUserGate.WaitAsync(0)) return TypedResults.Conflict(new ErrorResponse("The Switch user is already being changed."));
+            try
+            {
+                _config.UpdateSettings(c => c.SwitchSharedUserDeclined = null);
+                var outcome = await ApplySwitchUserHereAsync(shared, body.Keep);
+                return TypedResults.Ok(new SwitchUserActionResponse(await SwitchUserStateAsync(),
+                    outcome.Refusal ?? (outcome.Done.Count == 0 ? $"This device already uses {shared.Name}." : string.Join(" ", outcome.Done)),
+                    outcome.Refusal is null));
+            }
+            finally { _switchUserGate.Release(); }
+        }).Produces<SwitchUserActionResponse>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
+        // "Put back the original user" here: undone from the backup, and the shared user isn't adopted here again.
+        app.MapPost("/api/switch/shared-user/undo",
+            async Task<Results<Ok<SwitchUserActionResponse>, Conflict<ErrorResponse>>> () =>
+        {
+            if (!await _switchUserGate.WaitAsync(0)) return TypedResults.Conflict(new ErrorResponse("The Switch user is already being changed."));
+            try
+            {
+                var outcome = await SwitchUserSharing.UndoAsync(_config, SwitchEmulators.Find(), ApiClient.For(_config),
+                    (g, w) => _withGameLock(g, w), AgentLogger.Log);
+                if (outcome.Refusal is null) _onGamesChanged?.Invoke();
+                return TypedResults.Ok(new SwitchUserActionResponse(await SwitchUserStateAsync(),
+                    outcome.Refusal ?? string.Join(" ", outcome.Done), outcome.Refusal is null));
+            }
+            finally { _switchUserGate.Release(); }
+        }).Produces<SwitchUserActionResponse>();
+
+        // Stop sharing a user: no device adopts it any more. Nothing is put back; each device keeps the user it has.
+        app.MapDelete("/api/switch/shared-user",
+            async Task<Results<Ok<SwitchUserActionResponse>, BadRequest<ErrorResponse>>> () =>
+        {
+            try { await ApiClient.For(_config).ClearSwitchSharedUserAsync(); }
+            catch (HttpRequestException ex) { return TypedResults.BadRequest(new ErrorResponse(ServerErrors.Of(ex))); }
+            _config.UpdateSettings(c => c.SwitchSharedUser = null);
+            return TypedResults.Ok(new SwitchUserActionResponse(await SwitchUserStateAsync(),
+                "No user is shared any more. Each device keeps the user it has.", true));
+        }).Produces<SwitchUserActionResponse>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
         // A Switch game's copies on this machine (tasks/emulator-saves Phase 6): every Switch emulator here, the one that syncs
         // first, and what each other one holds next to it. Reads the emulators' folders; nothing is changed.
         app.MapGet("/api/games/{id:guid}/switch-copies", Results<Ok<SwitchCopyDto[]>, NotFound> (Guid id) =>
@@ -2040,6 +2109,33 @@ public sealed class AgentApiServer : IDisposable
             candidate.NoSaveYet,
             candidate.DuplicateShortcuts is { Count: > 0 } duplicates ? duplicates.ToArray() : null)).ToArray();
 
+    private readonly SemaphoreSlim _switchUserGate = new(1, 1);
+
+    private async Task<SwitchUserSharing.Outcome> ApplySwitchUserHereAsync(SwitchUserDto shared, IReadOnlyDictionary<string, string>? keep)
+    {
+        var outcome = await SwitchUserSharing.ApplyAsync(_config, shared, SwitchEmulators.Find(), ApiClient.For(_config),
+            (g, w) => _withGameLock(g, w), keep, AgentLogger.Log);
+        if (outcome.Refusal is null && outcome.Done.Count > 0) _onGamesChanged?.Invoke();
+        return outcome;
+    }
+
+    /// <summary>The shared Switch user, every device's users (the server's, when it answers), and each install here.</summary>
+    private async Task<SwitchUserSharingDto> SwitchUserStateAsync()
+    {
+        SwitchUsersDto? fleet = null;
+        try { fleet = await ApiClient.For(_config).GetSwitchUsersAsync(); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException) { }
+        if (fleet is not null) _config.ApplySwitchSharedUser(fleet.Shared);
+        var shared = fleet is null ? _config.SwitchSharedUser : fleet.Shared;
+        var here = SwitchUserSharing.States(_config, shared, SwitchEmulators.Find())
+            .Select(s => new SwitchInstallUserDto(s.Emulator, s.Install, s.Saves, s.UserId, s.UserName, s.Matches,
+                [.. s.Collisions.Select(c => new SwitchCollisionDto(c.TitleId, c.GameName, c.HereWritten, c.SharedWritten))], s.CanUndo, s.Note))
+            .ToArray();
+        return new SwitchUserSharingDto(shared,
+            shared is not null && string.Equals(_config.SwitchSharedUserDeclined, shared.Id, StringComparison.OrdinalIgnoreCase),
+            here, fleet?.Machines ?? [], fleet is not null, _config.MachineId);
+    }
+
     private SwitchCopyDto[] SwitchCopyRows(TrackedGame game) =>
         SwitchCopies.List(_config, game).Select(r => new SwitchCopyDto(r.Emulator, r.User, r.Folder,
             r.Synced, r.State, r.WrittenUtc, r.KeepInSync, r.CanCopyHere, r.CanMakeSynced, r.Note, r.TellWhenReady, r.Saves, r.Install,
@@ -2566,6 +2662,25 @@ public sealed record SwitchCopyDto(
     string Emulator, string? User, string? Folder, bool Synced, string State, DateTime? WrittenUtc,
     bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note, bool TellWhenReady, string? Saves, string? Install,
     string? GameVersion);
+
+/// <summary>One Switch user on every device, as this machine's settings show it (<see cref="SwitchUserSharing"/>):
+/// <see cref="Shared"/> the chosen user, <see cref="Declined"/> whether it was put back here, <see cref="Here"/> each
+/// Yuzu-based install on this machine, <see cref="Devices"/> every device's users (empty when the server didn't answer,
+/// <see cref="Reachable"/>).</summary>
+public sealed record SwitchUserSharingDto(SwitchUserDto? Shared, bool Declined, SwitchInstallUserDto[] Here,
+    MachineSwitchUsersDto[] Devices, bool Reachable, Guid? ThisMachineId);
+
+/// <summary>One Yuzu-based install here against the shared user (<see cref="SwitchUserSharing.InstallState"/>).</summary>
+public sealed record SwitchInstallUserDto(string Emulator, string Install, string Saves, string? UserId, string? UserName,
+    bool Matches, SwitchCollisionDto[] Collisions, bool CanUndo, string? Note);
+
+/// <summary>A title saved under both this install's user and the shared one: the user picks which to keep.</summary>
+public sealed record SwitchCollisionDto(string TitleId, string? GameName, DateTime? HereWritten, DateTime? SharedWritten);
+
+public sealed record SwitchUserActionResponse(SwitchUserSharingDto State, string Message, bool Ok);
+public sealed record ShareSwitchUserRequest(string Id, string Name);
+/// <summary><see cref="Keep"/>: title ID → <c>here</c> or <c>shared</c>, for the titles saved under both users.</summary>
+public sealed record ApplySwitchUserRequest(Dictionary<string, string>? Keep = null);
 
 /// <summary>A game's save here next to the cloud's head: <see cref="State"/> is one of <see cref="SaveVsCloud"/>.
 /// <see cref="Emulators"/>: the Switch emulators the game's machines say they play it in, this one's too.

@@ -96,6 +96,12 @@ public sealed class AgentConfig
     public ProfileAtLaunch? XeniaProfileAtLaunch { get; set; }
     /// <summary>What to do when another machine asks this one for DLC (tasks/emulator-saves Phase 5c). Null means Auto.</summary>
     public DlcSendPolicy? DlcSend { get; set; }
+    /// <summary>The Switch user every device's Yuzu-based emulators use, as the server last said on a heartbeat
+    /// (<see cref="SwitchUserSharing"/>); null when none is chosen.</summary>
+    public SwitchUserDto? SwitchSharedUser { get; set; }
+    /// <summary>A shared Switch user this machine was put back from (“Put back the original user”): it isn't adopted again
+    /// here until another one is chosen, or this machine joins again.</summary>
+    public string? SwitchSharedUserDeclined { get; set; }
     /// <summary>The look the console last pushed on a heartbeat; null until one carried a look.</summary>
     public AppearanceDto? ConsoleAppearance { get; set; }
     /// <summary>When <see cref="ConsoleAppearance"/> last <b>changed</b> (UTC) — not when a heartbeat
@@ -281,6 +287,8 @@ public sealed class AgentConfig
             ManifestRefreshHandledAt = onDisk.ManifestRefreshHandledAt;
             XeniaProfileAtLaunch = onDisk.XeniaProfileAtLaunch;
             DlcSend = onDisk.DlcSend;
+            SwitchSharedUser = onDisk.SwitchSharedUser;
+            SwitchSharedUserDeclined = onDisk.SwitchSharedUserDeclined;
 
             // And the opt-out has to be ENFORCED here, not just carried. A long-lived host loaded
             // its game list at boot and holds it for the process lifetime, so after another process
@@ -390,6 +398,8 @@ public sealed class AgentConfig
         FollowConsoleAppearance = fresh.FollowConsoleAppearance;
         XeniaProfileAtLaunch = fresh.XeniaProfileAtLaunch;
         DlcSend = fresh.DlcSend;
+        SwitchSharedUser = fresh.SwitchSharedUser;
+        SwitchSharedUserDeclined = fresh.SwitchSharedUserDeclined;
         ConsoleAppearance = fresh.ConsoleAppearance;
         ConsoleAppearanceAt = fresh.ConsoleAppearanceAt;
         LocalAppearance = fresh.LocalAppearance;
@@ -469,6 +479,13 @@ public sealed class AgentConfig
     /// the local default.
     /// </para>
     /// </summary>
+    /// <summary>Store the shared Switch user a heartbeat carried (null: none chosen). Written only when it changed.</summary>
+    public void ApplySwitchSharedUser(SwitchUserDto? user)
+    {
+        if (SwitchSharedUser == user) return;
+        UpdateSettings(c => c.SwitchSharedUser = user);
+    }
+
     public void ApplyManifestSettings(int? refreshDays)
     {
         if (refreshDays is not { } pushed) return;

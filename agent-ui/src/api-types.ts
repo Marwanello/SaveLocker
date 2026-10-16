@@ -2371,6 +2371,227 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/switch/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchUserSharingDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/switch/shared-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ShareSwitchUserRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchUserActionResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchUserActionResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/switch/shared-user/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ApplySwitchUserRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchUserActionResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/switch/shared-user/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchUserActionResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/switch-copies": {
         parameters: {
             query?: never;
@@ -3606,6 +3827,11 @@ export interface components {
             accent: string;
             mark: string;
         };
+        ApplySwitchUserRequest: {
+            keep?: null | {
+                [key: string]: string;
+            };
+        };
         BrowseEntry: {
             name: string;
             path: string;
@@ -4064,6 +4290,14 @@ export interface components {
             /** Format: int64 */
             bytes: number;
         };
+        MachineSwitchUsersDto: {
+            /** Format: uuid */
+            machineId: string;
+            machineName: string;
+            users: components["schemas"]["SwitchUserReport"][];
+            /** Format: date-time */
+            reportedAt: string;
+        };
         OfflineQueueEntryDto: {
             /** Format: uuid */
             gameId: string;
@@ -4180,8 +4414,20 @@ export interface components {
             /** Format: uuid */
             preferredMachineId?: null | string;
         };
+        ShareSwitchUserRequest: {
+            id: string;
+            name: string;
+        };
         SuggestedPathDto: {
             path: null | string;
+        };
+        SwitchCollisionDto: {
+            titleId: string;
+            gameName: null | string;
+            /** Format: date-time */
+            hereWritten: null | string;
+            /** Format: date-time */
+            sharedWritten: null | string;
         };
         SwitchCopyActionRequest: {
             action: string;
@@ -4203,6 +4449,42 @@ export interface components {
             saves: null | string;
             install: null | string;
             gameVersion: null | string;
+        };
+        SwitchInstallUserDto: {
+            emulator: string;
+            install: string;
+            saves: string;
+            userId: null | string;
+            userName: null | string;
+            matches: boolean;
+            collisions: components["schemas"]["SwitchCollisionDto"][];
+            canUndo: boolean;
+            note: null | string;
+        };
+        SwitchUserActionResponse: {
+            state: components["schemas"]["SwitchUserSharingDto"];
+            message: string;
+            ok: boolean;
+        };
+        SwitchUserDto: {
+            id: string;
+            name: string;
+        };
+        SwitchUserReport: {
+            emulator: string;
+            install: string;
+            id: string;
+            name: string;
+            current: boolean;
+        };
+        SwitchUserSharingDto: {
+            shared: null | components["schemas"]["SwitchUserDto"];
+            declined: boolean;
+            here: components["schemas"]["SwitchInstallUserDto"][];
+            devices: components["schemas"]["MachineSwitchUsersDto"][];
+            reachable: boolean;
+            /** Format: uuid */
+            thisMachineId: null | string;
         };
         SyncNowResponse: {
             message: string;
