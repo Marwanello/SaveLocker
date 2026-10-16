@@ -101,7 +101,7 @@
 #                                 write a fake EmuDeck "Emulation" folder (three RetroArch saves, two ROMs'
 #                                 save states, one ROM; melonDS, Model 2, ScummVM; PCSX2 folder + file cards,
 #                                 DuckStation per-game + shared cards, Dolphin GameCube + Wii; PPSSPP, RPCS3,
-#                                 Vita3K, shadPS4 with PARAM.SFO files; Cemu, Azahar with ROM headers, Xenia) for the
+#                                 Vita3K, shadPS4 with PARAM.SFO files; Cemu, Azahar with ROM headers, Xenia; Eden, Ryujinx) for the
 #                                 emulator-saves feature, plus a second one at
 #                                 "<StateRoot>\Emulation-wsl" that the WSL test agent scans (an old Chrono save,
 #                                 no Chrono states). Default location is "<StateRoot>\Emulation",
@@ -618,6 +618,50 @@ function New-XeniaConfig([string]$Xuid) {
         "logged_profile_slot_1_xuid = `"`"                   `t# XUID of the profile to load on boot in slot 1`n`n[Storage]`ncontent_root = `"`"`n"
 }
 
+# A Ryujinx save index, bis/system/save/8000000000000000/0/imkvdb.arc (tasks/emulator-saves Phase 6): IMKV, a count, then per
+# entry IMEN, a 0x40 key (program ID, user high, user low, system save ID, type) and a 0x40 value (the save ID first).
+function New-RyujinxIndex([object[]]$Entries) {
+    $ms = New-Object IO.MemoryStream
+    $w = New-Object IO.BinaryWriter $ms
+    $w.Write([Text.Encoding]::ASCII.GetBytes('IMKV')); $w.Write([uint32]0); $w.Write([uint32]$Entries.Count)
+    foreach ($e in $Entries) {
+        $w.Write([Text.Encoding]::ASCII.GetBytes('IMEN')); $w.Write([uint32]0x40); $w.Write([uint32]0x40)
+        $key = New-Object byte[] 0x40
+        [BitConverter]::GetBytes([Convert]::ToUInt64($e.Title, 16)).CopyTo($key, 0)
+        [BitConverter]::GetBytes([Convert]::ToUInt64($e.User.Substring(0, 16), 16)).CopyTo($key, 8)
+        [BitConverter]::GetBytes([Convert]::ToUInt64($e.User.Substring(16), 16)).CopyTo($key, 16)
+        $key[0x20] = [byte]$e.Type
+        $w.Write($key)
+        $value = New-Object byte[] 0x40
+        [BitConverter]::GetBytes([uint64]$e.Id).CopyTo($value, 0)
+        $value[0x18] = 1
+        $w.Write($value)
+    }
+    $w.Flush(); return $ms.ToArray()
+}
+# A Ryujinx install's users and saves as EmuDeck links them (saves\ryujinx\{saves,system_saves,system}); each save is
+# <id>\0 (committed) and <id>\1 (working) beside its ExtraData0.
+function Write-RyujinxFixture([string]$Emulation, [string]$User, [object[]]$Saves) {
+    $ryu = Join-Path $Emulation 'saves\ryujinx'
+    Write-FixtureBytes (Join-Path $ryu 'system_saves\8000000000000000\0\imkvdb.arc') (New-RyujinxIndex $Saves)
+    Write-FixtureFile (Join-Path $ryu 'system\Profiles.json') "{`"profiles`":[{`"user_id`":`"$User`",`"name`":`"RyuPlayer`",`"account_state`":`"Open`"}],`"last_opened`":`"$User`"}"
+    foreach ($e in $Saves) {
+        $dir = Join-Path $ryu ('saves\{0:x16}' -f [uint64]$e.Id)
+        Write-FixtureBytes (Join-Path $dir 'ExtraData0') (New-Object byte[] 512)
+        foreach ($copy in '0', '1') {
+            foreach ($f in $e.Files.Keys) { Write-FixtureFile (Join-Path $dir "$copy\$f") $e.Files[$f] }
+        }
+    }
+}
+# A Yuzu fork's profiles.dat: 0x10 bytes, then eight 0xC8-byte users. The save folder is the UUID's bytes reversed.
+function New-YuzuProfiles([string]$Folder, [string]$Name) {
+    $data = New-Object byte[] (0x10 + 8 * 0xC8)
+    $uuid = [byte[]]::new(16)
+    for ($i = 0; $i -lt 16; $i++) { $uuid[15 - $i] = [Convert]::ToByte($Folder.Substring($i * 2, 2), 16) }
+    $uuid.CopyTo($data, 0x10); $uuid.CopyTo($data, 0x20)
+    [Text.Encoding]::UTF8.GetBytes($Name).CopyTo($data, 0x38)
+    return $data
+}
 function New-EmuDeckFixture {
     $target = if ($EmuDeckPath) { $EmuDeckPath } else { Get-EmuDeckFixturePath }
     $marker = Join-Path $target '.savelocker-emu-fixture'
@@ -752,6 +796,24 @@ function New-EmuDeckFixture {
     Write-XeniaPackage (Join-Path $x360Device '4D5309C9') '00000002' 'AAAA0000000000000000000000000000000000000A' 'Pre-Order Car Pack' 300000
     Write-XeniaPackage (Join-Path $x360Device '4D5309C9') '00000002' 'BBBB0000000000000000000000000000000000000B' 'Rally Expansion Pack' 6000000
     Write-XeniaPackage (Join-Path $x360Device '4D5309C9') '000B0000' 'tu00000002_00000000' 'Title Update 2' 150000
+    # Switch (Phase 6): Eden on EmuDeck for Windows syncs Tears of the Kingdom; Ryujinx on the same PC has its own, older
+    # copy of it (the Emulator settings page's copies), and a ROM whose title saved nowhere here is listed as "No save yet".
+    $totk = '0100F2C0115B6000'
+    $edenUser = 'C4D7AB8B14D1F6F277CD40D6A0F00ECA'
+    Write-FixtureBytes (Join-Path $target 'saves\eden\profiles\profiles.dat') (New-YuzuProfiles $edenUser 'WinEden')
+    Write-FixtureFile (Join-Path $target "saves\eden\saves\0000000000000000\$edenUser\$totk\progress.sav") "totk on eden $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $target "saves\eden\saves\0000000000000000\$edenUser\$totk\option.sav") 'totk options'
+    Write-RyujinxFixture $target '00000000000000010000000000000000' @(
+        @{ Title = $totk; User = '00000000000000010000000000000000'; Type = 1; Id = 1; Files = @{ 'progress.sav' = 'older totk on ryujinx, same pc' } })
+    # Older than Eden's, so Eden's is the copy Add games lists and the one that syncs.
+    Get-ChildItem -Recurse -File (Join-Path $target 'saves\ryujinx\saves') | ForEach-Object { $_.LastWriteTime = (Get-Date).AddDays(-2) }
+    Write-FixtureFile (Join-Path $target "storage\ryujinx\games\$($totk.ToLower())\gui\metadata.json") '{"title":"The Legend of Zelda: Tears of the Kingdom"}'
+    Write-FixtureFile (Join-Path $target 'roms\switch\Metroid Dread [010093801237C000][v0].nsp') ''
+    # A title the bundled eShop table doesn't know (homebrew), named here by its ROM only: enrolled from WSL first it is
+    # "Switch 01005A7E57E57000" on the server, and enrolling it here renames it.
+    $homebrew = '01005A7E57E57000'
+    Write-FixtureFile (Join-Path $target "saves\eden\saves\0000000000000000\$edenUser\$homebrew\save.dat") "homebrew on eden $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $target "roms\switch\SaveLocker Homebrew Test [$homebrew][v0].nsp") ''
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
@@ -862,6 +924,13 @@ function New-EmuDeckFixture {
         Write-XeniaPackage (Join-Path $wX360 '4D5309C9') '00000002' 'AAAA0000000000000000000000000000000000000A' 'Pre-Order Car Pack' 300000
         # Canary's 2023 named-profile layout (content/User/<title ID>): Halo 3, found and listed like any other.
         Write-FixtureFile (Join-Path $wX360 'User\4D5307E6\00000001\Halo3Save\save') 'halo 3 save in the named-profile layout'
+        # Switch on SteamOS: Ryujinx only, as on the Deck - an older Tears of the Kingdom in its own numbered folder, joined to
+        # Windows' Eden game by its title (D2), and Undertale, which must survive every Zelda pull.
+        Write-RyujinxFixture $wsl 'c1038d0cd5fa44a587d4d8488e902efb' @(
+            @{ Title = '0100F2C0115B6000'; User = 'c1038d0cd5fa44a587d4d8488e902efb'; Type = 1; Id = 5; Files = @{ 'progress.sav' = 'old totk on the WSL machine' } },
+            @{ Title = '010080B00AD66000'; User = 'c1038d0cd5fa44a587d4d8488e902efb'; Type = 1; Id = 2; Files = @{ 'Undertale\undertale.sav' = 'wsl undertale - must survive every Zelda pull' } },
+            # The homebrew title, with no ROM and no name here: "Switch 01005A7E57E57000" until Windows names it.
+            @{ Title = '01005A7E57E57000'; User = 'c1038d0cd5fa44a587d4d8488e902efb'; Type = 1; Id = 3; Files = @{ 'save.dat' = 'homebrew on the WSL machine' } })
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }

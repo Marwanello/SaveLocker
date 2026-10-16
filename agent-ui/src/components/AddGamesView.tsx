@@ -58,6 +58,12 @@ const EMULATORS: { id: string; label: string }[] = [
   { id: 'Cemu', label: 'Cemu' },
   { id: 'Azahar', label: 'Azahar' },
   { id: 'Xenia', label: 'Xenia' },
+  { id: 'Eden', label: 'Eden' },
+  { id: 'Citron', label: 'Citron' },
+  { id: 'Yuzu', label: 'Yuzu' },
+  { id: 'Suyu', label: 'Suyu' },
+  { id: 'Sudachi', label: 'Sudachi' },
+  { id: 'Ryujinx', label: 'Ryujinx' },
 ]
 
 /** The Console row's chips: one per EmuDeck system among `found` ("ps2"), labelled as the agent says it ("PS2"),
@@ -592,6 +598,11 @@ export function AddGamesView({ onEnrolled }: Props) {
               {!c.enrolled && c.statesOnly && (
                 <span className="sl-check-row__note" style={{ display: 'block', marginTop: 4 }}>
                   Save states only so far. Its in-game saves sync too once the game makes one.
+                </span>
+              )}
+              {!c.enrolled && c.noSaveYet && (
+                <span className="sl-check-row__note" style={{ display: 'block', marginTop: 4 }}>
+                  No save here yet: the ROM is here, the save isn’t. Adding it puts the server’s save where {c.emulatorName} will find it.
                 </span>
               )}
               {!c.enrolled && c.untouchedSeed && (

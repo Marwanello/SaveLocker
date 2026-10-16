@@ -85,6 +85,8 @@ public sealed class CommandPoller : IDisposable
         if (Interlocked.Exchange(ref _busy, 1) == 1) return;
         try
         {
+            await KeepSwitchCopiesAsync();
+            await ShareSwitchUserAsync();
             await ReconcileGamesAsync();
             // The first call of the tick is what tells us the server is there. A push that fails
             // reports nothing of the kind on its own — it is queued and retried — so this is the one
@@ -131,6 +133,73 @@ public sealed class CommandPoller : IDisposable
 
             Interlocked.Exchange(ref _busy, 0);
         }
+    }
+
+    /// <summary>
+    /// A Switch game's copies kept in step on this machine (<see cref="SwitchCopies"/>): one played in another emulator is
+    /// taken into the synced folder, whose watcher then pushes it. Before the server is asked, so it works offline too.
+    /// Under the game's sync lock, and skipped for a game a sync holds: the next tick takes it. An emulator the user waits
+    /// for (<see cref="EmulatorCopy.TellWhenReady"/>) that can now sync the game is announced, once.
+    /// </summary>
+    private async Task KeepSwitchCopiesAsync()
+    {
+        IReadOnlyList<SwitchEmulators.Setup>? setups = null;
+        foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && g.EmulatorCopies.Any(c => c.KeepInSync || c.TellWhenReady)).ToList())
+        {
+            try
+            {
+                setups ??= SwitchEmulators.Find();
+                var found = setups;
+                var (ran, lines) = await _engine().WithGameLockAsync(game,
+                    () => Task.FromResult(SwitchCopies.Reconcile(_config, game, AgentLogger.Log, found)), TimeSpan.Zero);
+                if (ran) foreach (var line in lines) _notify(line);
+                foreach (var emulator in SwitchCopies.NowReady(_config, game, found))
+                {
+                    _notify($"[{game.Name}] {emulator} can sync it now.");
+                    _notices?.Raise(NoticeCatalog.EmulatorReady(game.GameId, game.Name, emulator));
+                }
+            }
+            catch (Exception ex) { AgentLogger.LogException($"CommandPoller.KeepSwitchCopies '{game.Name}'", ex); }
+        }
+    }
+
+    // The shared user last asked about here, so a choice the user has to make is said once, not every tick.
+    private string? _switchUserAsked;
+
+    /// <summary>
+    /// One Switch user on every device (<see cref="SwitchUserSharing"/>): once a user is chosen on any device (it rides the
+    /// heartbeat), every Yuzu-based install here adopts it — after a Switch emulator closes, and unless this device was put
+    /// back from it. Titles saved under both users wait for the user to pick, which is said once.
+    /// </summary>
+    private async Task ShareSwitchUserAsync()
+    {
+        if (_config.SwitchSharedUser is not { } shared ||
+            string.Equals(_config.SwitchSharedUserDeclined, shared.Id, StringComparison.OrdinalIgnoreCase)) return;
+        try
+        {
+            var setups = SwitchEmulators.Find();
+            var todo = SwitchUserSharing.States(_config, shared, setups).Where(s => s.UserId is not null && !s.Matches).ToList();
+            if (todo.Count == 0 || SwitchCopies.RunningEmulator() is not null) return;
+            if (todo.FirstOrDefault(s => s.Note is not null || s.Collisions.Length > 0) is { } waits)
+            {
+                if (_switchUserAsked == shared.Id) return;
+                _switchUserAsked = shared.Id;
+                _notify(waits.Note ?? $"{waits.Emulator} here and {shared.Name} both have saves of " +
+                        $"{string.Join(", ", waits.Collisions.Select(c => c.GameName ?? c.TitleId))}. Choose which to keep in Settings, under Switch user.");
+                return;
+            }
+            var outcome = await SwitchUserSharing.ApplyAsync(_config, shared, setups, _api(), SwitchUserSharing.LocksOf(_engine()), null, AgentLogger.Log);
+            if (outcome.Refusal is { } why)
+            {
+                if (_switchUserAsked == shared.Id) return;
+                _switchUserAsked = shared.Id;
+                _notify($"Could not switch to the shared Switch user {shared.Name}: {why}");
+                return;
+            }
+            foreach (var line in outcome.Done) _notify(line);
+            if (outcome.Done.Count > 0) _onGamesChanged?.Invoke();
+        }
+        catch (Exception ex) { AgentLogger.LogException("CommandPoller.ShareSwitchUser", ex); }
     }
 
     // ----- game-list reconciliation (server → agent propagation) -----
@@ -186,6 +255,20 @@ public sealed class CommandPoller : IDisposable
                 if (!GameReleaseDto.Same(local.Release, sg.Release))
                 {
                     local.Release = sg.Release;
+                    changed = true;
+                }
+                if (sg.EmulatorKey is { } key && local.EmulatorKey != key)
+                {
+                    local.EmulatorKey = key;
+                    changed = true;
+                }
+                // The server renames a Switch game first enrolled as "Switch <title ID>" once a machine knows its name. Only
+                // that name follows the server's: no other game's is renamed under it.
+                if (!string.IsNullOrWhiteSpace(sg.Name) && local.Name != sg.Name &&
+                    SwitchTitles.TitleIdOf(sg.EmulatorKey) is { } titleId &&
+                    string.Equals(local.Name, SwitchTitles.Placeholder(titleId), StringComparison.OrdinalIgnoreCase))
+                {
+                    local.Name = sg.Name;
                     changed = true;
                 }
 
@@ -275,6 +358,7 @@ public sealed class CommandPoller : IDisposable
                 Name = sg.Name,
                 ManifestKey = sg.ManifestKey,
                 Release = sg.Release,
+                EmulatorKey = sg.EmulatorKey,
                 SaveDirectory = dir ?? "",
                 ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
             };

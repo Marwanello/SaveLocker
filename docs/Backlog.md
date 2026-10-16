@@ -8,7 +8,8 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 
 ## High priority
 
-- [Emulator saves: the other emulators (Groups A, B and C are done)](tasks/emulator-saves/plan.md)
+- [Emulator saves: the other emulators (Groups A–E are done, F is built)](tasks/emulator-saves/plan.md)
+- [Playthroughs: named save forks to switch between](tasks/save-playthroughs/summary.md)
 - [Native Linux save support](tasks/native-linux-saves/summary.md)
 - [Registry-based saves](tasks/registry-saves/summary.md)
 - [File-level saves](tasks/file-level-saves/summary.md)

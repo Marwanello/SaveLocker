@@ -206,6 +206,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/join.js": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/installer/download": {
         parameters: {
             query?: never;
@@ -1909,6 +1942,97 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/switch/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchUsersDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/switch/shared-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SwitchUserDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchUserDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -4958,6 +5082,7 @@ export interface components {
             os?: null | components["schemas"]["AgentOsInfo"];
             stagedVersion?: null | string;
             followsConsoleAppearance?: null | boolean;
+            switchUsers?: null | components["schemas"]["SwitchUserReport"][];
         };
         AgentHeartbeatResponse: {
             escalatedConflicts: components["schemas"]["ConflictEscalationDto"][];
@@ -4966,6 +5091,7 @@ export interface components {
             manifestRefreshDays?: null | number;
             /** Format: date-time */
             manifestRefreshRequestedAt?: null | string;
+            switchSharedUser?: null | components["schemas"]["SwitchUserDto"];
         };
         AgentInstallerStatus: {
             version: string;
@@ -5212,6 +5338,7 @@ export interface components {
             name: string;
             /** Format: int64 */
             size: number;
+            version?: null | string;
         };
         ContentTransferDto: {
             /** Format: uuid */
@@ -5255,6 +5382,7 @@ export interface components {
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             release?: null | components["schemas"]["GameReleaseDto"];
             emulatorProfile?: null | string;
+            emulatorKey?: null | string;
         };
         CreateSessionRequest: {
             password: null | string;
@@ -5357,6 +5485,7 @@ export interface components {
             emulators?: null | string[];
             release?: null | components["schemas"]["GameReleaseDto"];
             emulatorProfile?: null | string;
+            emulatorKey?: null | string;
         };
         GameReleaseDto: {
             console: string;
@@ -5498,6 +5627,14 @@ export interface components {
             suggestedPath: string;
             /** Format: date-time */
             lastSeen: string;
+        };
+        MachineSwitchUsersDto: {
+            /** Format: uuid */
+            machineId: string;
+            machineName: string;
+            users: components["schemas"]["SwitchUserReport"][];
+            /** Format: date-time */
+            reportedAt: string;
         };
         ManifestRefreshSettingsDto: {
             /** Format: int32 */
@@ -5664,6 +5801,21 @@ export interface components {
             machineId: string;
             machineName: string;
             reason: string;
+        };
+        SwitchUserDto: {
+            id: string;
+            name: string;
+        };
+        SwitchUserReport: {
+            emulator: string;
+            install: string;
+            id: string;
+            name: string;
+            current: boolean;
+        };
+        SwitchUsersDto: {
+            shared: null | components["schemas"]["SwitchUserDto"];
+            machines: components["schemas"]["MachineSwitchUsersDto"][];
         };
         TransferAnswerRequest: {
             approve: boolean;

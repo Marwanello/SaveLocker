@@ -20,6 +20,8 @@ public sealed record DlcCheckDto(
     public ContentTransferDto? Handover { get; init; }
     /// <summary>Other machines' requests for this game's packs that this machine is to answer or is sending.</summary>
     public ContentTransferDto[] Asked { get; init; } = [];
+    /// <summary>Can the missing packs be handed over from another machine (<see cref="ContentInventory.CanHandOver"/>)?</summary>
+    public bool CanHandOver { get; init; } = true;
 }
 
 /// <summary>
@@ -50,9 +52,10 @@ public static class DlcCheck
     {
         var names = missing.Select(p => string.IsNullOrWhiteSpace(p.Name) ? p.Id : p.Name).ToList();
         var shown = names.Count <= 3 ? string.Join(", ", names) : string.Join(", ", names.Take(3)) + $" and {names.Count - 3} more";
-        var mb = Math.Max(1, (missing.Sum(p => p.Size) + 512 * 1024) / (1024 * 1024));
+        var size = missing.Sum(p => p.Size);
+        var mb = size == 0 ? "" : $", {Math.Max(1, (size + 512 * 1024) / (1024 * 1024))} MB";
         var what = missing.All(p => p.Kind == ContentPackageDto.Update) ? "title update" : "DLC pack";
-        return $"{names.Count} {what}{(names.Count == 1 ? "" : "s")} ({shown}, {mb} MB)";
+        return $"{names.Count} {what}{(names.Count == 1 ? "" : "s")} ({shown}{mb})";
     }
 }
 

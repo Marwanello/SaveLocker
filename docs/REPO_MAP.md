@@ -20,6 +20,9 @@ SaveLocker/
 │   │   │                               #   refreshed on a window, never pinned
 │   │   ├── Appearance.cs                # The look (theme/accent/mark) as three closed id lists + the DTOs,
 │   │   │                               #   and `Appearances.Normalize` — every reader normalises, none rejects
+│   │   ├── SwitchTitles.cs              # Switch title ID → eShop name + icon hash (agent names, server icon);
+│   │   │                               #   SwitchTitles/switch-titles.tsv.gz from blawar/titledb, MIT (NOTICE.md);
+│   │   │                               #   Update-SwitchTitles.ps1 rebuilds it
 │   │   ├── PathResolver.cs              # Expands manifest placeholders (<winAppData>, <base>) to real
 │   │   │                               #   dirs, trimmed at the first wildcard so there is a dir to watch.
 │   │   │                               #   Constrained: no "..", and the link-resolved path must stay
@@ -183,6 +186,10 @@ SaveLocker/
 │   │   ├── CemuSaves.cs · AzaharSaves.cs · XeniaSaves.cs   # Group E's title-ID readers (Wii U, 3DS + Citra, Xbox 360):
 │   │   │                               #   Cemu's title cache/meta.xml; Ncch (a 3DS ROM's program ID + product code);
 │   │   │                               #   Xenia's per-profile and old content layouts
+│   │   ├── SwitchEmulators.cs · RyujinxSaveIndex.cs   # Group F: the Yuzu forks as a table + Ryujinx's imkvdb.arc; one
+│   │   │                               #   game per Switch title across emulators (EmulatorKey, D2), ROMs with no save yet
+│   │   ├── SwitchCopies.cs              # One Switch game in several emulators on one machine: copy, keep in sync, switch
+│   │   │                               #   which copy syncs (Emulator settings); backups under <state>/emulator-copies
 │   │   ├── EmulatorSaves.cs             # The table of emulator sources both scanners loop — a new emulator is one row
 │   │   ├── EmulatorPaths.cs             # Home/AppData for standalone emulator lookups; SAVELOCKER_EMULATOR_HOME = fixture home
 │   │   ├── GamelistXml.cs               # ES-DE gamelist.xml titles, arcade systems only (safe because of D1)

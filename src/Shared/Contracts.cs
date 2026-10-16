@@ -52,7 +52,9 @@ public record GameDto(
     // the name: two games may share a name when their regions differ.
     GameReleaseDto? Release = null,
     // The emulator profile the game's saves are under ("xenia:<XUID>"), set by the first machine that said.
-    string? EmulatorProfile = null);
+    string? EmulatorProfile = null,
+    // The emulated title the game is across emulators ("switch:0100F2C0115B6000"), set by the first machine that said.
+    string? EmulatorKey = null);
 
 /// <summary>
 /// Which release of a console game an emulator save belongs to, read from the game ID the save is filed under
@@ -191,7 +193,31 @@ public record CreateGameRequest(
     // yet, which takes it); without one, any game of the name, as before.
     GameReleaseDto? Release = null,
     // The emulator profile the caller's save is under ("xenia:<XUID>"). Recorded only on a game that has none yet.
-    string? EmulatorProfile = null);
+    string? EmulatorProfile = null,
+    // The emulated title the caller's save is ("switch:<title ID>"): a game with this key is joined whatever its name.
+    string? EmulatorKey = null);
+
+/// <summary>
+/// The emulated titles a game can be keyed by (D2, tasks/emulator-saves Phase 6): a title one emulator files under an ID
+/// of its own making, so only the title itself names it on every machine.
+/// </summary>
+public static class EmulatorKeys
+{
+    public const string SwitchPrefix = "switch:";
+
+    /// <summary>The value as stored — <c>switch:</c> and the 16-digit upper-case title ID — or null for anything else.</summary>
+    public static string? Clean(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var v = value.Trim();
+        if (!v.StartsWith(SwitchPrefix, StringComparison.OrdinalIgnoreCase)) return null;
+        var id = v[SwitchPrefix.Length..];
+        return id.Length == 16 && id.All(Uri.IsHexDigit) && id.Any(c => c != '0') ? SwitchPrefix + id.ToUpperInvariant() : null;
+    }
+
+    /// <summary>A Switch title's key.</summary>
+    public static string Switch(string titleId) => SwitchPrefix + titleId.ToUpperInvariant();
+}
 
 /// <summary>The emulator profiles a game can be under (tasks/emulator-saves Phase 5c).</summary>
 public static class EmulatorProfiles
@@ -471,23 +497,38 @@ public record SaveVersionDto(
 /// <summary>
 /// One installed package of a game — DLC (<see cref="Dlc"/>) or a title update (<see cref="Update"/>) — as the DLC check
 /// knows it (tasks/emulator-saves Phase 5c): the package's own ID, its display name, its size. Never its data.
+/// <see cref="Version"/> is the game version a title update brings ("1.6.0"), when the emulator says it (Switch).
 /// </summary>
-public record ContentPackageDto(string Kind, string Id, string Name, long Size)
+public record ContentPackageDto(string Kind, string Id, string Name, long Size, string? Version = null)
 {
     public const string Dlc = "dlc", Update = "update";
-    public const int MaxPackages = 1000;
+    public const int MaxPackages = 1000, MaxVersionLength = 32;
 
     /// <summary>
     /// The packages of <paramref name="needed"/> that <paramref name="here"/> lacks. DLC matches by kind and ID. A title
-    /// update is there when any title update is installed: each one replaces the last, nothing on disk says which is
-    /// newer, and a machine that updated since must not be held against a save made with the update before.
+    /// update is there when any title update is installed: each one replaces the last, and a machine that updated since
+    /// must not be held against a save made with the update before. When both sides name versions, it is there only when
+    /// the version here is the same or newer: a game can't open a save made by a newer version of itself.
     /// </summary>
     public static ContentPackageDto[] Missing(IReadOnlyList<ContentPackageDto>? needed, IReadOnlyList<ContentPackageDto>? here)
     {
         if (needed is null || needed.Count == 0) return [];
         var have = new HashSet<string>((here ?? []).Select(p => p.Kind + "/" + p.Id), StringComparer.OrdinalIgnoreCase);
-        var anyUpdate = (here ?? []).Any(p => p.Kind == Update);
-        return [.. needed.Where(p => !(p.Kind == Update ? anyUpdate : have.Contains(p.Kind + "/" + p.Id)))];
+        var updates = (here ?? []).Where(p => p.Kind == Update).ToList();
+        var newest = updates.Select(p => ParseVersion(p.Version)).Where(v => v is not null).Max();
+        return [.. needed.Where(p => !(p.Kind == Update ? HasUpdate(p) : have.Contains(p.Kind + "/" + p.Id)))];
+
+        bool HasUpdate(ContentPackageDto p) =>
+            updates.Count > 0 && (ParseVersion(p.Version) is not { } wanted || newest is null || newest >= wanted);
+    }
+
+    /// <summary>A display version ("1.6.0", "v2.0.8") as a comparable one, or null.</summary>
+    public static System.Version? ParseVersion(string? text)
+    {
+        var t = text?.Trim().TrimStart('v', 'V');
+        if (string.IsNullOrEmpty(t)) return null;
+        if (!t.Contains('.')) t += ".0";
+        return System.Version.TryParse(t, out var v) ? v : null;
     }
 
     /// <summary>Null when a reported list can be stored, else why not.</summary>
@@ -501,6 +542,7 @@ public record ContentPackageDto(string Kind, string Id, string Name, long Size)
             if (string.IsNullOrWhiteSpace(p.Id) || p.Id.Length > 128) return "A package needs an ID of at most 128 characters.";
             if ((p.Name?.Length ?? 0) > 256) return "A package name is at most 256 characters.";
             if (p.Size < 0) return "A package size cannot be negative.";
+            if ((p.Version?.Length ?? 0) > MaxVersionLength) return $"A package version is at most {MaxVersionLength} characters.";
         }
         return null;
     }
@@ -955,7 +997,33 @@ public record AgentHeartbeat(
     string? StagedVersion = null,
     // Whether this machine adopts the look the console pushes (its own Settings → Follow the console).
     // Null from an agent that predates the field: the console then cannot say, rather than guessing.
-    bool? FollowsConsoleAppearance = null);
+    bool? FollowsConsoleAppearance = null,
+    // The users of this machine's Yuzu-based Switch emulators, for "one Switch user on every device". Null from an agent
+    // that predates the field, which keeps what a newer one last reported.
+    SwitchUserReport[]? SwitchUsers = null);
+
+/// <summary>
+/// One user of one Yuzu-based Switch emulator install on a machine: <see cref="Id"/> is the user's save-folder name (its
+/// UUID's bytes reversed, 32 hex digits), <see cref="Current"/> whether the emulator is set to it. Display text and an ID
+/// to pick, never a save.
+/// </summary>
+public record SwitchUserReport(string Emulator, string Install, string Id, string Name, bool Current)
+{
+    public const int MaxUsers = 64, MaxNameLength = 64, MaxEmulatorLength = 32, MaxInstallLength = 16;
+
+    /// <summary>A user ID a save folder can be named by: 32 hex digits, not the all-zero device "user".</summary>
+    public static bool IsUserId(string? id) =>
+        id is { Length: 32 } && id.All(Uri.IsHexDigit) && id.Any(c => c != '0');
+}
+
+/// <summary>The Switch user every device's Yuzu-based emulators use, when one is chosen (<see cref="SwitchUserReport.Id"/>).</summary>
+public record SwitchUserDto(string Id, string Name);
+
+/// <summary>One machine's last report of its Switch users.</summary>
+public record MachineSwitchUsersDto(Guid MachineId, string MachineName, SwitchUserReport[] Users, DateTime ReportedAt);
+
+/// <summary>The shared Switch user, if one is chosen, and every machine's users to choose from.</summary>
+public record SwitchUsersDto(SwitchUserDto? Shared, MachineSwitchUsersDto[] Machines);
 
 /// <summary>
 /// Which operating system an agent runs on, so the console can put the right logo beside a machine.
@@ -1001,7 +1069,9 @@ public record AgentHeartbeatResponse(
     ConflictEscalationDto[] EscalatedConflicts,
     AppearanceDto? Appearance = null,
     int? ManifestRefreshDays = null,
-    DateTime? ManifestRefreshRequestedAt = null);
+    DateTime? ManifestRefreshRequestedAt = null,
+    // The Switch user every device is to use; null when none is chosen (or from a server that predates it).
+    SwitchUserDto? SwitchSharedUser = null);
 
 /// <summary>
 /// "This machine's scan found a save folder for a game it tracks but has not mapped." Reported so

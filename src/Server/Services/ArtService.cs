@@ -33,10 +33,12 @@ public sealed class ArtService
     private string? _apiKey;                 // resolved at the start of each operation
     private readonly string[] _allowedImageHosts;
     private readonly bool _allowInsecureImageUrls;
+    private readonly string _eshopImageBase;  // SwitchTitles.EshopImageBase; Art:EshopImageBase in the tests
 
     /// <summary>Hosts an artwork URL may point at (each also matches its subdomains): SteamGridDB's own
-    /// domain, whose CDN (cdn2.steamgriddb.com) serves the images. <c>Art:AllowedImageHosts</c> replaces it.</summary>
-    private static readonly string[] DefaultImageHosts = { "steamgriddb.com" };
+    /// domain, whose CDN (cdn2.steamgriddb.com) serves the images, and the eShop's image host, which serves a Switch
+    /// game's icon (<see cref="SwitchTitles"/>). <c>Art:AllowedImageHosts</c> replaces them.</summary>
+    private static readonly string[] DefaultImageHosts = { "steamgriddb.com", "img-eshop.cdn.nintendo.net" };
 
     // Hero art at full resolution is ~9.5 MB (see HeroMaxWidth); nothing legitimate is near this.
     private const long MaxImageBytes = 25L * 1024 * 1024;
@@ -86,6 +88,7 @@ public sealed class ArtService
         _download = factory.CreateClient("steamgriddb-cdn");
         _allowedImageHosts = ConfiguredImageHosts(config);
         _allowInsecureImageUrls = config.GetValue<bool?>("Art:AllowInsecureImageUrls") ?? false;
+        _eshopImageBase = config["Art:EshopImageBase"] is { Length: > 0 } eshop ? eshop : SwitchTitles.EshopImageBase;
         _artRoot = ResolveRoot(config, env);
     }
 
@@ -236,19 +239,30 @@ public sealed class ArtService
         Guid gameId, CancellationToken ct = default, bool onlyMissing = false)
     {
         _apiKey = await ResolveKeyAsync(ct);
-        if (string.IsNullOrWhiteSpace(_apiKey))
-            return (false, "SteamGridDB API key not configured — set it in the dashboard (Server settings).");
-
         var game = await _db.Games.FindAsync(new object?[] { gameId }, ct);
         if (game is null) return (false, "Unknown game.");
 
         var wanted = Assets.Where(a => !onlyMissing || string.IsNullOrEmpty(UrlFor(game, a.kind))).ToArray();
         if (wanted.Length == 0) return (true, "No art was missing.");
 
-        var sgdbId = await ResolveSgdbIdAsync(game, ct);
-        if (sgdbId is null) return (false, $"No SteamGridDB match for \"{game.Name}\".");
+        // A Switch game's icon is its eShop icon, whatever SteamGridDB has, and needs no key.
+        var eshop = wanted.Any(a => a.kind == "icon") && await EshopIconAsync(game, ct) is not null;
+        if (eshop)
+        {
+            await _db.SaveChangesAsync(ct);
+            wanted = wanted.Where(a => a.kind != "icon").ToArray();
+        }
+        if (string.IsNullOrWhiteSpace(_apiKey))
+            return eshop
+                ? (true, "Updated art: icon (Nintendo eShop).")
+                : (false, "SteamGridDB API key not configured — set it in the dashboard (Server settings).");
+        if (wanted.Length == 0) return (true, "Updated art: icon (Nintendo eShop).");
 
-        var found = new List<string>();
+        var sgdbId = await ResolveSgdbIdAsync(game, ct);
+        if (sgdbId is null)
+            return eshop ? (true, "Updated art: icon (Nintendo eShop).") : (false, $"No SteamGridDB match for \"{game.Name}\".");
+
+        var found = eshop ? new List<string> { "icon (Nintendo eShop)" } : new List<string>();
         foreach (var (kind, pathTemplate) in wanted)
         {
             var path = string.Format(pathTemplate, sgdbId);
@@ -272,8 +286,28 @@ public sealed class ArtService
     /// <summary>Best-effort fetch used on enroll; swallows errors so enroll never fails on art.</summary>
     public async Task TryRefreshOnEnrollAsync(Guid gameId, CancellationToken ct = default)
     {
-        if (!await HasKeyAsync(ct)) return;
-        try { await RefreshArtAsync(gameId, ct); } catch { /* art is non-critical */ }
+        try
+        {
+            if (await HasKeyAsync(ct)) await RefreshArtAsync(gameId, ct);
+            // No key: a Switch game still gets its eShop icon.
+            else if (await _db.Games.FindAsync(new object?[] { gameId }, ct) is { IconUrl: null or "" } game &&
+                     await EshopIconAsync(game, ct) is not null)
+                await _db.SaveChangesAsync(ct);
+        }
+        catch { /* art is non-critical */ }
+    }
+
+    /// <summary>
+    /// Store a Switch game's eShop icon as its icon (the game's <see cref="Game.EmulatorKey"/> names the title; the icon's
+    /// address comes from the bundled table, never from a caller) and return its served URL; null for a game that is no
+    /// Switch title, one the table has no icon for, or a download that fails.
+    /// </summary>
+    private async Task<string?> EshopIconAsync(Game game, CancellationToken ct)
+    {
+        if (SwitchTitles.For(SwitchTitles.TitleIdOf(game.EmulatorKey)) is not { IconHash: { } hash }) return null;
+        if (await DownloadAsync(game.Id, "icon", $"{_eshopImageBase}{hash}.jpg", ct) is not { } url) return null;
+        game.IconUrl = url;
+        return url;
     }
 
     /// <summary>Whether a SteamGridDB key is configured, from the dashboard or from configuration.</summary>

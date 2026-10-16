@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, SaveVsCloud, SwitchCopy, SwitchUserAction, SwitchUserSharing, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -185,11 +185,20 @@ export const api = {
   dlcHandoverCancel: (id: string) => post<{ message: string }>(`/api/dlc/handovers/${id}/cancel`, {}),
   xbox360Settings: () => req<Xbox360Settings>('/api/settings/xbox360'),
   xeniaProfile: (id: string) => req<XeniaProfile>(`/api/games/${id}/xenia-profile`),
+  switchCopies: (id: string) => req<SwitchCopy[]>(`/api/games/${id}/switch-copies`),
+  vsCloud: (id: string) => req<SaveVsCloud>(`/api/games/${id}/vs-cloud`),
+  switchCopyAction: (id: string, emulator: string, action: string, saves?: string | null) =>
+    post<SwitchCopy[]>(`/api/games/${id}/switch-copies/${encodeURIComponent(emulator)}`, { action, saves: saves ?? null }),
   setGameProfileAtLaunch: (id: string, profileAtLaunch: XeniaProfile['policy'] | null) =>
     fetch(`/api/games/${id}/xenia-profile`, {
       method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ profileAtLaunch }),
     }).then(r => { if (!r.ok) throw new Error(r.statusText) }),
   setXbox360Settings: (body: Xbox360Settings) => post<Xbox360Settings>('/api/settings/xbox360', body),
+  switchUsers: () => req<SwitchUserSharing>('/api/switch/users'),
+  shareSwitchUser: (id: string, name: string) => post<SwitchUserAction>('/api/switch/shared-user', { id, name }),
+  applySwitchUser: (keep?: Record<string, 'here' | 'shared'>) => post<SwitchUserAction>('/api/switch/shared-user/apply', { keep: keep ?? null }),
+  undoSwitchUser: () => post<SwitchUserAction>('/api/switch/shared-user/undo', {}),
+  stopSharingSwitchUser: () => req<SwitchUserAction>('/api/switch/shared-user', { method: 'DELETE' }),
   // Hashes the whole save folder. Only ever on an explicit "Check now", never on a timer or a list.
   syncStatus: (id: string) => req<SyncStatus>(`/api/games/${id}/sync-status`),
   /** Every save file of the game here, each compared with the server's latest. Hashes the save — on demand only. */

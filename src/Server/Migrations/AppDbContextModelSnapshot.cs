@@ -181,6 +181,12 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("StagedVersion")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("SwitchUsersAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SwitchUsersJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("TrackedGames")
                         .HasColumnType("INTEGER");
 
@@ -364,6 +370,9 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("CustomPathsJson")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("EmulatorKey")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("EmulatorProfile")
                         .HasColumnType("TEXT");
 
@@ -421,6 +430,10 @@ namespace SaveLocker.Server.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EmulatorKey")
+                        .IsUnique()
+                        .HasFilter("\"EmulatorKey\" IS NOT NULL");
 
                     b.HasIndex("Name", "Region")
                         .IsUnique();

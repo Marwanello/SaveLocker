@@ -306,6 +306,7 @@ is registered in the sandbox's own `mimeapps.list`, which the real session's bro
 ### Testing emulator saves (a fake EmuDeck folder)
 
 ```powershell
+.\tests\testenv.ps1 sync                 # the Linux agent builds from the WSL clone (~/SaveLocker): bring it to this branch first
 .\tests\testenv.ps1 build -Only console; .\tests\testenv.ps1 build -Only windows; .\tests\testenv.ps1 build -Only linux
 .\tests\testenv.ps1 emu-fixture          # <StateRoot>\Emulation (Windows) + <StateRoot>\Emulation-wsl (WSL)
 .\tests\testenv.ps1 up -Only console; .\tests\testenv.ps1 up -Only windows; .\tests\testenv.ps1 up -Only linux
@@ -467,7 +468,53 @@ http://localhost:5080. Add *Forza Horizon* on both machines first (Windows first
 11. **CLI** (Windows test agent): `SaveLocker.exe dlc status` lists Forza Horizon's packages and any hand-over id.
     `dlc ask "Forza Horizon"` and `dlc send <id>` / `dlc decline <id>` do what the buttons do.
 
-The Emulators chip then opens an Emulator row with sixteen chips, and a Console row (PS1, PS2, PS3, PS4, PS Vita, PSP, GameCube, Wii, Wii U, 3DS, Xbox 360, …). `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
+Group F adds **Switch** (Phase 6):
+- Windows: **Eden** (EmuDeck links, user *WinEden*) with *The Legend of Zelda: Tears of the Kingdom*
+  (`0100F2C0115B6000`, named by the Ryujinx `metadata.json` in `storage\ryujinx\games`), and **Ryujinx** on the same
+  PC with its own older copy in `saves\ryujinx\saves\0000000000000001\0` (and `\1`). A ROM
+  `roms\switch\Metroid Dread [010093801237C000][v0].nsp` has no save anywhere.
+- WSL: **Ryujinx only**, as on the Deck: an older TotK in `saves\ryujinx\saves\0000000000000005\0`, and *Undertale*
+  (`0000000000000002`), which must survive every Zelda pull.
+- Both: a homebrew title `01005A7E57E57000` the bundled eShop table doesn't know. Windows names it from its ROM
+  (*SaveLocker Homebrew Test*, Eden save); WSL has only Ryujinx's save (`0000000000000003`) and no name for it.
+- Names come from Ryujinx's `metadata.json`, then a ROM's file name, then the bundled eShop table
+  (`src/Shared/SwitchTitles`), and only then `Switch <title ID>`.
+
+1. **Add games, Windows:** the *Emulators* row has chips *Eden … Ryujinx*; the *Console* row a *Switch* chip. TotK is
+   **one** row, *Eden*, `…\saves\eden\saves\0000000000000000\C4D7AB8B14D1F6F277CD40D6A0F00ECA\0100F2C0115B6000`
+   (Eden's copy is the newer). *Metroid Dread* is a row with *No save here yet: … where Eden will find it*. Each Switch
+   row has the *New game … on the server* line with **Change**; Change opens the choices (only the automatic one for a
+   new title). Add TotK. On the console its icon is the eShop's (the server fetches it from `img-eshop.cdn.nintendo.net`,
+   no SteamGridDB key needed).
+2. **Add games, WSL:** TotK is a Ryujinx row named *The Legend of Zelda: Tears of the Kingdom* (from the eShop table:
+   WSL has no metadata or ROM), and its line reads *Joins “The Legend of Zelda: Tears of the Kingdom”*; **Change** says
+   every save of the game joins it. Add it: it joins Windows' game (*2 sources*: Eden and Ryujinx).
+3. **Between machines:** Push on Windows, Pull latest on WSL. WSL's `…\0000000000000005\0\progress.sav` **and**
+   `…\1\progress.sav` now read *totk on eden …*; Windows' `option.sav` arrived too; Undertale is untouched.
+   Change WSL's `0\progress.sav`, push, pull on Windows: Eden's file has the change.
+4. **Emulator settings (Windows):** TotK's page → **Emulator settings** shows *Switch emulators on this device*: *Eden —
+   Syncs with the server*, *Ryujinx — Different save, older*, each with its user and folder.
+   - **Copy the synced save here** on Ryujinx: the row turns *Same save*; Ryujinx's `0` and `1` hold Eden's files; a
+     zip appears under the test agent's `emulator-copies\<game id>`.
+   - Turn **Keep in sync** on. Edit Ryujinx's `0\progress.sav`: within ~20 s (the poller) Eden's file has the same
+     text, and the tray pushes it. Edit Eden's file: within ~20 s Ryujinx's `0` and `1` follow.
+   - Edit **both** files, then wait: neither changes, the row says **Both changed** with two buttons; pick one and both
+     copies hold that one.
+   - **Make this the synced copy** on Ryujinx: the page now says *syncs from Ryujinx*, Eden is the copy (still kept in
+     sync), the console's game page shows Windows' folder as Ryujinx's.
+   - Start any process named `Ryujinx`/`eden` (e.g. copy `notepad.exe` to `eden.exe` and run it): every copy button
+     answers *Eden is running. Close it first.*, and keep-in-sync does nothing until it exits.
+5. **No save yet:** add *Metroid Dread* on Windows. Its folder (shown on the row) doesn't exist yet; write any file into
+   it and push: the save reaches the server. WSL lists no Dread row: Ryujinx has no save slot for a game it never ran.
+6. **Enrolled from WSL first** (a fresh server, or before step 1 adds anything): on WSL, Add games lists
+   *Switch 01005A7E57E57000*. Add it: the console shows a game of that name. On Windows, *SaveLocker Homebrew Test*'s
+   line reads *Joins “SaveLocker Homebrew Test”* (Change: *It takes the name …*). Add it: the console's game is renamed
+   *SaveLocker Homebrew Test* (Audit log: `game.rename`), and within ~20 s WSL's Games page shows the new name too.
+7. **Picked by hand:** on the console, **Add game** *Metroid Dread* (no folder needed). On Windows' Add games, Dread's
+   automatic line is *New game “Metroid Dread (Switch)”*; **Change** lists the console's *Metroid Dread* as *Takes this
+   title*. Pick it and add: the console's *Metroid Dread* now has Windows' Eden folder and the title key, not a second game.
+
+The Emulators chip then opens an Emulator row with twenty-two chips, and a Console row (PS1, PS2, PS3, PS4, PS Vita, PSP, GameCube, Wii, Wii U, 3DS, Xbox 360, Switch, …). `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
 `Emulation` folder is the safe way to try real saves. The Deck needs no override: its test daemon scans
 the Deck's real EmuDeck install, so add only a game whose save you have backed up.
 
@@ -546,6 +593,8 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Emulator saves Phase 16, linking by hand + Model 2 states (2026-10-07, `emulator-saves-group-b`) | `dotnet test tests/SaveLocker.Agent.Tests` **325** (+5 `LinkByHandTests` — two machines against a real server; the re-check of a pick and the here-first `TrackedFor` each mutation-checked; +1 `ArcadeSavesTests` for Model 2 states, slot names mutation-checked) · Windows agent and `Agent.Linux` build · `agent-ui` lint + build clean · `agent-ui/src/api-types.ts` regenerated from a scratch tray on :5190, additions only · Add games checked in the browser against a scratch server seeded as a Deck (join, keep as its own game, greyed-out different files) |
 | Emulator saves Group C (2026-10-07, `emulator-saves-group-c`) | `dotnet test tests/SaveLocker.Agent.Tests` **361** (+29: `MemoryCardTests` 17 — the shared-card detection and the PCSX2 per-game scope each mutation-checked; `GroupCSyncTests` 5, two or three machines against a real server — PS2 folder card, PS1 card, Wii, and Dolphin vs PrimeHack kept apart, the emulator rule and the in-batch emulator each mutation-checked; `EmulatorChipTests` 7 — a missing chip fails it) · Windows agent, `Agent.Linux` and server build · `web` + `agent-ui` lint and build clean · `openapi.json`, `web/src/api-types.ts` and `agent-ui/src/api-types.ts`: additions only (`GameDto.emulators`; `CandidateDto.notSyncable`/`emulatorConsole`), the agent's regenerated from a scratch tray on :5193 · `testenv emu-fixture` written to a scratch folder and scanned with the dev CLI; Add games checked in the browser against a sandboxed tray (the live rig was in use, see CONTEXT) |
 | Emulator saves Group C, names by serial (2026-10-08) | `dotnet test tests/SaveLocker.Agent.Tests` **363** (+2: the Prince of Persia case — two sequels whose `icon.sys` says only the series, and one game from two regions — mutation-checked; `ConsoleTitles` spellings; the four console tests now assert serial names and a fallback each) · solution build · `testenv.ps1` parses |
+| Emulator saves Group F follow-ups: eShop names and icons, placeholder renamed, Change on Switch rows (2026-10-14, `emulator-saves-group-f`) | `dotnet test tests/SaveLocker.Agent.Tests` **558** (+7: `SwitchNamesAndLinksTests` 4; `GroupFSyncTests` +3 against real servers — the WSL-first rename, a game picked by hand taking the title, the eShop icon from a stand-in host; both server changes mutation-checked) · solution build clean · `agent-ui` typecheck and lint clean · no API shape change · testenv: WSL-first homebrew renamed on Windows' add and followed on WSL; TotK's real eShop icon fetched by the rig's console |
+| Emulator saves Group F: Switch (2026-10-13, `emulator-saves-group-f`) | `dotnet test tests/SaveLocker.Agent.Tests` **551** (+12 since 539: `SwitchSavesTests` 8 — the PC's real `imkvdb.arc`, the reversed profile UUID, one row per title with names, device saves, "No save yet", Ryujinx slots; `GroupFSyncTests` 3 against a real server — Eden ↔ Ryujinx as one game (the title-key match mutation-checked: with it off on both sides the test fails), a same-named other title kept apart, the same-machine copies kept in step / asked / switched; +1 chip label) · solution build clean · `web` + `agent-ui` typecheck and lint clean · `openapi.json`, `web/src/api-types.ts` and `agent-ui/src/api-types.ts` (regenerated from a scratch tray on :5193): additions only · migration `AddGameEmulatorKey` · `testenv emu-fixture` written to a scratch folder and scanned with the dev CLI; Add games and the Switch Emulator settings page clicked through against a scratch tray + server (copy here, keep in sync live through the poller) |
 | Emulator settings, DLC sent automatically, 8 GB hand-overs (2026-10-13) | `dotnet test tests/SaveLocker.Agent.Tests` **523** (+6 since 517: an answer applies to one launch, a client that can ask asks again, a refused resolve says why (the bare-string body, mutation-checked), the default send policy sends (mutation-checked), the console asks for a machine and its agent installs what it lacked (the missing-pack filter mutation-checked), the 9 GB over-limit request) · server build clean · `web` + `agent-ui` lint and build clean · `openapi.json` and `web/src/api-types.ts`: additions only (`ConsoleTransferRequest`, `POST /api/games/{id}/transfers`); the agent API is unchanged · agent Emulator settings clicked through against the rig's Windows tray (all three sections); console Emulator settings against the new server on a scratch copy of the rig's database, including **Send from WinTest** creating a hand-over that **Hand-overs** then lists with **Cancel** |
 | Phase 5c steps 5–14: the profile split by game, the core, the game's profile, DLC check and hand-over, held pulls, console cards (2026-10-13) | `dotnet test tests/SaveLocker.Agent.Tests` **517** (+5 since 513: the hand-over end to end between two machines against a real server — held, asked, sent, installed, delivered and deleted, the held pull then restores; never-send declines; a received zip installs only its own package at the listed size and refuses a path outside it; every launch check reports what it did) · solution build clean · `web` + `agent-ui` typecheck and lint clean · `openapi.json` and `web/src/api-types.ts`: additions only; `agent-ui/src/api-types.ts` edited by hand · migration `AddLaunchProfileReport` · `testenv emu-fixture` writes the packages with headers matching `XeniaContent.BuildHeader` byte for byte · Decky PR #5 `tsc` clean |
 | Phase 5c steps 1–4: Xenia file formats, launch questions, the profile at launch (2026-10-12) | `dotnet test tests/SaveLocker.Agent.Tests` **495** (+21: `XeniaFormatsTests` 14 — XDBF layout and round trip, one row merged with the others kept and the totals recounted, Account with both keys, both header sizes, both DLC layouts, config edits that change only the value, Xenia Manager's per-game config; `XeniaLaunchProfileTests` 7 — ask with the default applied, keep puts it back and the wrapper's check after it honours that (mutation-checked), don't ask again, the wrapper switches silently, Leave / already right / Xenia running / pre-profile layout leave it, per-game config). With `SAVELOCKER_XENIA_CAPTURE` pointing at captured profile files, the real PC's and Deck's GPDs round-trip and their totals match · solution build clean · `agent-ui` typecheck clean, `agent-ui/src/api-types.ts` edited by hand (additions only: `Ask`, `LaunchQuestion`, `LaunchChoice`, `LaunchAnswerRequest`, `launch-answer`) · Decky PR #5 `tsc` + build clean · Playnite PR #8 **28** tests, Release build clean |
