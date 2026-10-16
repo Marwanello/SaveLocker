@@ -2026,7 +2026,11 @@ card is gone; the controller only drives a focused agent window. `api-types.ts` 
 1.6.0, the PC's Eden the base 1.0.0; the save copied byte for byte). The DLC check now covers a Switch game's version,
 read from the emulator's log or game list cache: a newer version's save holds the pull, and the picker shows each
 emulator's version and warns. Animal Crossing also ties residents to the emulator user's ID (decrypted `main.dat`),
-so the Deck and PC need one user ID or the game asks to relink on each switch — documented, not automated.
+so the Deck and PC need one user ID or the game asks to relink on each switch.
+<br>**2026-10-16, last:** built — **Settings → One Switch user on every device** (`SwitchUserSharing`): the user picks a user
+ID; every Yuzu-based install on every device adopts it (backed up, saves moved, games re-pointed on the server too),
+titles saved under both users wait for a pick, each device can put its original user back. Migration `AddSwitchUsers`.
+Not yet run on the rig or the Deck — pick the Deck's Yuzu user `DBBE23FA…` (the island's).
 <br>**Next action for this item:** the rest of the testenv pass for Group F (`Build and Run` → *Testing emulator saves*,
 Group F steps 1–7, plus the emulator picker), then the Switch row of Group H on the Deck (Yuzu ↔ Ryujinx) and the PC (Eden).
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,

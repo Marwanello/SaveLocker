@@ -57,4 +57,15 @@ SaveLocker reads which version each emulator runs: a Yuzu fork logs it each time
 
 Each emulator files a save under a user: a Yuzu fork by the user's folder, Ryujinx in its index. A copy goes under that emulator's current user (Yuzu's *current user*, Ryujinx's last-opened profile), which the Emulator settings page shows.
 
-Most games don't record the user in their save files, so nothing else about the user needs to match. Some do. Animal Crossing links each island resident to the ID of the user who made them. On an emulator whose user has another ID, the game can't find that user and asks to link the resident to a user here, and the next device then asks again. To avoid that, give the Yuzu-based emulators on all your devices the same user: copy one's `profiles.dat` (`nand/system/save/8000000000000010/su/avators/`, which EmuDeck links as `Emulation/saves/<emulator>/profiles`) over the others'. Then move each device's own account saves (`…/save/0000000000000000/<old user>/…`) to the new user's folder, so its other games still find them.
+Most games don't record the user in their save files, so nothing else about the user needs to match. Some do: Animal Crossing links each island resident to the ID of the user who made them. On an emulator whose user has another ID, the game can't find that user and asks to link the resident to a user here, and the next device then asks again.
+
+### One Switch user on every device
+
+**Settings → One Switch user on every device** gives every device's Yuzu-based emulators (Eden, Citron, Yuzu and the other forks) the same user ID. A Switch game's **Emulator settings** shows it too, while your devices' users differ.
+
+- **You pick the user.** The card lists each device's users with their IDs, and SaveLocker never picks one for you. For Animal Crossing, pick the user whose device the island was made on.
+- **Every install switches**, on this device at once and on the others at their next check, never while a Switch emulator is open. The current user of each Yuzu-based install takes the chosen ID and keeps its name. Its saves move to the new ID's folder, so every game still finds its save, and the games SaveLocker syncs follow, on the server too.
+- **Backups:** the emulator's users file and every save about to move or be replaced are zipped first in the agent's `switch-users` folder.
+- **A game saved under both users** on one device waits. The card asks which one to keep, and the other is in the backup.
+- **Put back this device's original user** undoes it on this device from the backup, and this device then keeps its own user. **Use it here too** switches it again. **Stop sharing a user** stops devices switching; none is put back.
+- Ryujinx keeps the user ID in its own save list too, so it's left as it is.

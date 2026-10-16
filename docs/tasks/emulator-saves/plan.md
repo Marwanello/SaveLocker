@@ -798,6 +798,26 @@ damaged):
   Picker clicked through against the stand-in agent (Yuzu 1.6.0, Eden 1.0.0). `api-types.ts` regenerated from a running
   Linux agent; `openapi.json` from a scratch server (also adds the existing `/join.js` it had missed).
 
+Follow-up, 2026-10-16, last (maintainer: build "one Switch user on every device" into SaveLocker; always ask which user;
+every Yuzu-based install changes; in this PR):
+- **Server:** the heartbeat carries `SwitchUsers` (each Yuzu-based install's users, kept on `AgentHealth.SwitchUsersJson`,
+  migration `AddSwitchUsers`); the chosen user is the setting `Switch:SharedUser`, set and cleared by any machine
+  (`/api/agent/switch/shared-user`, audited) and handed out as `AgentHeartbeatResponse.SwitchSharedUser`.
+- **Agent:** `SwitchUserSharing` — per install: refuse while a Switch emulator runs, refuse a title saved under both users
+  until the user picks, zip `profiles.dat` + the old user's saves (+ a replaced one) to `<state>/switch-users`, tell the
+  server every tracked game's new folder, move the old user's folder to the new ID's, rewrite the current user's UUID in
+  `profiles.dat` (both copies; the name kept) and rename an avatar named by it, then re-point the games and record it in
+  `switch-users/applied.json` for the undo. The poller adopts the shared user each tick (`ShareSwitchUserAsync`), says a
+  needed choice once; "Put back this device's original user" undoes from the backup and stops adopting that ID here
+  (`SwitchSharedUserDeclined`). Ryujinx is left alone (its save index holds the user too).
+- **UI:** `SwitchUserCard` in Settings, and on a Switch game's Emulator settings while devices differ: every device's users,
+  a pick (never preselected), a confirmation saying every step, the both-users choice per title, undo, stop sharing.
+- Tests +4 (`SwitchUserSharingTests` against a real server: adopt and put back with the game re-pointed on the server and
+  the backup's contents; a title under both users waits, kept from here, and the shared one's copy restored by the undo;
+  an install that already has the ID as another user; the server's report, setting and heartbeat). Agent tests **651**.
+  The card clicked through against the stand-in agent (pick, confirm, both-users choice, switch, put back). Not yet run on
+  the rig or the Deck.
+
 ### The other emulators — researched 2026-10-07
 
 The maintainer asked to add **Cemu, Azahar, Model 2, PPSSPP and the Switch family (Yuzu, Ryujinx and Citron
