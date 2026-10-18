@@ -15,3 +15,21 @@ Seeded 2026-09-08 from `docs/Backlog.md` during the vault reorg (`chore/vault-do
   4. *UI* — a badge, not a name suffix: two cards both titled "A Short Hike" with a distinguishing tag reads better than inventing a second string identity for one real game. The Add Games filter row already has the right slot (`FILTERS` in `AddGamesView.tsx`, `AddFilter` in `Ui/UiApp.cs`).
   <br>**Related — read together with Emulator saves, above.** An emulator's own save-state format is genuinely platform-neutral (RetroArch's format doesn't care what OS RetroArch runs on), which is why that item was already flagged as the first thing that could sync Deck↔Windows with no Proton involved. A native-Linux GAME build carries no such guarantee — its save format is whatever the developer's Linux port happened to use, unrelated to the Windows build's — which is exactly why this item needs the platform-isolation step (#2) that emulator saves may not.
   <br>**Deliberately not attempted in phase 1:** cross-format conversion or merging — nothing about the manifest or the archive format gives any basis for that, and guessing at compatibility between two save formats is precisely the mistake `../logs/2026-08-19_moondeck-save-detection.md` argues against throughout.
+
+---
+
+## Competitor research (2026-10-18) — the design is confirmed
+
+**Priority: High.** From [[logs/2026-10-18_competitor-gap-analysis]].
+
+- **BlockSlot (MIT) ships step 2 of this plan.** Each OS family keeps its own history on the server, and a game
+  under Proton counts as **Windows**: `engine/savepick.py` `save_family()` returns Windows when the launch command
+  runs under Wine, otherwise the family of the save paths or the host's own OS; `engine/slotd.py` `decide()` only
+  looks at the history of this device's family ("a newer save made for another OS is neither restored nor asked
+  about"). That is this plan's `Game.Platform` + (canonical name, platform) key, built and in use.
+- How SaveLocker can tell a Proton launch from a native one without guessing: the Linux launch wrapper already
+  sees the command it runs (`ProtonRun.cs`); a Proton launch goes through Steam's `proton` script. Use that as
+  the signal, and fall back to "try both resolvers" from step 1 for games never launched through the wrapper.
+- Ludusavi (MIT) does not attempt this either: its *Transfer between operating systems* help page says cross-OS
+  restore is not supported, beyond hand-written redirects.
+- Also unblocks [[tasks/macos-agent/summary|macOS agent]], which needs the same per-platform lineage.
