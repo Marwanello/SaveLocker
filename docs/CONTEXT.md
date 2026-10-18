@@ -2031,8 +2031,14 @@ so the Deck and PC need one user ID or the game asks to relink on each switch.
 ID; every Yuzu-based install on every device adopts it (backed up, saves moved, games re-pointed on the server too),
 titles saved under both users wait for a pick, each device can put its original user back. Migration `AddSwitchUsers`.
 Not yet run on the rig or the Deck — pick the Deck's Yuzu user `DBBE23FA…` (the island's).
-<br>**Next action for this item:** the rest of the testenv pass for Group F (`Build and Run` → *Testing emulator saves*,
-Group F steps 1–7, plus the emulator picker), then the Switch row of Group H on the Deck (Yuzu ↔ Ryujinx) and the PC (Eden).
+<br>**2026-10-18: Group F done** (PR #73, ready to merge, CI green). Animal Crossing 3.0.3 loads on the PC (Eden) and the
+Deck (Eden) through the rig. Found and fixed: one Eden listed twice (EmuDeck's link ends in `/`), and a device save copied
+under a user, where the emulator never opens it — the server now records a device-save game (`EmulatorProfile =
+"switch:device"`), joins and copies use the device save, and a machine that kept it under a user moves it there itself.
+Agent tests **656**. Details: `session_summary.md`, `progress.md`.
+<br>**Gotcha:** `testenv.ps1 build` builds the Deck/WSL agents from the WSL clone — run `testenv.ps1 sync` first after
+committing, or the Deck keeps the previous build (check `testenv.ps1 status`'s build labels).
+<br>**Next action for this item:** merge PR #73; then Group G, H (the other emulators), I or J.
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
 steps 1–5 of the profile and 1–11 of the DLC hand-over), then Forza Horizon for real between PC and Deck (Group H).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.

@@ -11,7 +11,7 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 - [Hold back a save folder that was emptied](tasks/empty-save-hold/summary.md)
 - [A pull keeps this machine's excluded files](tasks/keep-excluded-files-on-pull/summary.md)
 - [Registry-based saves](tasks/registry-saves/summary.md)
-- [Emulator saves: the other emulators (Groups A–E are done, F is built)](tasks/emulator-saves/plan.md)
+- [Emulator saves: the other emulators (Groups A–F are done)](tasks/emulator-saves/plan.md)
 - [Playthroughs: named save forks to switch between](tasks/save-playthroughs/summary.md)
 - [File-level saves](tasks/file-level-saves/summary.md)
 - [Native Linux save support](tasks/native-linux-saves/summary.md)
