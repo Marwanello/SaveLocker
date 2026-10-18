@@ -1302,6 +1302,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/games/{id}/file-names": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FileNameDto"][];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/games/{id}/launch-profile": {
         parameters: {
             query?: never;
@@ -4005,6 +4060,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/merge-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    into: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MergePreviewDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MergeGamesRequest"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/rollback": {
         parameters: {
             query?: never;
@@ -5453,6 +5609,11 @@ export interface components {
             /** Format: int64 */
             size: number;
         };
+        FileNameDto: {
+            key: string;
+            server: string;
+            local: string;
+        };
         GameContentDto: {
             /** Format: uuid */
             headVersionId: null | string;
@@ -5486,6 +5647,7 @@ export interface components {
             release?: null | components["schemas"]["GameReleaseDto"];
             emulatorProfile?: null | string;
             emulatorKey?: null | string;
+            mergedGameIds?: null | string[];
         };
         GameReleaseDto: {
             console: string;
@@ -5619,6 +5781,7 @@ export interface components {
             savePath: string;
             /** @default main */
             pathKey: string;
+            fileNames?: null | components["schemas"]["FileNameDto"][];
         };
         MachineScanCandidateDto: {
             /** Format: uuid */
@@ -5641,6 +5804,32 @@ export interface components {
             refreshDays: number;
             /** Format: date-time */
             requestedAt: null | string;
+        };
+        MergeGamesRequest: {
+            /** Format: uuid */
+            intoId: string;
+            confirmName: string;
+        };
+        MergeMachineDto: {
+            /** Format: uuid */
+            machineId: string;
+            machineName: string;
+            outcome: string;
+        };
+        MergePreviewDto: {
+            /** Format: uuid */
+            fromId: string;
+            fromName: string;
+            /** Format: uuid */
+            intoId: string;
+            intoName: string;
+            /** Format: int32 */
+            versions: number;
+            machines: components["schemas"]["MergeMachineDto"][];
+            fromFiles: string[];
+            intoFiles: string[];
+            warnings: string[];
+            refusal: null | string;
         };
         RedeemEnrollmentRequest: {
             token: string;
@@ -5687,6 +5876,7 @@ export interface components {
             /** @default false */
             protected: boolean;
             content?: null | components["schemas"]["ContentPackageDto"][];
+            mergedFrom?: null | string;
         };
         ScanPathCandidate: {
             /** Format: uuid */

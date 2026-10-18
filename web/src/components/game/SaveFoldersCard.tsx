@@ -208,7 +208,17 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
                 </div>
               </form>
             ) : stored ? (
-              <PathField path={stored.savePath} />
+              <>
+                <PathField path={stored.savePath} />
+                {stored.fileNames && stored.fileNames.length > 0 && (
+                  <div className="text-[11.5px] text-dim">
+                    {m.name} keeps its own names for these files (another dump of the ROM):
+                    <ul className="font-mono text-[11px] text-fg mt-0.5">
+                      {stored.fileNames.map(n => <li key={`${n.key}:${n.server}`}>{n.local} · on the server: {n.server}{n.key !== 'main' ? ` (${n.key})` : ''}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </>
             ) : candidate ? (
               // The agent found this but has NOT adopted it — a human confirms here.
               <div className="flex flex-col gap-1">

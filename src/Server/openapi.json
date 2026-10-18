@@ -1026,6 +1026,55 @@
         }
       }
     },
+    "/api/agent/games/{id}/file-names": {
+      "put": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FileNameDto"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/agent/games/{id}/launch-profile": {
       "put": {
         "tags": [
@@ -3374,6 +3423,94 @@
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/games/{id}/merge-preview": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "into",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergePreviewDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/games/{id}/merge": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeGamesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -5949,6 +6086,25 @@
           }
         }
       },
+      "FileNameDto": {
+        "required": [
+          "key",
+          "server",
+          "local"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string"
+          },
+          "local": {
+            "type": "string"
+          }
+        }
+      },
       "GameContentDto": {
         "required": [
           "headVersionId",
@@ -6140,6 +6296,16 @@
               "null",
               "string"
             ]
+          },
+          "mergedGameIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         }
       },
@@ -6685,6 +6851,15 @@
           "pathKey": {
             "type": "string",
             "default": "main"
+          },
+          "fileNames": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FileNameDto"
+            }
           }
         }
       },
@@ -6758,6 +6933,107 @@
               "string"
             ],
             "format": "date-time"
+          }
+        }
+      },
+      "MergeGamesRequest": {
+        "required": [
+          "intoId",
+          "confirmName"
+        ],
+        "type": "object",
+        "properties": {
+          "intoId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmName": {
+            "type": "string"
+          }
+        }
+      },
+      "MergeMachineDto": {
+        "required": [
+          "machineId",
+          "machineName",
+          "outcome"
+        ],
+        "type": "object",
+        "properties": {
+          "machineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "machineName": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          }
+        }
+      },
+      "MergePreviewDto": {
+        "required": [
+          "fromId",
+          "fromName",
+          "intoId",
+          "intoName",
+          "versions",
+          "machines",
+          "fromFiles",
+          "intoFiles",
+          "warnings",
+          "refusal"
+        ],
+        "type": "object",
+        "properties": {
+          "fromId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fromName": {
+            "type": "string"
+          },
+          "intoId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "intoName": {
+            "type": "string"
+          },
+          "versions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "machines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MergeMachineDto"
+            }
+          },
+          "fromFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "intoFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "refusal": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -6946,6 +7222,12 @@
             "items": {
               "$ref": "#/components/schemas/ContentPackageDto"
             }
+          },
+          "mergedFrom": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

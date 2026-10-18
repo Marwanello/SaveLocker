@@ -20,6 +20,7 @@ import { Icon } from '../ui/Icon';
 import { RulesCard } from './RulesCard';
 import { ExcludePatternsCard } from './ExcludePatternsCard';
 import { RemoteCommandsCard } from './RemoteCommandsCard';
+import { MergeCard } from './MergeCard';
 
 interface Props {
   summary: GameSummary;
@@ -221,6 +222,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
           />
           <RulesCard game={game} machines={machines} health={health} onRefresh={onRefresh} />
           <ExcludePatternsCard game={game} onRefresh={onRefresh} />
+          <MergeCard game={game} onRefresh={onRefresh} />
         </div>
       </div>
 

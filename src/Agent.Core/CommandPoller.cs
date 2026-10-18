@@ -248,6 +248,42 @@ public sealed class CommandPoller : IDisposable
 
         // Drop local games that were deleted on the server. Copy-on-write for the same reason as
         // enrollment: this runs on a timer thread while a UI thread enumerates the same list.
+        // A game merged into another on the server (tasks/emulator-saves Phase 17) is gone from the list; when the server moved
+        // this machine's folder to the game it was merged into, this device's copy becomes that game here, keeping its folders
+        // and own file names — its last synced version is that game's history now, so the next sync asks if the two differ.
+        var mergedInto = serverGames
+            .SelectMany(g => (g.MergedGameIds ?? []).Select(id => (Id: id, Into: g)))
+            .GroupBy(x => x.Id)
+            .ToDictionary(x => x.Key, x => x.First().Into);
+        var mergeNotes = new List<string>();
+        var movedInto = new List<Guid>();
+        if (mergedInto.Count > 0)
+            _config.MutateGames(list =>
+            {
+                foreach (var local in list.Where(g => !serverById.ContainsKey(g.GameId) && g.IsEnrolledHere).ToList())
+                {
+                    if (!mergedInto.TryGetValue(local.GameId, out var into)) continue;
+                    var existing = list.FirstOrDefault(g => g.GameId == into.Id);
+                    if (existing is { IsEnrolledHere: true })
+                        mergeNotes.Add($"'{local.Name}' was merged into '{into.Name}', which this device already syncs.");
+                    else if (!string.IsNullOrWhiteSpace(into.MachineSavePath) &&
+                             string.Equals(into.MachineSavePath, local.SaveDirectory, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    {
+                        if (existing is not null) list.Remove(existing);
+                        mergeNotes.Add($"'{local.Name}' was merged into '{into.Name}' on the server; this device syncs it as that game now.");
+                        local.GameId = into.Id;
+                        local.Name = into.Name;
+                        movedInto.Add(into.Id);
+                        changed = true;
+                    }
+                    else
+                        mergeNotes.Add($"'{local.Name}' was merged into '{into.Name}' on the server. Add '{into.Name}' from Add games to keep syncing it here.");
+                }
+            });
+        // A copy kept apart by hand ("Keep it as its own game") opted this machine out of the game it is now part of.
+        foreach (var id in movedInto) _config.SetTracked(id, tracked: true);
+        foreach (var note in mergeNotes) _notify(note);
+
         var removed = 0;
         _config.MutateGames(list => removed = list.RemoveAll(g => !serverById.ContainsKey(g.GameId)));
         if (removed > 0)

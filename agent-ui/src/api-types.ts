@@ -4369,6 +4369,11 @@ export interface components {
             desired: string;
             changed: boolean;
         };
+        FileNameDto: {
+            key: string;
+            server: string;
+            local: string;
+        };
         SameGameAsDto: {
             /** Format: uuid */
             gameId: string;
@@ -4569,6 +4574,7 @@ export interface components {
             release?: null | components["schemas"]["GameReleaseDto"];
             saveFiles?: null | string;
             sameGameAs?: null | components["schemas"]["SameGameAsDto"];
+            ownFileNames?: null | components["schemas"]["FileNameDto"][];
         };
         TransferAnswerRequest: {
             approve: boolean;

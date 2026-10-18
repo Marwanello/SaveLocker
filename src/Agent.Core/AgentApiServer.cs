@@ -644,7 +644,7 @@ public sealed class AgentApiServer : IDisposable
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
                 g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt,
                 SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null, g.Release, g.IncludeGlobs.FirstOrDefault(),
-                SameGameAsDto.For(g, _config.Games)))
+                SameGameAsDto.For(g, _config.Games), g.OwnFileNames.Count > 0 ? g.OwnFileNames.ToArray() : null))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -2367,7 +2367,10 @@ public sealed record TrackedGameDto(
     string? SaveFiles = null,
     /// <summary>The emulator game this one's Steam shortcut starts, when both are tracked here: one save as two games
     /// (<see cref="SrmShortcuts"/>, tasks/emulator-saves Phase 20). Null otherwise.</summary>
-    SameGameAsDto? SameGameAs = null);
+    SameGameAsDto? SameGameAs = null,
+    /// <summary>This device's own names for the game's files, where they differ from the server's (tasks/emulator-saves
+    /// Phase 17). Null when it uses the server's.</summary>
+    FileNameDto[]? OwnFileNames = null);
 
 /// <summary>A tracked emulator game a tracked Steam shortcut game is a copy of: its id, name and emulator.</summary>
 public sealed record SameGameAsDto(Guid GameId, string Name, string? Emulator)

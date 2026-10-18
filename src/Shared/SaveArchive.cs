@@ -342,7 +342,7 @@ public static class SaveArchive
 
             var rootFull = Path.GetFullPath(root.Directory);
             var full = Path.GetFullPath(
-                Path.Combine(rootFull, rel.Replace('/', Path.DirectorySeparatorChar)));
+                Path.Combine(rootFull, LocalRel(root, rel).Replace('/', Path.DirectorySeparatorChar)));
             if (!full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.Ordinal))
                 throw new UnsafeArchiveException(
                     $"Refusing to archive '{name}': it resolves outside the save folder.");
@@ -635,7 +635,7 @@ public static class SaveArchive
                 Directory.CreateDirectory(plan.Root.Directory);
                 foreach (var file in plan.Files)
                 {
-                    var dst = Path.Combine(plan.TargetFull, file.Rel.Replace('/', Path.DirectorySeparatorChar));
+                    var dst = Path.Combine(plan.TargetFull, LocalRel(plan.Root, file.Rel).Replace('/', Path.DirectorySeparatorChar));
                     Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
                     File.Copy(file.Source, dst, overwrite: true);
                 }
@@ -658,7 +658,7 @@ public static class SaveArchive
                 {
                     var rel = Path.GetRelativePath(plan.TargetFull, tgt).Replace('\\', '/');
                     if (plan.Root.IsPrimary && IsSliceName(rel)) continue;
-                    if (inScope(rel) && !inSlice.Contains(rel))
+                    if (ServerRel(plan.Root, rel) is { } server && inScope(server) && !inSlice.Contains(server))
                         File.Delete(tgt);
                 }
             }
@@ -712,7 +712,7 @@ public static class SaveArchive
         var checkedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in plan.Files)
             EnsureNoLinkBelowRoot(plan.TargetFull,
-                Path.Combine(plan.TargetFull, file.Rel.Replace('/', Path.DirectorySeparatorChar)), checkedDirs);
+                Path.Combine(plan.TargetFull, LocalRel(plan.Root, file.Rel).Replace('/', Path.DirectorySeparatorChar)), checkedDirs);
 
         // Two folders of one game may share a directory only with include scopes that keep their
         // files apart; a file both would claim belongs to neither safely.
@@ -911,11 +911,11 @@ public static class SaveArchive
                 .Select(f => Path.GetRelativePath(rootFull, f).Replace('\\', '/'))
                 .Where(r => !(root.IsPrimary && IsSliceName(r)))
                 .ToList();
-            var inScope = FilterIncluded(rels, root.IncludeGlobs).ToHashSet(StringComparer.Ordinal);
+            var inScope = InScope(root);
             foreach (var rel in rels.Order(StringComparer.Ordinal))
             {
                 var full = Path.Combine(rootFull, rel.Replace('/', Path.DirectorySeparatorChar));
-                if (seen.Add(full)) result.Add(new UnsyncedFile(root.Key, rel, full, inScope.Contains(rel)));
+                if (seen.Add(full)) result.Add(new UnsyncedFile(root.Key, rel, full, ServerRel(root, rel) is { } s && inScope(s)));
             }
         }
         return result;
@@ -1143,6 +1143,13 @@ public static class SaveArchive
         return root is null ? null : (root, rel);
     }
 
+    /// <summary>The server's name for a file of <paramref name="root"/> named <paramref name="rel"/> here, or null when it
+    /// is not this game's (<see cref="FileNames.ToServer"/>).</summary>
+    private static string? ServerRel(SaveRoot root, string rel) => root.Names is { } names ? names.ToServer(rel) : rel;
+
+    /// <summary>This machine's name for the server's <paramref name="rel"/> in <paramref name="root"/>.</summary>
+    private static string LocalRel(SaveRoot root, string rel) => root.Names is { } names ? names.ToLocal(rel) : rel;
+
     /// <summary>One entry of a game's archive: a file, or a marker when <see cref="FullPath"/> is null.</summary>
     private readonly record struct SaveItem(string Name, string? FullPath);
 
@@ -1166,7 +1173,11 @@ public static class SaveArchive
             if (root.IsPrimary) rels = rels.Where(r => !IsSliceName(r));
 
             var prefix = NamePrefix(root);
-            var named = FilterIncluded(rels, root.IncludeGlobs).Select(r => (Name: prefix + r, Rel: r)).ToList();
+            // The scope and the archive name are the server's: this machine's own names are swapped on the way in.
+            var byServer = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var rel in rels)
+                if (ServerRel(root, rel) is { } server) byServer.TryAdd(server, rel);
+            var named = FilterIncluded(byServer.Keys, root.IncludeGlobs).Select(s => (Name: prefix + s, Rel: byServer[s])).ToList();
             var kept = FilterExcluded(named.Select(n => n.Name), excludes).ToHashSet(StringComparer.Ordinal);
 
             foreach (var (name, rel) in named)

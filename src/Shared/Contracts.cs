@@ -54,7 +54,10 @@ public record GameDto(
     // The emulator profile the game's saves are under ("xenia:<XUID>"), set by the first machine that said.
     string? EmulatorProfile = null,
     // The emulated title the game is across emulators ("switch:0100F2C0115B6000"), set by the first machine that said.
-    string? EmulatorKey = null);
+    string? EmulatorKey = null,
+    // The games merged into this one (tasks/emulator-saves Phase 17): an agent that synced one of them here moves to
+    // this game. Null when none was.
+    Guid[]? MergedGameIds = null);
 
 /// <summary>
 /// Which release of a console game an emulator save belongs to, read from the game ID the save is filed under
@@ -166,7 +169,36 @@ public static class SavePathRefusalCodes
 
 /// <summary>A specific machine's stored save path for one of a game's save folders
 /// (<see cref="PathKey"/> is <c>main</c> for the primary folder).</summary>
-public record MachineSavePathDto(Guid MachineId, string MachineName, string SavePath, string PathKey = SaveRoot.PrimaryKey);
+public record MachineSavePathDto(Guid MachineId, string MachineName, string SavePath, string PathKey = SaveRoot.PrimaryKey,
+    // This machine's own names for the game's files, where they differ from the server's (tasks/emulator-saves Phase 17); on
+    // the primary folder's row, every folder's. Null when it uses the server's names.
+    FileNameDto[]? FileNames = null);
+
+/// <summary>
+/// What merging game <paramref name="FromName"/> into <paramref name="IntoName"/> would do (tasks/emulator-saves Phase 17):
+/// its <paramref name="Versions"/> become read-only history of the other, each machine that keeps it is told what happens
+/// to it (<paramref name="Machines"/>), and <paramref name="FromFiles"/>/<paramref name="IntoFiles"/> are the two games'
+/// save scopes side by side. <paramref name="Refusal"/> says why it cannot be done now, else null.
+/// </summary>
+public record MergePreviewDto(
+    Guid FromId, string FromName, Guid IntoId, string IntoName, int Versions,
+    MergeMachineDto[] Machines, string[] FromFiles, string[] IntoFiles, string[] Warnings, string? Refusal);
+
+/// <summary>One machine in a merge: <see cref="MergeOutcomes"/> says what happens to it.</summary>
+public record MergeMachineDto(Guid MachineId, string MachineName, string Outcome);
+
+public static class MergeOutcomes
+{
+    /// <summary>The machine already syncs the game merged into; its copy of the other just stops.</summary>
+    public const string AlreadySyncs = "already-syncs";
+    /// <summary>The machine's folder for the merged game moves to the other: same folders, same files.</summary>
+    public const string Moved = "moved";
+    /// <summary>The two games keep different folders here, so this machine stops syncing it and adds the other from Add games.</summary>
+    public const string ReAdd = "re-add";
+}
+
+/// <summary>Merge a game into another. <paramref name="ConfirmName"/> must be the merged game's name, typed.</summary>
+public record MergeGamesRequest(Guid IntoId, string ConfirmName);
 
 /// <summary>
 /// A save folder a machine's <c>scan</c> <b>found but has not adopted</b> — the game is tracked
@@ -496,7 +528,10 @@ public record SaveVersionDto(
     bool Protected = false,
     // The DLC and title updates the uploading machine had when it made this version (tasks/emulator-saves Phase 5c);
     // null when it did not say.
-    ContentPackageDto[]? Content = null);
+    ContentPackageDto[]? Content = null,
+    // The game this version was made under before it was merged into this one (tasks/emulator-saves Phase 17): read-only
+    // history, never Latest again. Null for the game's own versions.
+    string? MergedFrom = null);
 
 /// <summary>
 /// One installed package of a game — DLC (<see cref="Dlc"/>) or a title update (<see cref="Update"/>) — as the DLC check

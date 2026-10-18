@@ -246,6 +246,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // captured a reference to it before the connection changed. Refusing here is what stops
         // that stale reference pushing a save to the previous server. WA-06.
         if (RefuseIfRetired(game, "push")) return null;
+        // A file this machine names its own way that the list does not have yet (a new state slot) joins it first, so the push
+        // carries it under the server's name (tasks/emulator-saves Phase 17).
+        if (OwnFileNames.Grow(_config, game)) _ = OwnFileNames.ReportAsync(_api, game, _log);
 
         using var linked = LinkRetirement(ct);
         ct = linked.Token;
@@ -807,6 +810,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                          $"({string.Join(", ", restored.SkippedKeys)}); left out.");
                 XeniaProfileSlice.AfterPull(game, _log, stateDir: _config.StateDir);
                 SwitchCopies.AfterPull(game, _log);
+                if (OwnFileNames.Grow(_config, game)) _ = OwnFileNames.ReportAsync(_api, game, _log);
             }
             catch (SaveArchive.UnsafeArchiveException ex)
             {

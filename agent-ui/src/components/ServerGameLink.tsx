@@ -21,7 +21,7 @@ interface Props {
 const own = (fn: () => void) => (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); fn() }
 
 function outcome(o: LinkOption) {
-  if (o.kind === 'join') return { text: `Joins “${o.name}”`, tone: 'join' }
+  if (o.kind === 'join') return { text: o.choice === 'rename' ? `Joins “${o.name}” under this device’s own file names` : `Joins “${o.name}”`, tone: 'join' }
   if (o.kind === 'new') return { text: o.choice === 'separate' ? `Kept as its own game “${o.name}”` : `New game “${o.name}” on the server`, tone: 'new' }
   return { text: 'Can’t be added under any free name', tone: 'blocked' }
 }

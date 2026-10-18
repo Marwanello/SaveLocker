@@ -178,9 +178,10 @@ public sealed class SyncService
         var rows = await (from p in _db.MachineSavePaths
                           join m in _db.Machines on p.MachineId equals m.Id
                           where p.GameId == gameId
-                          select new MachineSavePathDto(p.MachineId, m.Name, p.SavePath, p.PathKey))
+                          select new { p.MachineId, m.Name, p.SavePath, p.PathKey, p.FileNames })
             .ToListAsync();
         return rows
+            .Select(r => new MachineSavePathDto(r.MachineId, r.Name, r.SavePath, r.PathKey, Mapping.ReadFileNames(r.FileNames)))
             .OrderBy(r => r.PathKey == SaveRoot.PrimaryKey ? 0 : 1)
             .ThenBy(r => r.PathKey, StringComparer.Ordinal)
             .ThenBy(r => r.MachineName, StringComparer.OrdinalIgnoreCase)
@@ -370,6 +371,153 @@ public sealed class SyncService
 
         await _db.SaveChangesAsync();
         return true;
+    }
+
+    /// <summary>
+    /// Store a machine's own names for a game's files (tasks/emulator-saves Phase 17), the whole list; an empty one clears it.
+    /// False, storing nothing, when the machine has no folder for the game: the names belong to that folder's row.
+    /// </summary>
+    public async Task<bool> SetFileNamesAsync(Guid machineId, Guid gameId, IReadOnlyList<FileNameDto> names)
+    {
+        var row = await _db.MachineSavePaths.FindAsync(machineId, gameId, SaveRoot.PrimaryKey);
+        if (row is null) return false;
+        var json = names.Count == 0 ? null : JsonSerializer.Serialize(names, JsonSerializerOptions.Web);
+        if (row.FileNames == json) return true;
+        row.FileNames = json;
+        await Audit(machineId, gameId, "file_names.set", names.Count == 0 ? "cleared" : $"{names.Count} file name(s)");
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
+    // ----- Merging two games (tasks/emulator-saves Phase 17) -----
+
+    /// <summary>
+    /// What merging <paramref name="fromId"/> into <paramref name="intoId"/> would do; null when either game does not exist.
+    /// Refused while a machine holds the merged game's lease (it is being played) or it has an open conflict, and for a game
+    /// merged into itself.
+    /// </summary>
+    public async Task<MergePreviewDto?> MergePreviewAsync(Guid fromId, Guid intoId)
+    {
+        var from = await _db.Games.FindAsync(fromId);
+        var into = await _db.Games.FindAsync(intoId);
+        if (from is null || into is null) return null;
+
+        string? refusal = null;
+        if (fromId == intoId) refusal = "A game cannot be merged into itself.";
+        else if (await _db.Leases.AnyAsync(l => l.GameId == fromId && l.ExpiresAt > DateTime.UtcNow))
+            refusal = $"A machine is playing {from.Name} (it holds the lease). Merge it once that session ends.";
+        else if (await _db.Conflicts.AnyAsync(c => c.GameId == fromId && c.Status == ConflictStatus.Open))
+            refusal = $"{from.Name} has an open conflict. Resolve it first, so the version that wins is the one kept.";
+
+        var sameFolders = await SameFoldersAsync(from, into);
+        var machines = await MergeMachinesAsync(fromId, intoId, sameFolders);
+        var warnings = new List<string>();
+        if (!sameFolders)
+            warnings.Add("The two games keep different files. Its versions stay as read-only history; a machine that synced only " +
+                         $"{from.Name} stops syncing it and adds {into.Name} from Add games.");
+        var fromSources = await _db.MachineGameSources.Where(s => s.GameId == fromId).Select(s => s.Detail).Distinct().ToListAsync();
+        var intoSources = await _db.MachineGameSources.Where(s => s.GameId == intoId).Select(s => s.Detail).Distinct().ToListAsync();
+        if (fromSources.Count > 0 && intoSources.Count > 0 && !fromSources.Intersect(intoSources).Any())
+            warnings.Add($"They were found differently: {string.Join(", ", fromSources)} and {string.Join(", ", intoSources)}.");
+
+        return new MergePreviewDto(from.Id, from.Name, into.Id, into.Name,
+            await _db.SaveVersions.CountAsync(v => v.GameId == fromId), machines.ToArray(),
+            await ScopeOfAsync(from), await ScopeOfAsync(into), warnings.ToArray(), refusal);
+    }
+
+    /// <summary>
+    /// Merge game <paramref name="fromId"/> into <paramref name="intoId"/>: its versions become read-only history of the other
+    /// (protected, <see cref="SaveVersion.MergedFrom"/>), each machine that synced only it moves to the other when the two keep
+    /// the same folders, and the merged game is deleted; agents learn of it from <see cref="GameDto.MergedGameIds"/>. The
+    /// merged game's name must be typed to confirm. Returns null when done, else why not ("not_found" when a game is missing).
+    /// </summary>
+    public async Task<string?> MergeGamesAsync(Guid fromId, Guid intoId, string? confirmName, string by)
+    {
+        var preview = await MergePreviewAsync(fromId, intoId);
+        if (preview is null) return "not_found";
+        if (preview.Refusal is { } refusal) return refusal;
+        if (!string.Equals(confirmName?.Trim(), preview.FromName.Trim(), StringComparison.Ordinal))
+            return $"Type the merged game's name, {preview.FromName}, to confirm.";
+
+        var from = (await _db.Games.FindAsync(fromId))!;
+        var into = (await _db.Games.FindAsync(intoId))!;
+        await using var tx = await _db.Database.BeginTransactionAsync();
+
+        // The versions keep their archives where they are (each has its own path); only their game changes.
+        foreach (var v in await _db.SaveVersions.Where(v => v.GameId == fromId).ToListAsync())
+        {
+            v.GameId = intoId;
+            v.Protected = true;
+            v.MergedFrom ??= from.Name;
+        }
+
+        foreach (var m in preview.Machines.Where(m => m.Outcome == MergeOutcomes.Moved))
+        {
+            foreach (var p in await _db.MachineSavePaths.Where(p => p.GameId == fromId && p.MachineId == m.MachineId).ToListAsync())
+            {
+                _db.MachineSavePaths.Remove(p);
+                _db.MachineSavePaths.Add(new MachineSavePath
+                    { MachineId = p.MachineId, GameId = intoId, PathKey = p.PathKey, SavePath = p.SavePath, FileNames = p.FileNames });
+            }
+            if (await _db.MachineGameSources.FindAsync(m.MachineId, fromId) is { } source &&
+                await _db.MachineGameSources.FindAsync(m.MachineId, intoId) is null)
+            {
+                _db.MachineGameSources.Remove(source);
+                _db.MachineGameSources.Add(new MachineGameSource
+                {
+                    MachineId = source.MachineId, GameId = intoId, Kind = source.Kind, Detail = source.Detail,
+                    Tags = source.Tags, UpdatedAt = source.UpdatedAt,
+                });
+            }
+        }
+
+        into.MergedGameIds = string.Join('\n', (Mapping.MergedIds(into) ?? []).Append(fromId).Concat(Mapping.MergedIds(from) ?? []).Distinct());
+        await Audit(null, intoId, "game.merge",
+            $"'{from.Name}' merged into '{into.Name}' by {by}: {preview.Versions} version(s) kept as history, " +
+            string.Join(", ", preview.Machines.Select(m => $"{m.MachineName} {m.Outcome}")));
+        await _db.SaveChangesAsync();
+
+        // Every other row of the merged game (its leases, conflicts, folders, sources, commands) goes with it. Its versions
+        // are the other game's now, so none of their archives is touched.
+        if (!await DeleteGameAsync(fromId)) { await tx.RollbackAsync(); return "not_found"; }
+        await tx.CommitAsync();
+        return null;
+    }
+
+    /// <summary>Do the two games keep the same folders — the primary folder's scope and the extra folders' keys and scopes,
+    /// ignoring case and order? Then a machine's folder for one is its folder for the other.</summary>
+    private async Task<bool> SameFoldersAsync(Game a, Game b)
+    {
+        static string Norm(string? globs) =>
+            string.Join('\n', GlobConfig.Parse(globs).Select(g => g.ToLowerInvariant()).Order(StringComparer.Ordinal));
+        async Task<string> Shape(Game g) =>
+            Norm(g.IncludeGlobs) + "|" + string.Join(";", (await _db.GameSavePaths.Where(p => p.GameId == g.Id).ToListAsync())
+                .OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + ":" + Norm(p.IncludeGlobs)));
+        return await Shape(a) == await Shape(b);
+    }
+
+    /// <summary>The files each game keeps, as the console shows them: its primary scope, then each extra folder's.</summary>
+    private async Task<string[]> ScopeOfAsync(Game g)
+    {
+        var files = GlobConfig.Parse(g.IncludeGlobs).ToList();
+        if (files.Count == 0) files.Add("(the whole save folder)");
+        foreach (var p in await _db.GameSavePaths.Where(p => p.GameId == g.Id).OrderBy(p => p.SortOrder).ToListAsync())
+            files.AddRange(GlobConfig.Parse(p.IncludeGlobs) is { Length: > 0 } globs ? globs.Select(x => $"{p.Key}: {x}") : [$"{p.Key}: (the whole folder)"]);
+        return files.ToArray();
+    }
+
+    private async Task<List<MergeMachineDto>> MergeMachinesAsync(Guid fromId, Guid intoId, bool sameFolders)
+    {
+        var fromMachines = await (from p in _db.MachineSavePaths
+                                  join m in _db.Machines on p.MachineId equals m.Id
+                                  where p.GameId == fromId && p.PathKey == SaveRoot.PrimaryKey
+                                  select new { m.Id, m.Name }).ToListAsync();
+        var intoMachines = (await _db.MachineSavePaths.Where(p => p.GameId == intoId).Select(p => p.MachineId).ToListAsync()).ToHashSet();
+        return fromMachines
+            .OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(m => new MergeMachineDto(m.Id, m.Name,
+                intoMachines.Contains(m.Id) ? MergeOutcomes.AlreadySyncs : sameFolders ? MergeOutcomes.Moved : MergeOutcomes.ReAdd))
+            .ToList();
     }
 
     /// <summary>Remove a machine's stored save path for one of a game's save folders.</summary>
@@ -2245,6 +2393,8 @@ public sealed class SyncService
         var game = await _db.Games.FindAsync(gameId);
         var version = await _db.SaveVersions.FindAsync(versionId);
         if (game is null || version is null || version.GameId != gameId) return false;
+        // A merged game's version is history: its files may be another dump's names (tasks/emulator-saves Phase 17).
+        if (version.MergedFrom is not null) return false;
 
         // Close the conflicts this choice actually decides — the ones offering the chosen version.
         // Leaving those open would have the console insist the very version it was just told to

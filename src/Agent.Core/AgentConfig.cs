@@ -878,6 +878,10 @@ public sealed class AgentConfig
     public void SaveGameSource(Guid gameId, GameSourceDto source) =>
         MutateGameUnderLock(gameId, g => g.Source = source);
 
+    /// <summary>Persist a game's own file names (<see cref="OwnFileNames"/>, tasks/emulator-saves Phase 17).</summary>
+    public void SaveGameFileNames(Guid gameId, List<FileNameDto> names) =>
+        MutateGameUnderLock(gameId, g => g.OwnFileNames = names);
+
     /// <summary>
     /// Persist the user's answers to a game's "Also found" suggestions — see
     /// <see cref="MutateGameUnderLock"/>. A folder is in at most one of the two lists.
@@ -975,6 +979,10 @@ public sealed class TrackedGame
     /// <summary>Every Steam shortcut app ID that starts this emulator game (Steam ROM Manager's, tasks/emulator-saves Phase 20),
     /// <see cref="SteamAppId"/> among them: a ROM SRM added twice is launched under either. Empty for every other game.</summary>
     public List<string> ShortcutAppIds { get; set; } = new();
+    /// <summary>This machine's own names for the game's files where they differ from the server's — another dump of the ROM
+    /// (tasks/emulator-saves Phase 17, <see cref="SaveLocker.Shared.FileNames"/>). Set when the save is linked to a server game
+    /// named otherwise, grown as new files appear (<see cref="OwnFileNames.Grow"/>). Empty: the server's names.</summary>
+    public List<FileNameDto> OwnFileNames { get; set; } = new();
     /// <summary>
     /// Whether this game was actually enrolled AS a Steam install — decided once, at enrollment, from
     /// the candidate's own <see cref="ScanCandidate.HasSteamCloud"/> (<c>GameScanner</c> only sets
@@ -1051,9 +1059,11 @@ public sealed class TrackedGame
     /// </summary>
     public IReadOnlyList<SaveRoot> Roots(string stateDir)
     {
-        var roots = new List<SaveRoot> { SaveRoot.Primary(SaveDirectory, IncludeGlobs) };
+        // This machine's own file names (Phase 17) apply to its own folders; a shadow holds the server's.
+        var roots = new List<SaveRoot> { new(SaveRoot.PrimaryKey, SaveDirectory, IncludeGlobs, FileNames.For(OwnFileNames, SaveRoot.PrimaryKey)) };
         foreach (var p in ExtraPaths)
-            roots.Add(new SaveRoot(p.Key, p.Directory ?? ShadowDir(stateDir, GameId, p.Key), p.IncludeGlobs));
+            roots.Add(new SaveRoot(p.Key, p.Directory ?? ShadowDir(stateDir, GameId, p.Key), p.IncludeGlobs,
+                p.Directory is null ? null : FileNames.For(OwnFileNames, p.Key)));
         return roots;
     }
 
