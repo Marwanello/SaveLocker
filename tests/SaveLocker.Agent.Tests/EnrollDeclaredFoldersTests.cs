@@ -18,7 +18,10 @@ public sealed class ServerProcess : IDisposable
     public string State { get; } = Path.Combine(Path.GetTempPath(), "savelocker-server-" + Guid.NewGuid().ToString("N"));
     public string Url { get; }
 
-    public ServerProcess()
+    public ServerProcess() : this(new Dictionary<string, string>()) { }
+
+    /// <summary>A server with extra settings (<c>Section__Key</c> environment names), for a test that needs its own.</summary>
+    internal ServerProcess(IReadOnlyDictionary<string, string> settings)
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -38,6 +41,7 @@ public sealed class ServerProcess : IDisposable
         psi.Environment["Storage__DbPath"] = Path.Combine(State, "savelocker.db");
         psi.Environment["Storage__ArchiveRoot"] = Path.Combine(State, "archives");
         psi.Environment["Backup__Enabled"] = "false";
+        foreach (var (key, value) in settings) psi.Environment[key] = value;
         _process = Process.Start(psi)!;
         _process.BeginOutputReadLine();
         _process.BeginErrorReadLine();

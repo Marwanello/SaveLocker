@@ -33,7 +33,7 @@ point unless explicitly instructed to.
 | 5a — RPCS3 | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Rpcs3Saves`: `dev_hdd0/home/<user>/savedata`, scope `<ID>*/**`, named by Redump's PS3 set, else the save's `PARAM.SFO` `TITLE`; EmuDeck's link, else `vfs.yml`. **Captured 2026-10-11:** the Deck's real save `BCUS98132-GAMEAUTOSAVE` (*Heavenly Sword*) and `vfs.yml` (dev_hdd0 on the SD card); the PC's `RPCS3\config\vfs.yml`. See *Group D — as built* |
 | 5b — Xenia | ✅ Shipped 2026-10-13 (PR #68, branch `emulator-saves-group-e`) — built 2026-10-12 (follow-up the same day: device saves as a second folder, the named-profile layout) — `XeniaSaves`: a game is its `<TID>/00000001` saved games and their `Headers/00000001`, in a profile's `content/<XUID>` (Canary) or `content` itself (older builds); DLC, title updates, XUID 0 and the dashboard's `FFFE07D1` never synced (scope mutation-checked). Named by title ID from the bundled table (Redump disc serials → title IDs, No-Intro Arcade titles), else `Xbox 360 <TID>`. **Captured 2026-10-12:** the PC's real *Forza Horizon* / *Forza Horizon 2* saves (profile layout); the Deck's Proton Canary with both layouts side by side. See *Group E — as built* |
 | 5c — Xenia profile and DLC | ✅ Shipped 2026-10-13 (PR #68) — the testenv pass and Group H still to do (final plan approved; see *Phase 5c — final plan*). **Steps 1–14 built**: formats, launch questions, profile at launch + plugin prompts (Marwanello/SaveLocker-Decky#5, Marwanello/SaveLocker-Playnite#8), the per-game profile slice, the core copied once, the game's profile on the server + alignment, DLC lists, the hold before a pull, the console DLC card + profile chip, the server hand-over, the agents' send/fetch (poller, own task, resumable, installed while Xenia is closed), held pulls re-checked every minute + notices, the console's profile-at-launch table + hand-over card, a Decky "Waiting for DLC" section (Decky#5), help article, `dlc` CLI, testenv fixtures. Unit **517**. Left: the testenv pass (`Build and Run` → *Testing emulator saves*) and Forza Horizon for real between PC and Deck (Group H). Not covered: games started outside SaveLocker's launch path (EmulationStation, Xenia directly) get no profile check or pull before launch — **DLC: the DLC check chosen** (lists only, hand-over through the server, 9-step build plan); **profile: F (checked at launch) with the profile split by game chosen** (10-step build plan). Mockups in this folder. See *Phase 5c* |
-| 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
+| 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ✅ Done 2026-10-18 (PR #73, branch `emulator-saves-group-f`) — testenv pass and the real-game check passed 2026-10-18 (Animal Crossing 3.0.3, Eden on the PC ↔ Yuzu/Eden on the Deck). Built 2026-10-13: D2 server key (`Games.EmulatorKey`, migration `AddGameEmulatorKey`), `SwitchEmulators` (the five Yuzu forks as a table) + `RyujinxSaveIndex` (`imkvdb.arc`), one game per title across every Switch emulator (maintainer's call), ROMs with no save yet listed, and **copies in several emulators on one machine** on the agent's Emulator settings page (copy once, keep in sync, make it the synced copy; asks when both changed). Captured read-only on the PC (Eden's MP4 save, Ryujinx's real index) and the Deck (Yuzu + Ryujinx, Undertale saved in both). Unit **551**; follow-ups through 2026-10-18 (eShop names, the emulator picker, game versions, one Switch user, device saves kept in the device save): agent tests **656**. See *Group F — as built* |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
 | 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. **Review fixes 2026-10-07** (same PR): server-decided names, the scope-join refusal, source re-send guard, EmuDeck tag, server bounds — unit 291, see `progress.md`. |
 | 8 — melonDS (bonus) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`) — `RetroArchSaves` generalised into `RomSaves` (D4 shape 1: `RomSaveRules` + `RomSaveFolders`); `MelonDsSaves`: EmuDeck `saves/melonds/{saves,states}`, else `melonDS.toml` `[Instance0] SaveFilePath` (1.0, read first — `Config::Load`), else `melonDS.ini`, else beside the ROM (`LastROMFolder`). Scope `<rom>.sav`, states `<rom>.ml*`. Both scanners now loop `EmulatorSaves.Sources`. **Captured on the Deck 2026-10-07:** Flatpak melonDS 1.1 has only `melonDS.ini` (absolute SD-card paths), no TOML |
@@ -46,9 +46,10 @@ point unless explicitly instructed to.
 | 15 — Azahar | ✅ Shipped 2026-10-13 (PR #68, branch `emulator-saves-group-e`) — built 2026-10-12: `AzaharSaves` + `Ncch`: `title/00040000/<low>/data`, scope `<low>/data/**` (mutation-checked), states `<program ID>.*`; named from a ROM's NCCH product code via No-Intro's 3DS sets (added to the table), else the ROM's file name, else `3DS <low>`. Citra folders are rows of it (maintainer: one game). **Captured 2026-10-12:** the Deck's three real saves, custom SD-card `sdmc`, 11 ROM headers (program IDs match the save folders); the PC's junctions |
 | 16 — Linking by hand, same files (mockup version 2) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`, with Group B) — each emulator row on Add games says which server game the save joins, with a **Change** button for that row only: automatic, *Keep it as its own game*, or another server game keeping the same files; a same-titled game with other file names is listed greyed out with the reason. `EnrollLinks` + `GET /api/candidates/links` + `EnrollRequest.Links`; `LinkByHandTests` 5, two of them mutation-checked; checked in the browser against a scratch server **Review fixes (PR #61):** *Keep it as its own game* opts this machine out of the fleet's same-files game, and the poller never maps a second game onto files another syncs here (`SaveFolderClaims`); Add games says when the server could not be asked. |
 | 17 — Each machine's own file names (linking saves with different names) | ⏳ Not started — Group G (added 2026-10-07, maintainer: "keep option 2 in another phase"); open questions below |
-| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4; Group E added Cemu, Azahar (the Deck has three 3DS saves) and Xenia (the PC and the Deck both have *Forza Horizon*). Rows are added as later phases ship untested; see *Phase 18* |
+| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4; Group E added Cemu, Azahar (the Deck has three 3DS saves) and Xenia (the PC and the Deck both have *Forza Horizon*); Group F added the Switch emulators — ✅ checked 2026-10-18 (Animal Crossing, Eden/Yuzu, PC ↔ Deck). Rows are added as later phases ship untested; see *Phase 18* |
 | 20 — Steam ROM Manager shortcuts are the emulator's game, not a game of their own | ⏳ Not started — Group G (added 2026-10-13, maintainer: the Deck lists Forza Horizon twice). Needs a captured `shortcuts.vdf` and SRM's own records from the Deck first; open questions below |
 | 19 — Games found by their save states alone (every emulator but PPSSPP) | ⏳ Not started — Group I (added 2026-10-12, maintainer: "PPSSPP now, others as a new phase"). PPSSPP's shipped with Group D; see *Phase 19* |
+| 21 — Emulator and console icons | ⏳ Not started — Group J (added 2026-10-14). Sources picked and mocked up in both UIs (`phase-21-icons-mockup.html`); see *Phase 21* |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
 
@@ -657,6 +658,179 @@ agent applies before the launch continues. The in-process Linux wrapper cannot a
 **Verify (when built):** a profile pulled to a machine without it signs in and loads a game's save there; a machine with its own
 profile keeps it; a DLC entry pushed once and pulled; a save game's push never carries DLC; the two-machine tests per entry.
 
+### Group F — as built (2026-10-13, branch `emulator-saves-group-f`)
+
+Decided with the maintainer at the start of the group:
+- **One game per Switch title across every Switch emulator** — an exception to *Saves from different emulators are
+  never one game* (Decisions.md), because a Switch save is the title's own folder of files whichever emulator wrote it.
+- **D2 built as planned:** `Games.EmulatorKey` (`switch:<title ID>`, filtered unique index, migration
+  `AddGameEmulatorKey`), on `GameDto` and `CreateGameRequest`; the server and the agent match it before the name.
+- **A ROM with no save yet is listed** ("No save here yet") under a Yuzu fork's current user.
+- **Captures from the PC and the Deck, Citron from research** (EmuDeck's `emuDeckCitron.sh` on the Deck; no Citron
+  install on either machine).
+- **Several emulators on one machine** (the maintainer plays one game in two for performance): the maintainer asked
+  for a way through each agent's Emulator settings page, and picked this design — one copy syncs, every other Switch
+  emulator here can take the synced save once, be **kept in sync** (the one played last wins; nothing copied while a
+  Switch emulator runs; the overwritten side zipped first, five kept; **both changed → ask**), or become the synced copy.
+- **The user binding, researched:** a Switch save's files don't name their user. Yuzu forks file a save under the
+  profile's folder, Ryujinx under its index entry (`ExtraData0` holds the attribute too, which SaveLocker never copies),
+  so no Xenia-style profile copy is needed; a copy goes under the target emulator's current user.
+
+What the captures showed that the research did not say:
+- **The PC** (EmuDeck for Windows): Eden portable with `user\nand\user\save` a junction to `D:\Emulation\saves\eden\saves`
+  (the real folder) and a real *Metroid Prime 4* `save.bin` under `C4D7AB8B…`; Ryujinx portable whose real `imkvdb.arc`
+  (572 bytes, four entries) maps MP4's account save to `0000000000000003` and Animal Crossing's device and BCAT saves —
+  all three folders empty (launched, never saved). Ryujinx's `games/<tid>/gui/metadata.json` names the title.
+- **The Deck:** Yuzu (AppImage, `~/.local/share/yuzu/nand`, not EmuDeck's storage) and Ryujinx (EmuDeck links into
+  `~/.config/Ryujinx`; `games` linked to the SD card's `storage/ryujinx/games`), **Undertale saved in both with different
+  contents** — the same-machine case. Two Ryujinx users; `Profiles.json`'s `last_opened` is the current one. ROMs in
+  `roms/switch/{yuzu,ryujinx}` subfolders.
+- **`profiles.dat`'s UUID is stored byte-reversed** relative to the save folder's name (`ca0ef0a0…c4` →
+  `C4D7AB8B…0ECA`); both machines' yuzu builds leave a mangled folder (`8D745B09…00000000`) holding only
+  `.yuzu_save_size` beside the real one — ignored. A device save (Animal Crossing) is under the all-zero user in a
+  fork, type `Device` with user 0 in Ryujinx's index.
+- **The index layout** (`IMKV`, count, then `IMEN` + 0x40 key + 0x40 value): key = program ID, user (high, low),
+  system save ID, type; value = the save ID first.
+- **Ryujinx's two copies:** `0` committed, `1` working. LibHac's source is no longer on GitHub, so a pulled save is
+  written to `0` and `1` is then made the same — whether Ryujinx would rebuild `1` itself is a Group H check.
+
+The readers (`SwitchEmulators`, `RyujinxSaveIndex`; one game per title, the copy written last):
+
+| Emulator | A game is | Scope | Name | States |
+|---|---|---|---|---|
+| Eden, Citron, Yuzu, Suyu, Sudachi | `nand/user/save/0000000000000000/<user>/<title ID>` (the current user's, else the newest); device save beside it as folder `device` | none (the folder is the game's) | Ryujinx's `metadata.json`, else the ROM's `[title ID]` file name, else the bundled eShop table, else `Switch <title ID>` | none |
+| Ryujinx | `bis/user/save/<save ID>/0` from `imkvdb.arc` (the last-opened user's account save, else the newest; else the device save) | none | the same | none |
+
+Same machine, several emulators — `SwitchCopies` (agent only; routes `GET /api/games/{id}/switch-copies`, `POST
+/api/games/{id}/switch-copies/{emulator}` with `copy-here`, `keep-in-sync`, `stop-keeping`, `make-synced`, `keep-copy`,
+`keep-synced`). Kept-in-sync copies are reconciled before a push and a pull (a copy played since is taken in, so a pull
+still refuses to overwrite it), after them, and on the poller's tick; a copy taken into the synced folder is pushed by
+that folder's own watcher. State in `TrackedGame.EmulatorCopies` (`LastHash` = what both held when last the same).
+
+Known limits:
+- Ryujinx has no save slot for a title until the game runs once there: it is never listed as "No save yet", a copy
+  can't go to it, and SaveLocker never writes `imkvdb.arc`.
+- A copy between emulators runs only while the agent is: a game played in the second emulator with the agent stopped
+  is taken in on its next start (or flagged *Both changed* if the synced copy changed meanwhile).
+- BCAT and cache saves are not synced. A title's account saves under two users of one emulator: the current user's wins.
+- Two machines' names can differ (Ryujinx's metadata on one, a ROM name on the other): the first to add it names it.
+
+Follow-ups, 2026-10-14 (maintainer, from the testenv pass: a game added from WSL first stayed *Switch 0100F2C0115B6000*
+for good, Switch rows had no **Change**, and a title ID is no name anyone recognises):
+- **A bundled title table** — `src/Shared/SwitchTitles` (title ID → eShop name and icon), from
+  [blawar/titledb](https://github.com/blawar/titledb) (MIT; `US.en`, then `GB.en`, then `JP.ja` for games sold only in
+  Japan; base games only, no demos), 23,982 titles, 1.5 MB gzipped (mostly the icon hashes), rebuilt by
+  `Update-SwitchTitles.ps1`. GameTDB's Switch list was ruled out: it is keyed by product code (`AXN7A`), not title ID.
+  The name order is the maintainer's: Ryujinx's record, the ROM's name, the table, then `Switch <title ID>`.
+- **The server renames a placeholder:** a game joined by its title key whose name is still `Switch <title ID>` takes
+  the first real name a machine brings (unless another game has it; audit `game.rename`), the agent sends its own name
+  in that case (`Enroller.KeyedName`), and every agent takes a renamed game's name on its next tick.
+- **Change on Switch rows** (`EnrollLinks.SwitchOptions`): automatic joins the game keyed to the title (alone, so the
+  picker says every save of the game joins it), else a new game; by hand, a same-titled game with no title recorded
+  and a whole folder takes the title; one of another title or with scoped files is listed greyed out.
+- **The eShop icon is the game's icon** (`ArtService.EshopIconAsync`): from the table's hash on
+  `img-eshop.cdn.nintendo.net` (added to the image allowlist; `Art:EshopImageBase` for tests), on enroll and on refresh,
+  with or without a SteamGridDB key; SteamGridDB still supplies cover, hero and logo.
+- Tests: `SwitchNamesAndLinksTests` 4, `GroupFSyncTests` +3 against real servers (the WSL-first rename, a game picked by
+  hand taking the title, the eShop icon from a stand-in host); both server changes mutation-checked. Unit **558**.
+
+Follow-up, 2026-10-15 (maintainer, on the Deck: "I chose the cloud save and nothing changed" — it went into Yuzu, the
+emulator Animal Crossing synced through there, while the maintainer plays in Eden, which isn't on the Deck; nothing on
+screen said which). Three directions were mocked up (`which-emulator`); the maintainer chose **A, the emulator as one
+visible choice**, built on the Emulator settings page (`SwitchPlaysIn`):
+- A status line compares the synced emulator's save with the cloud's (`GET vs-cloud`, `SaveVsCloud.Of`) and names it in
+  every button: **Put the cloud save in Yuzu** (`take-cloud`: `SyncEngine.TakeSideAsync`, the save zipped first with the
+  copies' backups, then a forced pull) and **Keep Yuzu's and upload it** (`upload`, a forced push). Both are refused when
+  the page named an emulator that isn't the one that syncs any more.
+- **On this device, you play it in**: one radio card per Switch emulator here, plus any the game's other machines report
+  (`GameStateDto.Sources`) that isn't installed. Picking one with a save asks whether to keep its save or put the cloud's
+  in (`make-synced`, then `take-cloud`); one with no save offers only the cloud's; Ryujinx with no slot and an emulator
+  not installed explain the steps (EmuDeck → Manage Emulators) and offer **Tell me when … is ready**
+  (`EmulatorCopy.TellWhenReady`; the poller's `SwitchCopies.NowReady` raises one `NoticeCatalog.EmulatorReady`).
+- The copies card lost **Make this the synced copy** (the picker does it) and was renamed *Copies in the other emulators*.
+- Not built: B (the save map) and a Deck Game Mode (ImGui) screen; the agent UI page works with the controller.
+- Tests: `GroupFSyncTests` +7 (the Deck case end to end against a real server: waiting for Eden, the cloud save into the
+  synced emulator with its own zipped, Eden ready once, switched to, filled, then uploaded with the PC's kept as a version;
+  `SaveVsCloud.Of`'s six cases). Agent tests **639**. Checked by hand against a stand-in agent (every dialog, Escape,
+  1280×800); not yet on the rig or the Deck.
+
+Follow-up, 2026-10-16 (maintainer, on the rig: the Deck's Yuzu island never reached the PC's Eden; two *Eden* cards; the
+copies card still there; the controller drove the agent UI while another app had focus):
+- **Folder keys meant different saves on two machines.** The Deck has only Animal Crossing's device save, so it synced
+  as `main`; the PC also has a stray account copy under Eden's user, so `main` was that copy and the real island was
+  `device`. The Deck's island was pulled into the stray copy and Eden kept loading the old one. Now a joining machine
+  lays its folders out as the server game has them (`SwitchEmulators.AlignToGameFolders`, in `Enroller` beside Xenia's
+  profile alignment): no `device` on the game → the device save is `main` here and the account copy is left alone; a
+  `device` on the game and only a device save here → it is `device`, and the current user's folder
+  (`ScanCandidate.SwitchAccountDir`, created empty) is `main`. A game enrolled before this has to be removed and added
+  again.
+- **Each install is its own choice:** rows carry `saves` and `install` (`EmuDeck`/`Standalone`); actions take `saves`.
+- **Picking an emulator moves the save to it:** the save played here when the cloud has nothing newer (copied in, made
+  the synced copy, uploaded), the cloud's when only it moved on, the user's pick when both changed, or the emulator's own
+  on request. The copies card is gone (keep-in-sync copies already set keep working in the background).
+- Eden, Citron, Yuzu and Ryujinx are always on the picker.
+- The controller drives the agent UI only while its window has focus (`pad.ts`).
+- Tests +3 (two installs of one emulator; a device save landing in the device save with either machine joining first).
+
+Follow-up, 2026-10-16, later (maintainer: after the re-enroll, Animal Crossing on the PC's Eden says the save data is
+damaged):
+- **Cause: the game version, not the copy.** The PC's island is byte for byte the Deck's (MD5 of every file). Its
+  `mainHeader.dat` says save revision 15, which NHSE's `RevisionChecker` maps to **1.6.0**; the Deck's Yuzu log boots
+  `| 1.6.0` (the update is in Yuzu's NAND), the PC's Eden log boots `| 1.0.0` (only the `[v0]` NSP, nothing installed).
+  A Switch game can't read a save from a newer version of itself. General to Switch games; Animal Crossing changes its
+  save format with almost every update (35 revisions), so it shows the most.
+- **The user ID matters to Animal Crossing.** Decrypted with NHSE's scheme (`main.dat` at `0x1E2280`, 1.6.0): an
+  8-slot table of user ID (the profile UUID's bytes) + `PersonalId`, slot 0 = the Deck's Yuzu user `DBBE23FA…` → resident
+  *Maro* of *Al Jazzira*. The PC's Eden user `C4D7AB8B…` is not in it, so once the version matches, the game will ask to
+  relink the resident, then the Deck will. The fix is one user ID on every device (`profiles.dat` copied); documented in
+  the help article, not automated yet.
+- **Built: the DLC check now covers a Switch game's version.** `SwitchGameVersion` reads it per install from the fork's
+  log (`Booting game: <TID> | … | 1.6.0`), Yuzu's `game_list/<TID>.pv.txt` (`Update (x)`, `[D]` = off; Eden writes none),
+  or Ryujinx's `Logs` (`Application Loaded: … v1.6.0 [tid]`), newest wins. `ContentInventory.For` reports it for the
+  install that holds the game's folder (never one matched by name): `Update <v>` (`<TID>800`, size 0, `version`), empty for
+  the base game, null when unknown. `ContentPackageDto.Version` (optional): an update counts as present only when the
+  version here is the same or newer. A pull of a newer version's save is held with a message naming the update; Switch
+  updates can't be handed over (`DlcCheckDto.CanHandOver`, the agent's hand-over route refuses). The picker shows *Runs
+  version x* per card, warns in the switch dialog, and the page leads with "Eden here can't open the cloud save" when the
+  cloud save (`SaveVsCloudDto.HeadGameVersion`) is newer than the synced emulator's.
+- Tests +5 (`SwitchGameVersionTests` 4: real log and cache lines, Ryujinx, the version compare, only the holding
+  install; `GroupFSyncTests` +1: the version reaches the server and the PC's base game lacks it). Agent tests **647**.
+  Picker clicked through against the stand-in agent (Yuzu 1.6.0, Eden 1.0.0). `api-types.ts` regenerated from a running
+  Linux agent; `openapi.json` from a scratch server (also adds the existing `/join.js` it had missed).
+
+Follow-up, 2026-10-16, last (maintainer: build "one Switch user on every device" into SaveLocker; always ask which user;
+every Yuzu-based install changes; in this PR):
+- **Server:** the heartbeat carries `SwitchUsers` (each Yuzu-based install's users, kept on `AgentHealth.SwitchUsersJson`,
+  migration `AddSwitchUsers`); the chosen user is the setting `Switch:SharedUser`, set and cleared by any machine
+  (`/api/agent/switch/shared-user`, audited) and handed out as `AgentHeartbeatResponse.SwitchSharedUser`.
+- **Agent:** `SwitchUserSharing` — per install: refuse while a Switch emulator runs, refuse a title saved under both users
+  until the user picks, zip `profiles.dat` + the old user's saves (+ a replaced one) to `<state>/switch-users`, tell the
+  server every tracked game's new folder, move the old user's folder to the new ID's, rewrite the current user's UUID in
+  `profiles.dat` (both copies; the name kept) and rename an avatar named by it, then re-point the games and record it in
+  `switch-users/applied.json` for the undo. The poller adopts the shared user each tick (`ShareSwitchUserAsync`), says a
+  needed choice once; "Put back this device's original user" undoes from the backup and stops adopting that ID here
+  (`SwitchSharedUserDeclined`). Ryujinx is left alone (its save index holds the user too).
+- **UI:** `SwitchUserCard` in Settings, and on a Switch game's Emulator settings while devices differ: every device's users,
+  a pick (never preselected), a confirmation saying every step, the both-users choice per title, undo, stop sharing.
+- Tests +4 (`SwitchUserSharingTests` against a real server: adopt and put back with the game re-pointed on the server and
+  the backup's contents; a title under both users waits, kept from here, and the shared one's copy restored by the undo;
+  an install that already has the ID as another user; the server's report, setting and heartbeat). Agent tests **651**.
+  The card clicked through against the stand-in agent (pick, confirm, both-users choice, switch, put back). Not yet run on
+  the rig or the Deck.
+
+Fixes from the Deck, 2026-10-18:
+- One Eden listed twice: EmuDeck's link ends in `/`, Eden's `nand_directory` doesn't; `EmuDeckRoots.RealPath` trims it.
+- Eden added on the Deck started a new island: the game synced Yuzu's device save, and "copy here" / "make synced" put it
+  under Eden's user, where Eden never looks (its log: the device save is opened). A game whose one folder is a device save
+  now goes to the other emulator's device save (`SwitchCopies.SlotFor`).
+- Then for every route (maintainer: "make sure this doesn't happen with any game on any device"): the server records a
+  device-save game as `EmulatorProfile = "switch:device"` (`EmulatorProfiles.SwitchDevice`, set by the first machine that
+  enrolls it from a device save only, or — for one enrolled before — by a machine syncing it from a fork's device save,
+  through the join). A machine joining such a game takes its fork's device save even with no save or only one under a
+  user (`AlignToGameFolders`); copies follow it (`SlotFor`); one already under a user moves itself to the device save on
+  the poller's tick, the server told first, both sides zipped, the old folder removed (`MoveToDeviceSaveAsync`). Ryujinx
+  is left out of the move: its folders come from its index. Agent tests **656**.
+
 ### The other emulators — researched 2026-10-07
 
 The maintainer asked to add **Cemu, Azahar, Model 2, PPSSPP and the Switch family (Yuzu, Ryujinx and Citron
@@ -842,11 +1016,11 @@ whatever is installed.
 | Group | Phases | Shape (D4) |
 |-------|--------|------------|
 | **A — RetroArch** ✅ | 1, 1b, 7, 7b | file per ROM |
-| **B — Saves named after the ROM** | 3 (identity by folders), 8 melonDS, 9 Model 2 + Supermodel, 10 ScummVM | file per ROM |
-| **C — Memory cards** | 2 PCSX2 / Dolphin / DuckStation + shared-card warning, 4 PrimeHack, per-console row | cards, file per game, title folders |
-| **D — Sony (`PARAM.SFO`)** | 11 PPSSPP, 5a RPCS3, 12 Vita3K, 13 shadPS4 | folder per serial |
-| **E — Title-ID folders** | 14 Cemu, 15 Azahar, 5b Xenia | folder per title ID |
-| **F — Switch** | 6 Yuzu, Citron, Eden, Ryujinx + title key (D2) | folder per title ID + opaque index |
+| **B — Saves named after the ROM** ✅ | 3 (identity by folders), 8 melonDS, 9 Model 2 + Supermodel, 10 ScummVM | file per ROM |
+| **C — Memory cards** ✅ | 2 PCSX2 / Dolphin / DuckStation + shared-card warning, 4 PrimeHack, per-console row | cards, file per game, title folders |
+| **D — Sony (`PARAM.SFO`)** ✅ | 11 PPSSPP, 5a RPCS3, 12 Vita3K, 13 shadPS4 | folder per serial |
+| **E — Title-ID folders** ✅ | 14 Cemu, 15 Azahar, 5b Xenia | folder per title ID |
+| **F — Switch** 🚧 | 6 Yuzu, Citron, Eden, Ryujinx + title key (D2) | folder per title ID + opaque index |
 
 ---
 
@@ -1280,6 +1454,8 @@ own group, in a follow-up PR.
 | **Cemu** (Wii U) | Save in-game (`usr/save/00050000/<low>/user/80000001/…`) | None | `Emulation/roms/wiiu/mlc01/usr/save` (Deck, SD card) · `%APPDATA%\EmuDeck\Emulators\cemu\mlc01\usr\save` | The name: Cemu's `title_list_cache.xml` on each machine (where the AppImage keeps it); both machines on account `80000001`; a disc-format game (`.wud`/`.wux`) with no `meta.xml` | ⏳ | ⏳ |
 | **Azahar** (3DS) | Save in-game (the Deck has Super Mario 3D Land, Samus Returns and one more) | Save state slot 1 (`<program ID>.01.cst`) | `Emulation/storage/azahar/sdmc` + `~/.local/share/azahar-emu/states` · `%APPDATA%\EmuDeck\Emulators\azahar\user\{sdmc,states}` | The name from the ROM on each machine; a CIA-installed game's `content/` never syncs; the third Deck save (`0016e300`, no ROM) | ⏳ | ⏳ |
 | **Xenia** (Xbox 360) | Save in-game (the PC and the Deck both have Forza Horizon) | None | `Emulation/roms/xbox360/content` (Deck, Proton) · `%APPDATA%\EmuDeck\Emulators\xenia\content` | Two profiles' XUIDs (the same one on both machines today); the Deck's old-layout folder; the DLC under `00000002` stays local; a pulled save loads in the other machine's profile | ⏳ | ⏳ |
+
+| **Switch** (Eden/Yuzu ↔ Ryujinx) | Save in-game (the Deck has Undertale in both Yuzu and Ryujinx, the PC Metroid Prime 4 in Eden) | None | `~/.local/share/yuzu/nand/user/save` + `~/.config/Ryujinx/bis/user/save` (Deck) · `Emulation\saves\{eden,ryujinx}\saves` (PC) | One game across Yuzu on the Deck and Ryujinx/Eden on the PC; **a pulled save loads in Ryujinx** (we write `0` and `1`) and Ryujinx keeps it; the Emulator settings copies between Yuzu and Ryujinx on the Deck (Undertale differs in the two today — *Both changed* is expected the first time) | ✅ 2026-10-18 — Animal Crossing 3.0.3 in Eden (SD-card NAND); found Eden opens the island from the device save, so device-save games now stay there on every device | ✅ 2026-10-18 — Animal Crossing 3.0.3 in Eden; Ryujinx not played against a real game |
 | **PrimeHack** | Save in Metroid Prime Trilogy (on the Deck already) | Save state slot 1 (`R3ME01.s01`) | `Emulation/saves/primehack/{GC,Wii}` + `StateSaves` (Deck) · `states` (Windows) | It stays its own game beside Dolphin's Trilogy; where a non-portable Windows PrimeHack keeps its user folder (the PC's EmuDeck install has never run it) | ⏳ | ⏳ |
 
 ### Group I — Games found by their save states alone
@@ -1354,6 +1530,50 @@ cleaned name.
 and PCSX2 shortcuts each matched to their emulator candidate, a hand-made Steam shortcut to a PC game left alone, a
 shortcut whose ROM has no save; Add games on the Deck lists *Forza Horizon* once; the app ID drives pull-before-launch
 for the emulator game (testenv WSL with a fixture shortcut, then the real Deck under Group H).
+
+### Phase 21 — emulator and console icons (Group J, not started)
+
+**Why.** Emulator games are told apart by small text today ("Ryujinx", "Nintendo Switch"). A flat icon per emulator and
+per console makes the Add games chips, the platform groups and the game page readable at a glance. Researched and mocked
+up 2026-10-14 with the maintainer (`phase-21-icons-mockup.html` in this folder: the console's games list grouped by
+platform, Add games, the game page with the Switch copies card, the agent's grid and Emulator settings).
+
+**Sources (settled with the maintainer):**
+
+| What | From | Licence |
+|---|---|---|
+| Emulators | [Arcticons](https://github.com/Arcticons-Team/Arcticons) line icons (48 grid, `currentColor`): RetroArch, Dolphin, PPSSPP, DuckStation, Azahar, Eden, Citron, Yuzu, Suyu, Sudachi, Ryujinx, melonDS, Vita3K, Xenia | CC BY-SA 4.0 |
+| Consoles | RetroArch's Monochrome theme glyphs (`libretro/retroarch-assets`, `src/xmb/monochrome`) | CC BY 4.0 |
+| RPCS3 | its own logo, `rpcs3/rpcs3.svg` in the RPCS3 repo (rpcs3.net/branding is behind a bot check), one colour | the project's — check its terms |
+| ScummVM | `scummvm-media` → `derivate/scummvm_ios7_tinted_logo.svg`, flattened: the shape filled, the S cut out | the project's — check its terms |
+| PCSX2, shadPS4 | the PS2 and PS4 console glyphs (maintainer's call) | as consoles |
+| Model 2 Emulator, Supermodel | the MAME glyph (maintainer's call) — a wordmark about 3.6 : 1, so it gets a wider box than the square icons | as consoles |
+| Cemu | **none yet** — no Arcticons icon and no logo given; the mockup's amber stand-in is a placeholder to replace | — |
+
+Simple Icons was ruled out: it dropped every Nintendo logo in v14 and has no Xbox.
+
+**Where they go** (numbered in the mockup): the console's platform group headings (console glyph) and emulator
+sub-headings (emulator icon); cover tiles of games with no art (console glyph); the release chip (console) and source
+chip (emulator) on both game pages; each machine's row on the console's game page; the agent's Add games emulator chips
+and candidate rows; the Switch copies panels; the agent's grid covers (a console badge); the Emulator settings list; the
+Deck's emulator pills.
+
+**Build notes:**
+- One generated SVG sprite (`<symbol>` per icon) shared by agent-ui and web, from a script that downloads the sources
+  and writes the sprite, so a refresh is one command. Read each source file's own `viewBox` — several RetroArch glyphs
+  are drawn at `0 128 64 64` and MAME on a 256 canvas, and assuming 64 × 64 left them blank in the first mockup.
+- Arcticons' default stroke of 1 is too faint at 15–20 px; draw them at about 2.6.
+- Icons are decoration (`aria-hidden`); labels and controller A-button labels don't change; anything new still follows the gamepad
+  navigation rules (PR #72: `data-pad-label`, `data-pad-action`).
+- Deck Game Mode: `SvgPath.cs` reads only M/L/H/V/A/Z, and these icons use curves. Either teach it C/S/Q/T (about 40
+  lines) or flatten the curves when the sprite is generated.
+- Credits in `NOTICE.md`: Arcticons (CC BY-SA 4.0 — share-alike covers the icon files, not our code), RetroArch assets
+  (CC BY 4.0), and the RPCS3 and ScummVM logos once their terms are checked.
+- **Optional, decide when starting:** a Switch game's eShop icon as its cover. titledb (the table Group F's names come
+  from) carries `iconUrl` / `bannerUrl` per title ID.
+
+**Verify:** the sprite has no missing ids and every icon has a non-empty bounding box (a script check); screenshots of
+each placement in both themes in testenv (Windows + WSL agents, the console); the Deck pills on hardware.
 
 ## Deferred, not built in this task
 

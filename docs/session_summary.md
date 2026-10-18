@@ -1,40 +1,22 @@
-# Session summary — 2026-10-18 — Competitor gap analysis (PR #77)
+# Session summary — 2026-10-18 — Emulator saves Group F (Switch) done (PR #73)
 
 Standalone: the facts below do not need the rest of the vault.
 
-**PR:** [#77 on `Marwanello/SaveLocker`](https://github.com/Marwanello/SaveLocker/pull/77), *Docs: backlog items from the competitor gap analysis*. Branch `docs-competitor-gaps`, base `main`. Vault only, no code. Evidence: `logs/2026-10-18_competitor-gap-analysis.md`.
+**PR:** [#73 on `Marwanello/SaveLocker`](https://github.com/Marwanello/SaveLocker/pull/73), *Emulator saves, Group F: Switch*. Branch `emulator-saves-group-f`, base `main` (merged in, mergeable, every CI check green). **Group F is done**, and so is the Switch row of the real-game checks (Group H): Animal Crossing: New Horizons 3.0.3 now opens with the island on both the PC (Eden) and the Deck (Eden on the SD card's NAND), synced through the test rig (`tests/testenv.ps1`). Agent tests **656**, all passing.
 
-Read the code of OpenSave, Hoard, Ludusavi, BlockSlot, EmuSync, Game-Save-Genie and Worldline (shallow clones, read only, deleted afterwards) and checked every gap against SaveLocker's source and plans. 15 Backlog items came out of it, each with its task file.
+### What this session found and fixed
 
-### High priority
+1. **"The save data is damaged" (Animal Crossing).** Not corruption: the island was saved by game version 3.0.3 and opened by 1.6.0 / the base game. The island's header revision maps to the version (rev 34 = 3.0.3). `SwitchGameVersion` reads each install's version (the Yuzu-fork log's `Booting game` line, the game list's `.pv.txt` cache, Ryujinx's log); the DLC check treats the update as missing, and a pull into an older game is held with a message saying which update to install. Animal Crossing also ties each resident to the user ID (`main.dat`, an 8-slot user table), so other games are not affected by the version check unless their saves change format, and the user ID matters only to games like this one.
+2. **One Switch user on every device** (maintainer: always ask, every Yuzu-based install, this PR). **Settings → One Switch user on every device** (`SwitchUserSharing`): pick a user ID; every Yuzu-based install on every device adopts it (`profiles.dat` rewritten, the user's saves moved to the new ID's folder, games re-pointed here and on the server, everything zipped first); a title saved under both users waits for a pick; each device can put its original user back. Server: the heartbeat reports each device's users (`AgentHealth.SwitchUsersJson`, migration `AddSwitchUsers`); the setting `Switch:SharedUser` is handed back on the heartbeat. Ryujinx is left alone.
+3. **One Eden listed twice on the Deck.** EmuDeck's link `Emulation/saves/eden/saves` ends in `/`, Eden's `nand_directory` doesn't, so the two spellings of one folder were two installs. `EmuDeckRoots.RealPath` drops the trailing separator (commit `5d33631`).
+4. **Eden on the Deck started a new island.** Animal Crossing keeps its island as a **device save** (`…/0000000000000000/000…000/<title>`, Eden's log confirms it opens that one). "Copy here" / "make it the one that syncs" put the island under Eden's user instead. Fixed for every route (commits `ddae01f`, `0f27218`):
+   - Copies follow the synced folder's kind (`SwitchCopies.SlotFor`).
+   - The server records a device-save game as `EmulatorProfile = "switch:device"` (no schema change; the first machine that enrolls it from a device save sets it, and a machine already syncing it from a fork's device save fills it in for older games).
+   - A machine joining such a game uses its own device save, even with no save yet or only a copy under a user (`AlignToGameFolders`).
+   - A machine that already keeps it under a user moves it to the device save on the poller's tick once no Switch emulator runs, the server told first, both sides zipped (`MoveToDeviceSaveAsync`). On the Deck this ran by itself at 16:02 and the island loaded.
+   - Not covered: Ryujinx folders are left to the page (they come from its index), and a game with both an account and a device save where one machine has only the account save.
+5. **Rig gotcha.** `testenv.ps1 build` builds the Deck and WSL agents from the WSL clone, which only takes new commits on `testenv.ps1 sync`. Without it the Deck kept running an older build (`ddae01f`).
 
-1. **Emptied save folder wipes every machine (possible bug, not reproduced).** `SyncEngine.PushCoreAsync` refuses only a *missing* folder; an existing but empty one is pushed as a normal version, and every other machine's pull deletes its copy. Recoverable with *Set as Latest*, but it reaches the fleet first. OpenSave holds the game and asks *delete everywhere* / *put them back*. Plan: failing test, then refuse an empty push when the last version had files, answered like a conflict; optional server backstop. → `tasks/empty-save-hold/`
-2. **A pull deletes excluded files (possible bug, not reproduced).** Excluded files are never archived, and the restore's delete pass removes in-scope files the archive lacks. Default excludes include `*.bak` (many games' own backup saves); per-machine excludes like `settings.ini` get deleted too. OpenSave sets them aside and puts them back. Plan: pass the excludes to `RestoreArchive` and never delete a match; test in `run-hardening-tests.ps1`. → `tasks/keep-excluded-files-on-pull/`
-3. **Registry-based saves (amended).** OpenSave writes the keys to a `registry.json` in an extra save folder, so no archive special-casing is needed (the old plan assumed three places). ~430 manifest games with registry saves, 303 registry-only (OpenSave's count; re-count). Windows `HKCU` first; restore only declared keys; a Deck never pushes an empty capture; Proton `user.reg` later and optional (no competitor does it).
-4. **Switch, Group F (amended).** Neither OpenSave nor Hoard splits Ryujinx per title; both sync the whole folder, so our `imkvdb.arc` plan goes further and has a fallback (yuzu forks first, Ryujinx manual-only). Added OpenSave's profile-rehoming rule, the emulators' name-cache locations, Ryubing and Flatpak IDs. Open: cross-emulator identity contradicts the "different emulators are never one game" decision — maintainer's call.
-5. **File-level saves (amended).** Reuse include scopes: `<base>` + scope `Save.dat`, no archive change. `PathResolver.IsInstallRoot` allows an install folder only with a scope; the settle gate and watcher watch only scoped files. Up to 702 manifest entries. Depends on item 8.
-6. **Native Linux saves (amended).** BlockSlot ships the same design (history per OS family, Proton counts as Windows), confirming the plan. The launch wrapper can tell Proton from native.
-7. **Setup guide + Unraid template (amended, Medium → High).** Setup scores lowest (2/5). Add an Unraid Community Apps template (Hoard: admin user/password as form fields); first run asks for the admin password (BlockSlot); then join link → machine → first game → first push, each self-checking. The old text still said enrollment *file* (replaced by join links in #76).
+### Next
 
-### Medium priority
-
-8. **Epic, GOG, Microsoft Store, Lutris and Bottles installs (new).** `<base>` needs the install folder; today Steam + Playnite on Windows, Steam + Heroic on Linux. Hoard reads Epic `.item` manifests, GOG Galaxy's SQLite db, the Xbox app registry; Hoard/Ludusavi/OpenSave scan Lutris and Bottles. Game Pass saves are mostly unsyncable containers.
-9. **Travel mode / offline backoff (moved onto `main` from the parked branch).** ~5 failed requests a minute forever, the drainer re-zipping each time. Hoard adds separate ladders per failure kind (uploads 10 min; restores 1→5→15→60 min; unresolvable conflict 10→80 min then ask a person). Reuse `ServerReachability` and the 5-minute unreachable clock. Plus a help article on reaching the server from outside (Tailscale / Cloudflare with trusted proxies).
-10. **Household accounts (new).** One server = one person; two people playing the same game collide as conflicts. Hoard has per-user accounts, tokens and storage. Decide: game per user vs shared game with per-user lineage; admin vs member. Large.
-11. **Version history upgrades (new).** Labels on versions, single-file restore, trash with N days to recover, age-based thinning, prune preview. Branches noted, not proposed.
-
-### Low priority
-
-12. **Storage: off-site copies, then dedup (new).** Full zip per version; backups on the same disk. Cheap step: copy server backups to S3-compatible storage or another disk. Dedup stays deferred per Decisions.
-13. **Playtime and "last played" (new).** The agent already knows start/stop; Hoard and OpenSave track sessions.
-14. **More standalone emulators (new).** Mostly one `RomSaves` row each: mGBA, Lime3DS, Project64/Mupen64Plus/simple64, DeSmuME, SameBoy, Snes9x, bsnes, FCEUX, Mesen, Flycast, BlastEm; MAME, ares, BigPEmu to research. xemu probably unsyncable per game. EmuDeck first; add each emulator's chip.
-15. **macOS agent (new).** Every main competitor has one. Third small host + Steam-on-Mac discovery + notarized package; after native-Linux's per-OS lineage.
-
-### Side findings
-
-- **Scores (out of 100):** OpenSave 85.0, Hoard 77.6, **SaveLocker 74.4** (tied with BlockSlot), Ludusavi 57.6, EmuSync 53.6. SaveLocker's 74.4 includes a half-point safety deduction for bugs 1–2. High + Medium items → about 86.
-- **SaveLocker leads on:** conflict safety (leases, launch gate, same conflict choice everywhere), fleet management, self-updating agents/plugins, Playnite plugin, Game Mode controller UI, emulator identity depth, security hardening.
-- **Corrections to the README-only first pass:** code signing is not a gap (nobody Authenticode-signs); Hoard does not back up registry data; EmuSync is last-modified-wins with no conflict handling.
-- **Licence rule:** Hoard (AGPL) and EmuSync (GPL) ideas only; MIT projects may be ported with attribution.
-- **Not adopted:** OpenSave's save paths for pirated-game Steam emulators (Goldberg, CODEX).
-- **Stale docs:** emulator-saves status tables fixed (Groups C, E and Phase 5c shipped in #63/#68). "Duplicate-shortcut warnings outside doctor" is still in the Backlog although #75 shipped it — left as is.
+Merge PR #73. Left in the emulator-saves task: Groups G (each machine's own file names), H (real-game checks for the other emulators), I (games found by states alone) and J (icons). Ryujinx on the Switch row was not played against a real game.

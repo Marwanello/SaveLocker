@@ -2,6 +2,8 @@ import type { DlcCheck, TrackedGame } from '../types'
 import { EMULATOR_NAME, type EmulatorWithSettings } from '../emulators'
 import { DlcCheckCard } from './DlcCheckCard'
 import { SourceChip } from './SourceChip'
+import { SwitchPlaysIn } from './SwitchPlaysIn'
+import { SwitchUserCard } from './SwitchUserCard'
 import { Xbox360SettingsCard } from './Xbox360SettingsCard'
 import { XeniaProfileCard } from './XeniaProfileCard'
 import { Button } from './ui/Button'
@@ -23,16 +25,35 @@ interface Props {
   /** A pull from the game page was just held: the DLC section opens its choice. */
   askSignal: number
   onPulled: (message: string) => void
+  /** The game's folder or source changed here (a Switch game's synced copy moved): the shell re-reads the list. */
+  onChanged: () => void
 }
 
 /**
  * One game's emulator options on this machine, reached from the game's page. Only the emulator the game runs in is shown;
- * Xenia's are the Xbox 360 profile at launch, the DLC the latest save needs, and sharing this machine's DLC. Settings that
- * cover every game of the emulator say so where they appear.
+ * Xenia's are the Xbox 360 profile at launch, the DLC the latest save needs, and sharing this machine's DLC. A Switch game's
+ * are which Switch emulator it plays in here, and its copies in the others. Settings that cover every game of the emulator
+ * say so where they appear.
  */
-export function EmulatorSettingsView({ game, emulator, machineName, tab, onTab, onBack, dlc, refreshKey, askSignal, onPulled }: Props) {
+export function EmulatorSettingsView({ game, emulator, machineName, tab, onTab, onBack, dlc, refreshKey, askSignal, onPulled, onChanged }: Props) {
   const missing = dlc?.packages?.filter(p => !p.here).length ?? 0
   const requests = dlc?.asked?.filter(t => t.status === 'Requested').length ?? 0
+
+  if (emulator === 'switch') {
+    const runs = game.source?.detail ?? EMULATOR_NAME.switch
+    return (
+      <div className="sl-page">
+        <Button size="sm" variant="quiet" className="sl-back" onClick={onBack}>← {game.name}</Button>
+        <PageHead
+          title="Emulator settings"
+          sub={`${game.name} syncs from ${runs} on ${machineName}. These settings apply to this device.`}
+          actions={<SourceChip source={game.source} />}
+        />
+        <SwitchPlaysIn gameId={game.id} gameName={game.name} machineName={machineName} refreshKey={refreshKey} onChanged={onChanged} />
+        <SwitchUserCard onlyWhenNeeded />
+      </div>
+    )
+  }
 
   return (
     <div className="sl-page">

@@ -23,5 +23,6 @@ public static class EmulatorSaves
         ("Cemu saves", CemuSaves.Scan),
         ("Azahar saves", AzaharSaves.Scan),
         ("Xenia saves", XeniaSaves.Scan),
+        ("Switch saves", SwitchEmulators.Scan),
     };
 }

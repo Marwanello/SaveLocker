@@ -159,13 +159,23 @@ public sealed record ScanCandidate(
     /// <summary>The emulator profile the save is under here, <c>xenia:&lt;XUID&gt;</c>, or null (tasks/emulator-saves Phase 5c):
     /// the first machine's becomes the game's, and another machine's game is put under that one.</summary>
     string? EmulatorProfile = null,
+    /// <summary>The emulated title the save is across emulators, <c>switch:&lt;title ID&gt;</c> (D2, tasks/emulator-saves Phase 6):
+    /// a server game with this key is this game whatever it is called, and whichever emulator made it. Null for the rest.</summary>
+    string? EmulatorKey = null,
+    /// <summary>No save here yet: a Switch ROM whose title has never saved on this machine, listed where its emulator will look
+    /// for one, so the first pull puts the fleet's save there.</summary>
+    bool NoSaveYet = false,
     /// <summary>
     /// Steam has this game under more than one AppID — a launcher re-created the shortcut instead of
     /// updating it (<see cref="SteamShortcuts.DuplicateNameGroups"/>), and Steam only ever launches
     /// one. One entry per distinct AppID; <see cref="DuplicateShortcut.Tracked"/> marks the shortcut
     /// this scan resolved. Null unless the shape was actually seen (and never an empty list).
     /// </summary>
-    IReadOnlyList<DuplicateShortcut>? DuplicateShortcuts = null)
+    IReadOnlyList<DuplicateShortcut>? DuplicateShortcuts = null,
+    /// <summary>A Yuzu fork's title found with only its device save (<see cref="SuggestedSaveDir"/>): the current user's
+    /// folder for it, where an account save would go when the server's game keeps one
+    /// (<see cref="SwitchEmulators.AlignToGameFolders"/>). Null for everything else.</summary>
+    string? SwitchAccountDir = null)
 {
     /// <summary>
     /// What a scanner merges duplicates on: the normalised name, so one game found by two sources is one

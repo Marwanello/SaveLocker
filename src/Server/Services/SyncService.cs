@@ -598,11 +598,21 @@ public sealed class SyncService
         var region = GameReleaseDto.RegionKey(release?.Region);
         // Two releases of one game share a name: a request that says its region joins only that region's game,
         // or one no release was recorded for yet, which takes this one. One that says none joins any, as before.
+        var key = EmulatorKeys.Clean(req.EmulatorKey);
+        // D2: a title keyed by the emulators is the same game on every machine, whatever each one calls it.
+        var keyed = key is null ? null : await _db.Games.FirstOrDefaultAsync(g => g.EmulatorKey == key);
         var named = await _db.Games.Where(g => g.Name.ToLower() == lowered).ToListAsync();
-        var existing = region.Length == 0
-            ? named.OrderBy(g => g.Region.Length == 0 ? 0 : 1).FirstOrDefault()
-            : named.FirstOrDefault(g => string.Equals(g.Region, region, StringComparison.OrdinalIgnoreCase)) ??
-              named.FirstOrDefault(g => g.Region.Length == 0);
+        // A game keyed to another title is never this one, whatever it is called.
+        bool OtherTitle(Game g) => key is not null && g.EmulatorKey is not null && g.EmulatorKey != key;
+        var joinable = named.Where(g => !OtherTitle(g)).ToList();
+        var existing = keyed ?? (region.Length == 0
+            ? joinable.OrderBy(g => g.Region.Length == 0 ? 0 : 1).FirstOrDefault()
+            : joinable.FirstOrDefault(g => string.Equals(g.Region, region, StringComparison.OrdinalIgnoreCase)) ??
+              joinable.FirstOrDefault(g => g.Region.Length == 0));
+        // Only another title has the name here, and one name per region means no new game can take it: that game is
+        // handed back untouched, and the agent, which checks the key, refuses it.
+        if (existing is null && named.FirstOrDefault(g => OtherTitle(g) && string.Equals(g.Region, region, StringComparison.OrdinalIgnoreCase)) is { } taken)
+            return taken;
         var profile = EmulatorProfiles.Clean(req.EmulatorProfile);
         if (existing is not null)
         {
@@ -620,6 +630,23 @@ public sealed class SyncService
                 existing.EmulatorProfile = profile;
                 changed = true;
             }
+            if (key is not null && existing.EmulatorKey is null)
+            {
+                existing.EmulatorKey = key;
+                changed = true;
+            }
+            // A Switch game the first machine could only call "Switch <title ID>" takes the first real name another
+            // machine brings, unless another game already has it.
+            if (existing == keyed && SwitchTitles.TitleIdOf(key) is { } titleId &&
+                string.Equals(existing.Name, SwitchTitles.Placeholder(titleId), StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(name, existing.Name, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(name, SwitchTitles.Placeholder(titleId), StringComparison.OrdinalIgnoreCase) &&
+                named.Count == 0)
+            {
+                await Audit(null, existing.Id, "game.rename", $"{existing.Name} → {name}");
+                existing.Name = name;
+                changed = true;
+            }
             if (changed) await _db.SaveChangesAsync();
             return existing;
         }
@@ -631,6 +658,7 @@ public sealed class SyncService
             Region = region,
             ReleaseJson = release is null ? null : JsonSerializer.Serialize(release, JsonSerializerOptions.Web),
             EmulatorProfile = profile,
+            EmulatorKey = key,
             ManifestKey = req.ManifestKey,
             CustomPathsJson = req.CustomPathsJson,
             SuggestedSaveDir = string.IsNullOrWhiteSpace(req.SuggestedSaveDir) ? null : req.SuggestedSaveDir.Trim(),

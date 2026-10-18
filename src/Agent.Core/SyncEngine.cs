@@ -364,6 +364,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
         // A Xenia game's row of its profile is copied out of the shared dashboard first, so the push carries it.
         XeniaProfileSlice.Export(game, _log, stateDir: _config.StateDir);
+        // A Switch copy kept in step and played last is taken into the synced folder, so this push carries it.
+        SwitchCopies.Reconcile(_config, game, _log);
 
         // One pass over the save folder answers both questions a push asks of it: the aggregate
         // content hash (has anything changed at all?) and the per-file manifest a delta negotiates
@@ -748,6 +750,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
             var (versionId, headHash) = head.Value;
             AdoptArchiveKeys(game, archive);
+            // A Switch copy kept in step and played since is taken in first, so the check below protects it too.
+            SwitchCopies.Reconcile(_config, game, _log);
             var roots = game.Roots(_config.StateDir);
             var localHash = SaveArchive.HashDirectory(roots, game.ExcludeGlobs);
             if (localHash == headHash)
@@ -802,6 +806,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     _log($"[{game.Name}] the server's save holds folder(s) this game no longer has " +
                          $"({string.Join(", ", restored.SkippedKeys)}); left out.");
                 XeniaProfileSlice.AfterPull(game, _log, stateDir: _config.StateDir);
+                SwitchCopies.AfterPull(game, _log);
             }
             catch (SaveArchive.UnsafeArchiveException ex)
             {
@@ -820,6 +825,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             _log($"[{game.Name}] restored latest save from server.");
             MarkSynced(game.GameId);
             DlcHoldStore.For(_config).Clear(game.GameId);
+            SwitchCopies.Reconcile(_config, game, _log);
             await ReportContentAsync(game, null);
             if (missingBefore.Any(Directory.Exists)) _onFoldersChanged?.Invoke();
             return PullOutcome.Restored;
@@ -950,6 +956,30 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// The Emulator settings page's two named choices for a Switch game whose save here and the cloud's differ: put the
+    /// cloud save in the emulator that syncs (<paramref name="cloud"/>), or keep that emulator's and upload it. The person
+    /// chose a side, so both are forced; neither loses anything — the save replaced here is zipped first with the copies'
+    /// backups, and the cloud's replaced head stays a version on the server.
+    /// </summary>
+    public async Task<(bool Ok, string Message)> TakeSideAsync(TrackedGame game, bool cloud, CancellationToken ct = default)
+    {
+        if (!cloud)
+        {
+            var push = await PushAsync(game, force: true, ct: ct);
+            return (push?.Status is UploadStatus.Created or UploadStatus.NoChange, DescribePush(game, push));
+        }
+        if (GameActivity.IsActive(game)) return (false, $"{game.Name} is running, so its save was not replaced.");
+        var (ran, _) = await WithGameLockAsync(game, () =>
+        {
+            SwitchCopies.BackupSynced(_config, game, "before-cloud");
+            return Task.FromResult(true);
+        }, TimeSpan.FromSeconds(2), ct);
+        if (!ran) return (false, $"A sync of {game.Name} is running. Try again when it is done.");
+        var outcome = await PullAsync(game, force: true, ct: ct);
+        return (outcome is PullOutcome.Restored or PullOutcome.UpToDate, DescribePull(game, outcome));
+    }
+
+    /// <summary>
     /// A person at this machine settles its own conflict (<paramref name="conflict"/>: VersionA is the
     /// cloud's, VersionB this machine's rejected push), and the save here follows the choice at once.
     /// <para>
@@ -1030,7 +1060,11 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         var known = holds.For(game.GameId)?.VersionId == head.Id;
         holds.Hold(game.GameId, head.Id, missing);
         if (!known)
-            Alert($"[{game.Name}] held the pull: {head.MachineName}'s save was made with {DlcCheck.Summary(missing)} " +
+            Alert(SwitchCopies.TitleId(game) is not null && missing.All(p => p.Version is not null)
+                ? $"[{game.Name}] held the pull: {head.MachineName}'s save was made with version {missing[0].Version} of the game, and " +
+                  $"{SwitchCopies.SyncedEmulator(game) ?? "the emulator"} here runs {SwitchGameVersion.VersionOf(here)}, which can't open it " +
+                  $"(the game says the save data is damaged). Install update {missing[0].Version} in it, the one {head.MachineName} has, then pull it from the game's page."
+                : $"[{game.Name}] held the pull: {head.MachineName}'s save was made with {DlcCheck.Summary(missing)} " +
                   "this machine doesn't have. Open the game in SaveLocker to pull anyway, or install them and it goes ahead.",
                 AgentEventCodes.PullHeldForDlc, AgentEventSeverity.Warning, game.GameId);
         return true;
@@ -1257,6 +1291,31 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// which a pull may be restoring into at that moment. False when the folder was not there, or the
     /// lock was not free — the caller tries again on its next pass.
     /// </summary>
+    /// <summary>
+    /// Run <paramref name="work"/> under this game's sync lock, both layers as a push or a pull takes them — for what writes
+    /// a game's save folder outside a sync (a Switch game's copies, <see cref="SwitchCopies"/>), which must never land in
+    /// the middle of a pull's restore or a push's archive, in this process or the launch wrapper's. Waits at most
+    /// <paramref name="wait"/> for a sync in progress; <c>Ran</c> is false when one still holds it.
+    /// </summary>
+    public async Task<(bool Ran, T Result)> WithGameLockAsync<T>(TrackedGame game, Func<Task<T>> work, TimeSpan wait,
+        CancellationToken ct = default)
+    {
+        var gate = _pushLocks.GetOrAdd(game.GameId, _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(wait, ct)) return (false, default!);
+        try
+        {
+            using var crossProcess = AgentStateLock.TryForGame(game.GameId, _config.StateDir, wait, ct);
+            if (crossProcess is null) return (false, default!);
+            return (true, await work());
+        }
+        catch (AgentStateLockException ex)
+        {
+            _log($"[{game.Name}] {ex.Message}");
+            return (false, default!);
+        }
+        finally { gate.Release(); }
+    }
+
     public async Task<bool> ForgetSavePathAsync(TrackedGame game, string key, CancellationToken ct = default)
     {
         var gate = _pushLocks.GetOrAdd(game.GameId, _ => new SemaphoreSlim(1, 1));

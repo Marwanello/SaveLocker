@@ -45,6 +45,11 @@ public static class EmulatorPaths
         Environment.GetEnvironmentVariable("XDG_DATA_HOME") is { Length: > 0 } x && HomeOverride is null
             ? x : Path.Combine(Home, ".local", "share");
 
+    /// <summary><c>$XDG_CACHE_HOME</c>, else <c>~/.cache</c> — never the real one under a fixture home.</summary>
+    public static string XdgCache =>
+        Environment.GetEnvironmentVariable("XDG_CACHE_HOME") is { Length: > 0 } x && HomeOverride is null
+            ? x : Path.Combine(Home, ".cache");
+
     /// <summary>A Flatpak app's own home: <c>~/.var/app/&lt;id&gt;</c>.</summary>
     public static string Flatpak(string appId) => Path.Combine(Home, ".var", "app", appId);
 

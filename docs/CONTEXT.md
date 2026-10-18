@@ -1983,6 +1983,68 @@ matched on its own spelling of the title, inside `config/` only; Sync all counts
 unanswered hand-over for other packs is replaced; the console ignores machines that no longer keep the game. Decky: an `Ask`
 no longer reuses the conflict freeze (a raced launch runs on; a different choice applies next launch); `.gitattributes` keeps
 LF. Unit **539**.
+<br>**2026-10-13: Group F built (branch `emulator-saves-group-f`, PR on the fork).** Switch: Eden, Citron, Yuzu, Suyu,
+Sudachi (one table, `SwitchEmulators`) and Ryujinx (its `imkvdb.arc` read by `RyujinxSaveIndex`). The maintainer's calls:
+**one game per Switch title across every Switch emulator** (the exception to "different emulators are never one game",
+Decisions.md), D2 built as planned (`Games.EmulatorKey`, migration `AddGameEmulatorKey`), a ROM with no save listed as
+*No save here yet*, captures from both machines (Citron researched), and a **same-machine copies** feature for playing
+one game in two emulators: the agent's Emulator settings page copies the synced save to another emulator, keeps it in
+sync (the one played last wins; asks when both changed; nothing copied while an emulator runs; backups under
+`<state>/emulator-copies`), or makes it the synced copy. Captured read-only: the PC's Eden (*Metroid Prime 4*) and
+Ryujinx index; the Deck's Yuzu and Ryujinx, with *Undertale* saved in both. Also marked Groups C and E (with 5c) shipped.
+Unit **551**. Details: `tasks/emulator-saves/plan.md` → *Group F — as built*.
+<br>**2026-10-14, Group F follow-ups (same PR):** Switch games are named from a bundled eShop table
+(`src/Shared/SwitchTitles`, blawar/titledb, MIT) when the machine has no Ryujinx record or ROM name; a game first
+added as `Switch <title ID>` is renamed by the server when a machine knows its name; Switch rows have **Change**; the
+server takes a Switch game's eShop icon (no SteamGridDB key needed). Checked live on the rig (WSL first, then Windows;
+the real TotK icon fetched). Unit **558**. The emulator/console icon work is planned as Group J (Phase 21), not built.
+**Rig gotcha:** another session's tray held :5188, so `testenv up` reported *its* build — this branch's Windows tray ran
+with `-WinPort 5198`.
+<br>**2026-10-14, PR review fixes (same PR):** keep-in-sync compared a copy against a different set of folders than it
+wrote, so a device save only one emulator had a place for (Ryujinx before it makes one) was copied again every poller
+tick, each with a backup and a toast — both sides now go through `SwitchCopies.Pair` (only the folders both have) and an
+empty extra folder hashes as absent. Turning keep-in-sync on now seeds `LastHash` so the save played last wins instead of
+an instant "Both changed". Copy actions and the poller's reconcile run under the game's sync lock
+(`SyncEngine.WithGameLockAsync`, the API server's `withGameLock`). **Make this the synced copy** tells the server first
+and changes nothing when it can't (the poller applies the server's folder back), and refuses a target with no device
+save when the game keeps one. The server never joins or edits a same-named game keyed to another title; the poller
+renames only a `Switch <title ID>` placeholder. Unit **566**.
+<br>**2026-10-15, same PR: which emulator plays it (direction A).** The maintainer's "I chose the cloud save and nothing
+changed" on the Deck was the save going into Yuzu, the emulator the game synced through there, with Eden (where they
+play) not installed. The Switch Emulator settings page now leads with a status line naming that emulator (**Put the cloud
+save in Yuzu** / **Keep Yuzu's and upload it**, forced, refused if it no longer syncs) and an **On this device, you play it
+in** picker (switch keeping its save or taking the cloud's; not-installed and no-slot emulators explained, with **Tell me
+when … is ready**). New local route `vs-cloud`, actions `take-cloud`/`upload`/`tell-when-ready`/`stop-telling`. Agent
+tests **639**. Details: `tasks/emulator-saves/plan.md` → Group F follow-ups, 2026-10-15.
+<br>**2026-10-16, same PR:** a Switch game's folder keys now follow the server game's layout on join (a device save is
+`main` where the fleet has no `device` folder), which is why the Deck's Animal Crossing island never reached the PC's
+Eden — **remove the game and add it again** on machines enrolled before this. The picker moves the save to the emulator
+picked, shows each install (EmuDeck/Standalone) separately and always lists Eden, Citron, Yuzu and Ryujinx; the copies
+card is gone; the controller only drives a focused agent window. `api-types.ts` regenerated from a running agent (the
+`package-linux` CI check). Playthroughs (named save forks) added to the backlog.
+<br>**2026-10-16, later:** "the save data is damaged" in the PC's Eden was the **game version** (Deck's Yuzu runs ACNH
+1.6.0, the PC's Eden the base 1.0.0; the save copied byte for byte). The DLC check now covers a Switch game's version,
+read from the emulator's log or game list cache: a newer version's save holds the pull, and the picker shows each
+emulator's version and warns. Animal Crossing also ties residents to the emulator user's ID (decrypted `main.dat`),
+so the Deck and PC need one user ID or the game asks to relink on each switch.
+<br>**2026-10-16, last:** built — **Settings → One Switch user on every device** (`SwitchUserSharing`): the user picks a user
+ID; every Yuzu-based install on every device adopts it (backed up, saves moved, games re-pointed on the server too),
+titles saved under both users wait for a pick, each device can put its original user back. Migration `AddSwitchUsers`.
+Not yet run on the rig or the Deck — pick the Deck's Yuzu user `DBBE23FA…` (the island's).
+<br>**2026-10-18: Group F done** (PR #73, ready to merge, CI green). Animal Crossing 3.0.3 loads on the PC (Eden) and the
+Deck (Eden) through the rig. Found and fixed: one Eden listed twice (EmuDeck's link ends in `/`), and a device save copied
+under a user, where the emulator never opens it — the server now records a device-save game (`EmulatorProfile =
+"switch:device"`), joins and copies use the device save, and a machine that kept it under a user moves it there itself.
+Agent tests **656**. Details: `session_summary.md`, `progress.md`.
+<br>**Gotcha:** `testenv.ps1 build` builds the Deck/WSL agents from the WSL clone — run `testenv.ps1 sync` first after
+committing, or the Deck keeps the previous build (check `testenv.ps1 status`'s build labels).
+<br>**2026-10-18, second review of PR #73 (the commits since 2026-10-14):** a Switch copy is now recorded per install
+(`EmulatorCopy.Saves`), so keep-in-sync for a standalone install of the synced emulator no longer stops at the EmuDeck one;
+`SwitchUserSharing` adopts or undoes one pass at a time (the poller and the Settings button raced on one install), and a
+failed adopt restores the saves it set aside for titles under both users from its backup; `NowReady` runs under the game's
+lock with the keep-in-sync pass; `SwitchGameVersion` reads each log once per size and write time instead of on every page
+load, push and pull; three misplaced doc comments fixed. Unit **659**.
+<br>**Next action for this item:** merge PR #73; then Group G, H (the other emulators), I or J.
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
 steps 1–5 of the profile and 1–11 of the DLC hand-over), then Forza Horizon for real between PC and Deck (Group H).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.

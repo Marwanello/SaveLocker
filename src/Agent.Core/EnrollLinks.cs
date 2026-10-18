@@ -19,6 +19,8 @@ public static class EnrollLinks
     /// <summary>The options for one emulator candidate, the automatic one first. Empty for any other candidate.</summary>
     public static IReadOnlyList<LinkOption> For(IReadOnlyList<GameDto> server, ScanCandidate c)
     {
+        if (c.Source == ScanSource.Emulator && c.NotSyncable is null && SwitchTitles.TitleIdOf(c.EmulatorKey) is { } titleId)
+            return SwitchOptions(server, c, titleId);
         if (c.Source != ScanSource.Emulator || c.IncludeGlobs is not { Count: > 0 } || c.NotSyncable is not null) return [];
         var extras = c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>();
         var options = new List<LinkOption>();
@@ -67,6 +69,49 @@ public static class EnrollLinks
         return options;
     }
 
+    /// <summary>
+    /// A Switch save's options (D2): a title is one game on the server whichever emulator saved it, so it joins the game
+    /// keyed to its title, and is never kept apart from it. With none yet, it is a new game, or it may join a same-titled
+    /// game no title was recorded for (one added by hand, or by an agent from before D2), which then takes this title.
+    /// A same-titled game of another title is listed greyed out.
+    /// </summary>
+    private static List<LinkOption> SwitchOptions(IReadOnlyList<GameDto> server, ScanCandidate c, string titleId)
+    {
+        var options = new List<LinkOption>();
+        if (server.FirstOrDefault(g => SameKey(g, c)) is { } keyed)
+        {
+            var name = Enroller.KeyedName(server, keyed, c);
+            options.Add(new LinkOption(Auto, LinkKind.Join, name, keyed.Id,
+                $"The server’s “{keyed.Name}” is this Switch title ({titleId}), whichever emulator saved it." +
+                (name == keyed.Name ? "" : $" It takes the name “{name}”."), "Same title"));
+            return options;
+        }
+        var auto = Enroller.ServerNameFor(server, c, c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>());
+        options.Add(auto is null
+            ? new LinkOption(Auto, LinkKind.Blocked, c.Name, null,
+                "Every name this save could take on the server is already another game’s.", "Not available")
+            : new LinkOption(Auto, LinkKind.New, auto, null, $"No server game is this Switch title ({titleId}) yet.", "New"));
+        var names = Enroller.NamesFor(c);
+        foreach (var g in server.Where(g => SameTitle(g, c, names)).OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase))
+            options.Add(TakesSwitchTitle(g)
+                ? new LinkOption(Game, LinkKind.Join, g.Name, g.Id,
+                    $"No Switch title was recorded for it. Joining makes it {titleId}, the game every Switch emulator’s save of it joins.",
+                    "Takes this title")
+                : g.EmulatorKey is { } other
+                ? new LinkOption(Game, LinkKind.Blocked, g.Name, g.Id,
+                    $"Another Switch title ({SwitchTitles.TitleIdOf(other) ?? other}). Each title is its own game.", "Another title")
+                : new LinkOption(Game, LinkKind.Blocked, g.Name, g.Id,
+                    $"Keeps {Files(g)}. Only a game that keeps a whole save folder can take a Switch title.", "Different files"));
+        return options;
+    }
+
+    private static bool SameKey(GameDto g, ScanCandidate c) =>
+        c.EmulatorKey is not null && string.Equals(g.EmulatorKey, c.EmulatorKey, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A game a Switch save may join by hand: no title recorded, and its whole folder is the save.</summary>
+    private static bool TakesSwitchTitle(GameDto g) =>
+        g.EmulatorKey is null && g.IncludeGlobs is not { Length: > 0 } && (g.ExtraPaths ?? []).Length == 0;
+
     /// <summary>The name a save kept as its own game takes: the first of <see cref="Enroller.NamesFor"/> no
     /// server game has. Null when every one is taken.</summary>
     public static string? SeparateName(IReadOnlyList<GameDto> server, ScanCandidate c) =>
@@ -92,6 +137,10 @@ public static class EnrollLinks
             case Game:
                 if (server.FirstOrDefault(g => g.Id == choice.GameId) is not { } picked)
                     return (null, "the server game you picked is no longer on the server.");
+                if (SwitchTitles.TitleIdOf(c.EmulatorKey) is not null)
+                    return SameKey(picked, c) || TakesSwitchTitle(picked) ? (picked.Name, null)
+                        : picked.EmulatorKey is not null ? (null, $"the server's '{picked.Name}' is another Switch title.")
+                        : (null, $"the server's '{picked.Name}' keeps only some files of its folder, so it cannot take a Switch title.");
                 return Enroller.SameFiles(picked, c) ? (picked.Name, null)
                     : OtherEmulator(picked, c) ? (null, $"the server's '{picked.Name}' holds another emulator's saves; saves from different emulators are kept as separate games.")
                     : Enroller.OtherRegion(picked, c) ? (null, $"the server's '{picked.Name}' is the {picked.Release!.Region} release; each region is its own game.")

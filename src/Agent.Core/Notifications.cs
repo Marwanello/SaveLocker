@@ -235,6 +235,15 @@ public static class NoticeCatalog
         AgentEventSeverity.Info, NoticeAction.Folders, "Review folders", "Later",
         ClearedBySync: false);
 
+    /// <summary>A Switch emulator the user asked about on a game's Emulator settings page can sync the game now: installed,
+    /// with a save folder for it. The game's page has the switch.</summary>
+    public static AgentNotice EmulatorReady(Guid gameId, string gameName, string emulator) => new(
+        $"emulator.ready:{gameId:D}:{emulator}", gameId,
+        $"{emulator} is ready for {gameName}",
+        $"You asked to be told. Make {emulator} the emulator {gameName} syncs through here, and put the cloud save in it, from the game's Emulator settings.",
+        AgentEventSeverity.Info, NoticeAction.Game(gameId), "Open game", "Later",
+        ClearedBySync: false);
+
     // ----- The DLC hand-over (tasks/emulator-saves Phase 5c) -----
 
     private static string Packs(ContentTransferDto t)

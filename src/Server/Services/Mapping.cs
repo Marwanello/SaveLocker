@@ -28,7 +28,8 @@ public static class Mapping
             NullIfEmpty(GlobConfig.Parse(g.IncludeGlobs)),
             ToDtos(extraPaths, machinePaths),
             Release: ReadRelease(g),
-            EmulatorProfile: g.EmulatorProfile);
+            EmulatorProfile: g.EmulatorProfile,
+            EmulatorKey: g.EmulatorKey);
 
     /// <summary>The game's release, or null for none — or for JSON this build cannot read.</summary>
     public static GameReleaseDto? ReadRelease(Game g)

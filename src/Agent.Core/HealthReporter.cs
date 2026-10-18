@@ -39,6 +39,18 @@ public sealed class HealthReporter
         public List<Guid> ResolvedGameIds { get; set; } = new();
     }
 
+    /// <summary>This machine's Yuzu-based Switch emulator users (<see cref="SwitchUserSharing"/>); null when they can't be read,
+    /// so the server keeps the last report rather than forgetting them.</summary>
+    private static SwitchUserReport[]? SwitchUserReports()
+    {
+        try { return SwitchUserSharing.Reports(SwitchEmulators.Find()); }
+        catch (Exception ex)
+        {
+            AgentLogger.LogException("HealthReporter.SwitchUsers", ex);
+            return null;
+        }
+    }
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         WriteIndented = true,
@@ -188,7 +200,8 @@ public sealed class HealthReporter
             PathCandidates: pathCandidates.Length == 0 ? null : pathCandidates,
             Os: OsIdentity.This,
             StagedVersion: StagedVersion?.Invoke(config),
-            FollowsConsoleAppearance: config.FollowConsoleAppearance);
+            FollowsConsoleAppearance: config.FollowConsoleAppearance,
+            SwitchUsers: SwitchUserReports());
 
         AgentHeartbeatResponse response;
         try
@@ -234,6 +247,9 @@ public sealed class HealthReporter
         // pending for the daemon's next beat instead of marking something handled it never did.
         // The HOST marks it handled, and only once the attempt actually starts: marking it here,
         // before the throttle has had its say, consumed presses that downloaded nothing.
+        try { config.ApplySwitchSharedUser(response.SwitchSharedUser); }
+        catch (Exception ex) { AgentLogger.LogException("HealthReporter.SwitchUser", ex); }
+
         try
         {
             config.ApplyManifestSettings(response.ManifestRefreshDays);

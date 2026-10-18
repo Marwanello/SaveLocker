@@ -147,7 +147,7 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
         <EmulatorSettingsView
           game={game} emulator={emulator} machineName={machineName} tab={emuTab}
           onTab={t => { setDlcAsk(0); setEmuTab(t) }} onBack={() => { setDlcAsk(0); setEmuTab(null) }}
-          dlc={dlc} refreshKey={syncCount} askSignal={dlcAsk}
+          dlc={dlc} refreshKey={syncCount} askSignal={dlcAsk} onChanged={onChanged}
           onPulled={text => { setToast({ text, failed: false }); setSyncCount(n => n + 1); load(); onSynced() }}
         />
         {toastView}
