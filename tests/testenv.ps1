@@ -817,6 +817,9 @@ function New-EmuDeckFixture {
     # Group I (Phase 19): one game per emulator played from states alone, before its first in-game save - each listed as
     # "Save states only so far", its save folder declared so the first in-game save joins it.
     Write-FixtureFile (Join-Path $states 'Super Mario World (USA).state1') "smw slot 1 $(Get-Date -Format o)"
+    # Group G (Phase 17): the USA dump of Earthbound; the WSL machine has the Rev 1 dump's save.
+    Write-FixtureFile (Join-Path $saves 'Earthbound (USA).srm') "windows earthbound $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $states 'Earthbound (USA).state1') 'windows earthbound slot 1'
     Write-FixtureFile (Join-Path $melon 'states\New Super Mario Bros. (USA).ml2') "nsmb slot 2 $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $ps2 'states\SLUS-20778 (6F8545DB).01.p2s') "god of war slot 1 $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $ds 'states\SLUS-00594_1.sav') "metal gear solid slot 1 $(Get-Date -Format o)"
@@ -864,6 +867,12 @@ function New-EmuDeckFixture {
         Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Chrono Trigger (USA).srm') 'old chrono save on the WSL machine'
         Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Zelda (USA).srm') 'wsl zelda - must survive every Chrono pull'
         Set-Content -NoNewline -Encoding ascii (Join-Path $wStates 'Zelda (USA).state') 'wsl zelda state - must survive every Chrono pull'
+        # Group G (Phase 17): another dump of the Windows machine's Earthbound, linked under this machine's own names
+        # (Add games -> Change -> "Different file names"). Group I (Phase 19): Super Mario World from states alone, as on
+        # Windows, so the two join.
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Earthbound (USA) (Rev 1).srm') "wsl earthbound rev 1 $(Get-Date -Format o)"
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wStates 'Earthbound (USA) (Rev 1).state2') 'wsl earthbound rev 1 slot 2'
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wStates 'Super Mario World (USA).state') 'wsl smw state'
         $wMelon = Join-Path $wsl 'saves\melonds'
         New-Item -ItemType Directory -Force (Join-Path $wMelon 'saves'), (Join-Path $wMelon 'states') | Out-Null
         Set-Content -NoNewline -Encoding ascii (Join-Path $wMelon 'saves\Pokemon - Platinum Version (USA).sav') 'old platinum on the WSL machine'
