@@ -429,6 +429,28 @@ public sealed class GroupFSyncTests : IClassFixture<ServerProcess>, IDisposable
     }
 
     [Fact]
+    public async Task A_device_save_moves_to_the_device_save_of_the_emulator_it_moves_to()
+    {
+        // The Deck, 2026-10-18: Yuzu syncs the island (a device save only); Eden is added with a user and no island. The
+        // island went under Eden's user, and Eden, which opens the device save, started a new one.
+        var yuzu = S.Eden(P("deck/yuzu"), EdenUser) with { Emulator = "Yuzu" };
+        var eden = S.Eden(P("deck/Emulation"), EdenUser);
+        S.Write(Path.Combine(S.EdenSave(P("deck/yuzu"), SwitchEmulators.DeviceProfile, Title), "main.dat"), "island");
+        IReadOnlyList<SwitchEmulators.Setup> setups = [yuzu, eden];
+        var deck = await Machine("deck");
+        var game = await Enroll(deck, SwitchEmulators.Scan([yuzu], []), Title);
+        var edenIsland = S.EdenSave(P("deck/Emulation"), SwitchEmulators.DeviceProfile, Title);
+        Assert.Contains(SwitchCopies.List(deck, game, setups), r => r.Emulator == "Eden" && r.Folder == edenIsland && r.State == SwitchCopies.States.Empty);
+
+        Assert.Null(SwitchCopies.CopyHere(deck, game, "Eden", _ => { }, setups));
+        Assert.Null(await SwitchCopies.MakeSyncedAsync(deck, game, "Eden", ApiClient.For(deck), _ => { }, setups));
+        Assert.Equal("island", File.ReadAllText(Path.Combine(edenIsland, "main.dat")));
+        Assert.Equal(edenIsland, AgentConfig.Load(deck.ConfigPath).Games.Single(g => g.GameId == game.GameId).SaveDirectory);
+        Assert.False(Directory.Exists(S.EdenSave(P("deck/Emulation"), EdenUser, Title)));
+        Assert.Contains(SwitchCopies.List(deck, game, setups), r => r.Emulator == "Yuzu" && r.State == SwitchCopies.States.Same);
+    }
+
+    [Fact]
     public async Task The_version_a_save_was_made_with_reaches_the_cloud_and_an_older_game_here_lacks_it()
     {
         // The maintainer's rig, 2026-10-16: the Deck's Yuzu runs 1.6.0, the PC's Eden the base game, which says the

@@ -33,6 +33,8 @@ public static partial class SwitchEmulators
     /// <summary>The all-zero profile a device save is filed under.</summary>
     public const string DeviceProfile = "00000000000000000000000000000000";
     public const string DeviceFolderKey = "device";
+    /// <summary>The user a slot names when its save is the device save.</summary>
+    public const string DeviceUser = "Device";
 
     /// <summary>One Yuzu fork: its name, its folder names, and where EmuDeck for Windows unpacks it.</summary>
     public sealed record Fork(string Name, string Folder, string? FlatpakId, string? EmuDeckWindows);
@@ -275,7 +277,7 @@ public static partial class SwitchEmulators
             var main = account ?? device;
             if (main is null) return null;
             var deviceDir = account is not null && device is not null ? Dir(device) : null;
-            return Make(s, titleId, Dir(main), deviceDir, main == device ? "Device" : names.GetValueOrDefault(main.UserId));
+            return Make(s, titleId, Dir(main), deviceDir, main == device ? DeviceUser : names.GetValueOrDefault(main.UserId));
         }
 
         var profiles = ProfileFolders(s).ToList();
@@ -287,7 +289,7 @@ public static partial class SwitchEmulators
         var accountDir = saved.OrderByDescending(d => currentUser is not null && d.Contains(currentUser, StringComparison.OrdinalIgnoreCase))
                              .ThenByDescending(Written).FirstOrDefault();
         if (accountDir is null && HasFiles(deviceSave))
-            return Make(s, titleId, deviceSave, null, "Device", currentUser is null ? null : At(currentUser));
+            return Make(s, titleId, deviceSave, null, DeviceUser, currentUser is null ? null : At(currentUser));
         accountDir ??= currentUser is null ? null : At(currentUser);
         if (accountDir is null) return null;
         var user = Path.GetFileName(Path.GetDirectoryName(accountDir));

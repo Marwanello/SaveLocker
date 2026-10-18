@@ -818,6 +818,12 @@ every Yuzu-based install changes; in this PR):
   The card clicked through against the stand-in agent (pick, confirm, both-users choice, switch, put back). Not yet run on
   the rig or the Deck.
 
+Fixes from the Deck, 2026-10-18:
+- One Eden listed twice: EmuDeck's link ends in `/`, Eden's `nand_directory` doesn't; `EmuDeckRoots.RealPath` trims it.
+- Eden added on the Deck started a new island: the game synced Yuzu's device save, and "copy here" / "make synced" put it
+  under Eden's user, where Eden never looks (its log: the device save is opened). A game whose one folder is a device save
+  now goes to the other emulator's device save (`SwitchCopies.SlotFor`). Agent tests **653**.
+
 ### The other emulators — researched 2026-10-07
 
 The maintainer asked to add **Cemu, Azahar, Model 2, PPSSPP and the Switch family (Yuzu, Ryujinx and Citron

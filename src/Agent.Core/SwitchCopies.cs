@@ -18,7 +18,7 @@ namespace SaveLocker.Agent;
 /// </para>
 /// <para>
 /// No profile is copied: Yuzu forks file a save under the profile's folder, Ryujinx under its index entry, so a copy goes
-/// under the target emulator's current user, which the page shows. Most saves don't name their user, but some do: Animal
+/// under the target emulator's current user, which the page shows — a device save in its device save. Most saves don't name their user, but some do: Animal
 /// Crossing's island links each resident to a user ID (<c>main.dat</c>, read 2026-10-16), and asks to link them again on an
 /// emulator whose user has another ID.
 /// </para>
@@ -68,7 +68,7 @@ public static class SwitchCopies
         var rows = new List<Row>();
         foreach (var s in setups)
         {
-            var slot = SwitchEmulators.Slot(s, title);
+            var slot = SlotFor(s, title, game, setups);
             var saved = game.EmulatorCopies.FirstOrDefault(c => Is(c.Emulator, s.Emulator));
             if (s == synced)
             {
@@ -128,7 +128,7 @@ public static class SwitchCopies
         var ready = new List<string>();
         var copies = game.EmulatorCopies.Select(c => c with { }).ToList();
         foreach (var copy in copies.Where(c => c.TellWhenReady))
-            if (setups.FirstOrDefault(s => Is(s.Emulator, copy.Emulator)) is { } setup && SwitchEmulators.Slot(setup, title) is not null)
+            if (setups.FirstOrDefault(s => Is(s.Emulator, copy.Emulator)) is { } setup && SlotFor(setup, title, game, setups) is not null)
             {
                 copy.TellWhenReady = false;
                 ready.Add(setup.Emulator);
@@ -179,7 +179,7 @@ public static class SwitchCopies
         if (keep && !copy.KeepInSync && !copy.Conflict && TitleId(game) is { } title)
         {
             setups ??= SwitchEmulators.Find();
-            if (Pick(setups, emulator, saves) is { } setup && SwitchEmulators.Slot(setup, title) is { Exists: true } slot)
+            if (Pick(setups, emulator, saves) is { } setup && SlotFor(setup, title, game, setups) is { Exists: true } slot)
             {
                 var (mine, theirs) = Pair(game.Roots(config.StateDir), CopyRoots(setup, title, slot, game));
                 var syncedWritten = mine.Select(r => SwitchEmulators.Written(r.Directory)).DefaultIfEmpty(DateTime.MinValue).Max();
@@ -202,7 +202,7 @@ public static class SwitchCopies
         if (TitleId(game) is not { } title) return "this is not a Switch game.";
         setups ??= SwitchEmulators.Find();
         var target = Pick(setups, emulator, saves);
-        if (target is null || SwitchEmulators.Slot(target, title) is not { } slot) return $"{emulator} has no save folder for this game.";
+        if (target is null || SlotFor(target, title, game, setups) is not { } slot) return $"{emulator} has no save folder for this game.";
         var device = game.ExtraPaths.FirstOrDefault(p => p.Key == SwitchEmulators.DeviceFolderKey);
         var deviceDir = DeviceDir(target, title, slot);
         if (device is not null && deviceDir is null)
@@ -266,7 +266,7 @@ public static class SwitchCopies
         foreach (var copy in copies.Where(c => c.KeepInSync && !c.Conflict))
         {
             var setup = setups.FirstOrDefault(s => Is(s.Emulator, copy.Emulator));
-            if (setup is null || setup == SyncedSetup(game, setups) || SwitchEmulators.Slot(setup, title) is not { } slot) continue;
+            if (setup is null || setup == SyncedSetup(game, setups) || SlotFor(setup, title, game, setups) is not { } slot) continue;
             var (syncedRoots, copyRoots) = Pair(game.Roots(config.StateDir), CopyRoots(setup, title, slot, game));
             var syncedHash = Hash(syncedRoots);
             var copyHash = slot.Exists ? Hash(copyRoots) : null;
@@ -354,7 +354,7 @@ public static class SwitchCopies
         var setup = Pick(setups, emulator, saves);
         if (setup is null) return $"{emulator} isn't on this machine.";
         if (setup == SyncedSetup(game, setups)) return $"{emulator}'s copy is the one that syncs.";
-        if (SwitchEmulators.Slot(setup, title) is not { } slot)
+        if (SlotFor(setup, title, game, setups) is not { } slot)
             return setup.IsRyujinx ? $"{emulator} has no save folder for this game yet. Start the game in it once." : $"{emulator} has no user yet.";
         if (!toCopy && !slot.Exists) return $"{emulator} has no save of this game.";
         if (RunningEmulator() is { } running) return $"{running} is running. Close it first.";
@@ -446,6 +446,36 @@ public static class SwitchCopies
     {
         bool Both(SaveRoot r) => r.IsPrimary || (synced.Any(s => s.Key == r.Key) && copy.Any(c => c.Key == r.Key));
         return (synced.Where(Both).Select(r => r with { IncludeGlobs = null }).ToList(), copy.Where(Both).ToList());
+    }
+
+    /// <summary>
+    /// Where <paramref name="setup"/> keeps this game's synced save: <see cref="SwitchEmulators.Slot"/>'s folder, except for a
+    /// game that syncs a device save as its one folder (Animal Crossing's island), which goes in the setup's device save — the
+    /// one the emulator opens. Under the user it was never loaded: the Deck, 2026-10-18, Eden started a new island beside it.
+    /// </summary>
+    private static SwitchEmulators.TitleSave? SlotFor(SwitchEmulators.Setup setup, string title, TrackedGame game,
+        IReadOnlyList<SwitchEmulators.Setup> setups)
+    {
+        var slot = SwitchEmulators.Slot(setup, title);
+        if (!SyncsDeviceSave(game, title, setups)) return slot;
+        var device = setup.IsRyujinx
+            ? slot?.DeviceDir ?? (slot?.UserName == SwitchEmulators.DeviceUser ? slot.Dir : null)
+            : Path.Combine(setup.Saves, "0000000000000000", SwitchEmulators.DeviceProfile, title);
+        if (device is null) return null;
+        var exists = SwitchEmulators.HasFiles(device);
+        return new SwitchEmulators.TitleSave(setup, title, device, null, SwitchEmulators.DeviceUser, exists,
+            exists ? SwitchEmulators.Written(device) : DateTime.MinValue);
+    }
+
+    /// <summary>Is the game's main folder here a device save, with no device folder beside it?</summary>
+    private static bool SyncsDeviceSave(TrackedGame game, string title, IReadOnlyList<SwitchEmulators.Setup> setups)
+    {
+        if (string.IsNullOrEmpty(game.SaveDirectory) || game.ExtraPaths.Any(p => p.Key == SwitchEmulators.DeviceFolderKey)) return false;
+        var dir = Normalize(game.SaveDirectory);
+        if (string.Equals(Path.GetFileName(Path.GetDirectoryName(dir)), SwitchEmulators.DeviceProfile, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return HoldingSetup(game, setups) is { IsRyujinx: true } ryujinx && SwitchEmulators.Slot(ryujinx, title) is
+            { DeviceDir: null, UserName: SwitchEmulators.DeviceUser } slot && string.Equals(Normalize(slot.Dir), dir, Comparison);
     }
 
     /// <summary>A title's device save folder in a setup: a fork's is known in advance, Ryujinx's only once it made one.</summary>
