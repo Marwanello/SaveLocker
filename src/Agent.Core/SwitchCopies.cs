@@ -467,15 +467,74 @@ public static class SwitchCopies
             exists ? SwitchEmulators.Written(device) : DateTime.MinValue);
     }
 
-    /// <summary>Is the game's main folder here a device save, with no device folder beside it?</summary>
+    /// <summary>Is the game's main folder a device save, with no device folder beside it — as the fleet keeps it
+    /// (<see cref="EmulatorProfiles.SwitchDevice"/>), or as this machine does?</summary>
     private static bool SyncsDeviceSave(TrackedGame game, string title, IReadOnlyList<SwitchEmulators.Setup> setups)
     {
         if (string.IsNullOrEmpty(game.SaveDirectory) || game.ExtraPaths.Any(p => p.Key == SwitchEmulators.DeviceFolderKey)) return false;
-        var dir = Normalize(game.SaveDirectory);
-        if (string.Equals(Path.GetFileName(Path.GetDirectoryName(dir)), SwitchEmulators.DeviceProfile, StringComparison.OrdinalIgnoreCase))
-            return true;
+        if (game.EmulatorProfile == EmulatorProfiles.SwitchDevice || SwitchEmulators.IsForkDeviceSave(game.SaveDirectory)) return true;
         return HoldingSetup(game, setups) is { IsRyujinx: true } ryujinx && SwitchEmulators.Slot(ryujinx, title) is
-            { DeviceDir: null, UserName: SwitchEmulators.DeviceUser } slot && string.Equals(Normalize(slot.Dir), dir, Comparison);
+            { DeviceDir: null, UserName: SwitchEmulators.DeviceUser } slot &&
+            string.Equals(Normalize(slot.Dir), Normalize(game.SaveDirectory), Comparison);
+    }
+
+    /// <summary>A Switch game this machine syncs from a Yuzu fork's device save (with files), which the server doesn't know
+    /// is one yet: the poller tells it (<see cref="EmulatorProfiles.SwitchDevice"/>), so every machine keeps it there.</summary>
+    public static bool ShouldSayDeviceSave(TrackedGame game, GameDto server) =>
+        TitleId(game) is not null && server.EmulatorProfile is null && server.EmulatorKey is not null &&
+        !(server.ExtraPaths ?? []).Any(p => p.Key == SwitchEmulators.DeviceFolderKey) &&
+        !string.IsNullOrEmpty(game.SaveDirectory) && SwitchEmulators.IsForkDeviceSave(game.SaveDirectory) &&
+        SwitchEmulators.HasFiles(game.SaveDirectory);
+
+    /// <summary>
+    /// A game the fleet syncs as a device save (<see cref="EmulatorProfiles.SwitchDevice"/>) whose folder here is under a Yuzu
+    /// fork's user — where a copy went before 2026-10-18, and where the emulator never opens it — moves to that fork's
+    /// device save. The server is told first; the device save, when it holds another save, is zipped first, and so is the
+    /// old folder, which is then removed so no scan takes it for the game's save again. Null when there was nothing to do
+    /// or it was done, else why not. Ryujinx's folders are its index's, so a Ryujinx folder is left for the page's choice.
+    /// </summary>
+    public static async Task<string?> MoveToDeviceSaveAsync(AgentConfig config, TrackedGame game, ApiClient api, Action<string> log)
+    {
+        if (TitleId(game) is not { } title || game.EmulatorProfile != EmulatorProfiles.SwitchDevice ||
+            string.IsNullOrEmpty(game.SaveDirectory) || game.ExtraPaths.Any(p => p.Key == SwitchEmulators.DeviceFolderKey) ||
+            SwitchEmulators.DeviceSaveBeside(game.SaveDirectory, title) is not { } device) return null;
+        if (RunningEmulator() is { } running) return $"{running} is running.";
+        var old = game.SaveDirectory;
+        try { await api.SetMachinePathAsync(game.GameId, device); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return $"could not tell the server about the new folder, so nothing changed: {ex.Message}";
+        }
+        try
+        {
+            List<SaveRoot> deviceRoot = [SaveRoot.Primary(device)], oldRoot = [SaveRoot.Primary(old)];
+            if (SwitchEmulators.HasFiles(old))
+            {
+                if (SwitchEmulators.HasFiles(device) && Hash(deviceRoot) != Hash(oldRoot))
+                    Backup(config, game, deviceRoot, "device-save-before-move");
+                Backup(config, game, oldRoot, "user-folder-before-move");
+                Mirror(old, device);
+                Directory.Delete(old, recursive: true);
+            }
+            else Directory.CreateDirectory(device);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Half moved: this machine keeps syncing the old folder, and so must the server's record, or the poller would
+            // apply the device save on its next tick.
+            try { await api.SetMachinePathAsync(game.GameId, old); }
+            catch (Exception back) when (back is HttpRequestException or TaskCanceledException)
+            {
+                log($"[{game.Name}] could not put the server's folder back to {old}: {back.Message}");
+            }
+            return $"could not move its save from {old} to {device}: {ex.Message}";
+        }
+        game.SaveDirectory = device;
+        config.SaveGameFolders(game);
+        log($"[{game.Name}] your other devices sync this game's device save, where the emulator opens it, so its save " +
+            $"here moved there from the emulator user's folder: {old} → {device}. Backups: " +
+            Path.Combine(config.StateDir, "emulator-copies", game.GameId.ToString("N")));
+        return null;
     }
 
     /// <summary>A title's device save folder in a setup: a fork's is known in advance, Ryujinx's only once it made one.</summary>

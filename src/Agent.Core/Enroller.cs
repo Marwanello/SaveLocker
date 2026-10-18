@@ -264,6 +264,7 @@ public static class Enroller
                         Source = GameSources.From(c),
                         Release = game.Release ?? c.Release,
                         EmulatorKey = game.EmulatorKey ?? c.EmulatorKey,
+                        EmulatorProfile = game.EmulatorProfile ?? c.EmulatorProfile,
                         // Without this the Windows ProcessWatcher excludes the game outright, so lease,
                         // exit-push and the running-game pull refusal never run for anything enrolled
                         // through the UI. Only the CLI's --proc used to populate it. WA-08.

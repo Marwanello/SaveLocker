@@ -143,6 +143,17 @@ public sealed class CommandPoller : IDisposable
     /// </summary>
     private async Task KeepSwitchCopiesAsync()
     {
+        foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && g.EmulatorProfile == EmulatorProfiles.SwitchDevice).ToList())
+        {
+            try
+            {
+                var (ran, why) = await _engine().WithGameLockAsync(game,
+                    () => SwitchCopies.MoveToDeviceSaveAsync(_config, game, _api(), AgentLogger.Log), TimeSpan.Zero);
+                if (ran && why is not null && _deviceMoveSaid.Add($"{game.GameId:N}|{why}"))
+                    AgentLogger.Log($"[{game.Name}] its save here is under an emulator user, not the device save the other devices sync, and could not move yet: {why}");
+            }
+            catch (Exception ex) { AgentLogger.LogException($"CommandPoller.MoveToDeviceSave '{game.Name}'", ex); }
+        }
         IReadOnlyList<SwitchEmulators.Setup>? setups = null;
         foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && g.EmulatorCopies.Any(c => c.KeepInSync || c.TellWhenReady)).ToList())
         {
@@ -162,6 +173,9 @@ public sealed class CommandPoller : IDisposable
             catch (Exception ex) { AgentLogger.LogException($"CommandPoller.KeepSwitchCopies '{game.Name}'", ex); }
         }
     }
+
+    private readonly HashSet<string> _deviceMoveSaid = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> _deviceSaveSaid = new();
 
     // The shared user last asked about here, so a choice the user has to make is said once, not every tick.
     private string? _switchUserAsked;
@@ -262,6 +276,23 @@ public sealed class CommandPoller : IDisposable
                     local.EmulatorKey = key;
                     changed = true;
                 }
+                if (local.EmulatorProfile != sg.EmulatorProfile)
+                {
+                    local.EmulatorProfile = sg.EmulatorProfile;
+                    changed = true;
+                }
+                // This machine syncs a device save the server doesn't know is one (a game enrolled before it was recorded):
+                // it is told, so every other machine keeps the game in its device save too.
+                if (SwitchCopies.ShouldSayDeviceSave(local, sg) && _deviceSaveSaid.TryAdd(sg.Id, 0))
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _api().CreateGameAsync(new CreateGameRequest(sg.Name, null, null,
+                                EmulatorProfile: EmulatorProfiles.SwitchDevice, EmulatorKey: sg.EmulatorKey));
+                        }
+                        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { _deviceSaveSaid.TryRemove(sg.Id, out _); }
+                    });
                 // The server renames a Switch game first enrolled as "Switch <title ID>" once a machine knows its name. Only
                 // that name follows the server's: no other game's is renamed under it.
                 if (!string.IsNullOrWhiteSpace(sg.Name) && local.Name != sg.Name &&
@@ -359,6 +390,7 @@ public sealed class CommandPoller : IDisposable
                 ManifestKey = sg.ManifestKey,
                 Release = sg.Release,
                 EmulatorKey = sg.EmulatorKey,
+                EmulatorProfile = sg.EmulatorProfile,
                 SaveDirectory = dir ?? "",
                 ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
             };

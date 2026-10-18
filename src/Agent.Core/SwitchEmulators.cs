@@ -317,6 +317,12 @@ public static partial class SwitchEmulators
         if (SwitchTitles.TitleIdOf(c.EmulatorKey) is not { } title) return null;
         var gameHasDevice = (game.ExtraPaths ?? []).Any(p => p.Key == DeviceFolderKey);
         var device = extras.FirstOrDefault(e => e.Key == DeviceFolderKey);
+        // The fleet syncs a device save: so does this machine, even with no save here yet or only one under its user.
+        if (!gameHasDevice && game.EmulatorProfile == EmulatorProfiles.SwitchDevice && device is null &&
+            DeviceSaveBeside(dir, title) is { } deviceHere)
+            return (deviceHere, extras,
+                $"{c.Name}: your other devices sync this game's device save, so it syncs from {deviceHere} here, where the " +
+                $"emulator opens it. The folder under the emulator's user ({dir}) was left as it is.");
         if (!gameHasDevice && device is not null)
             return (device.Dir, extras.Where(e => e != device).ToList(),
                 $"{c.Name}: your other devices keep this game's save in the device folder, so it syncs from {device.Dir} here. " +
@@ -325,6 +331,27 @@ public static partial class SwitchEmulators
         return (account, [.. extras, new DeclaredSavePath(DeviceFolderKey, dir)],
             $"{c.Name}: your other devices keep this game in two folders, so its device save here syncs as the device folder, " +
             $"and the emulator user's folder ({account}) takes the other one.");
+    }
+
+    /// <summary>A Yuzu fork's device save for <paramref name="titleId"/> beside a user's folder for it
+    /// (<c>…/0000000000000000/&lt;user&gt;/&lt;title&gt;</c>), or null for any other folder — a device save itself, or Ryujinx's.</summary>
+    public static string? DeviceSaveBeside(string dir, string titleId)
+    {
+        var title = Path.TrimEndingDirectorySeparator(dir);
+        var user = Path.GetDirectoryName(title);
+        var users = user is null ? null : Path.GetDirectoryName(user);
+        if (users is null || !string.Equals(Path.GetFileName(title), titleId, StringComparison.OrdinalIgnoreCase) ||
+            Path.GetFileName(users) != "0000000000000000" || Path.GetFileName(user) is not { Length: 32 } id ||
+            !id.All(char.IsAsciiHexDigit) || string.Equals(id, DeviceProfile, StringComparison.OrdinalIgnoreCase)) return null;
+        return Path.Combine(users, DeviceProfile, Path.GetFileName(title));
+    }
+
+    /// <summary>Is <paramref name="dir"/> a Yuzu fork's device save (<c>…/0000000000000000/000…000/&lt;title&gt;</c>)?</summary>
+    public static bool IsForkDeviceSave(string dir)
+    {
+        var user = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(dir));
+        return user is not null && string.Equals(Path.GetFileName(user), DeviceProfile, StringComparison.OrdinalIgnoreCase) &&
+               Path.GetFileName(Path.GetDirectoryName(user)) == "0000000000000000";
     }
 
     private static TitleSave Make(Setup s, string titleId, string dir, string? deviceDir, string? user, string? accountDir = null)
@@ -386,7 +413,9 @@ public static partial class SwitchEmulators
             Release: new GameReleaseDto("Nintendo Switch", Region: null, GameIds: [t.TitleId]),
             EmulatorKey: EmulatorKeys.Switch(t.TitleId),
             NoSaveYet: noSaveYet,
-            SwitchAccountDir: t.AccountDir);
+            SwitchAccountDir: t.AccountDir,
+            // A title found with only its device save says so, for every machine that joins it after.
+            EmulatorProfile: !noSaveYet && t.DeviceDir is null && t.UserName == DeviceUser ? EmulatorProfiles.SwitchDevice : null);
 
     // ---------------------------------------------------------------- names
 

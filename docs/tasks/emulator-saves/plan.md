@@ -822,7 +822,14 @@ Fixes from the Deck, 2026-10-18:
 - One Eden listed twice: EmuDeck's link ends in `/`, Eden's `nand_directory` doesn't; `EmuDeckRoots.RealPath` trims it.
 - Eden added on the Deck started a new island: the game synced Yuzu's device save, and "copy here" / "make synced" put it
   under Eden's user, where Eden never looks (its log: the device save is opened). A game whose one folder is a device save
-  now goes to the other emulator's device save (`SwitchCopies.SlotFor`). Agent tests **653**.
+  now goes to the other emulator's device save (`SwitchCopies.SlotFor`).
+- Then for every route (maintainer: "make sure this doesn't happen with any game on any device"): the server records a
+  device-save game as `EmulatorProfile = "switch:device"` (`EmulatorProfiles.SwitchDevice`, set by the first machine that
+  enrolls it from a device save only, or — for one enrolled before — by a machine syncing it from a fork's device save,
+  through the join). A machine joining such a game takes its fork's device save even with no save or only one under a
+  user (`AlignToGameFolders`); copies follow it (`SlotFor`); one already under a user moves itself to the device save on
+  the poller's tick, the server told first, both sides zipped, the old folder removed (`MoveToDeviceSaveAsync`). Ryujinx
+  is left out of the move: its folders come from its index. Agent tests **656**.
 
 ### The other emulators — researched 2026-10-07
 

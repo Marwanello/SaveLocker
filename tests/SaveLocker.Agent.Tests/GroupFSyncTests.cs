@@ -451,6 +451,75 @@ public sealed class GroupFSyncTests : IClassFixture<ServerProcess>, IDisposable
     }
 
     [Fact]
+    public async Task A_device_save_game_joins_another_machine_in_its_device_save_even_from_under_a_user()
+    {
+        // The PC syncs the island from Eden's device save; the Deck has a copy only under its Eden user.
+        var pcSetup = S.Eden(P("pc/Emulation"), EdenUser);
+        S.Write(Path.Combine(S.EdenSave(P("pc/Emulation"), SwitchEmulators.DeviceProfile, Title), "main.dat"), "island");
+        var deckSetup = S.Eden(P("deck/Emulation"), EdenUser);
+        S.Write(Path.Combine(S.EdenSave(P("deck/Emulation"), EdenUser, Title), "main.dat"), "island-under-user");
+        var pc = await Machine("pc");
+        var deck = await Machine("deck");
+        var pcGame = await Enroll(pc, SwitchEmulators.Scan([pcSetup], []), Title);
+        Assert.Equal(EmulatorProfiles.SwitchDevice, (await ApiClient.For(pc).ListGamesAsync()).Single(g => g.Id == pcGame.GameId).EmulatorProfile);
+
+        var deckGame = await Enroll(deck, SwitchEmulators.Scan([deckSetup], []), Title);
+        Assert.Equal(pcGame.GameId, deckGame.GameId);
+        Assert.Equal(Path.GetFullPath(S.EdenSave(P("deck/Emulation"), SwitchEmulators.DeviceProfile, Title)), Path.GetFullPath(deckGame.SaveDirectory));
+        Assert.Empty(deckGame.ExtraPaths);
+    }
+
+    [Fact]
+    public async Task A_device_save_synced_from_under_a_user_moves_to_the_device_save_once_the_server_says()
+    {
+        // The Deck, 2026-10-18: the island synced from under Eden's user, enrolled before the server knew it is a device save;
+        // the PC syncs it from its device save.
+        var deckSetup = S.Eden(P("deck/Emulation"), EdenUser);
+        var underUser = S.EdenSave(P("deck/Emulation"), EdenUser, Title);
+        S.Write(Path.Combine(underUser, "main.dat"), "island");
+        var deck = await Machine("deck");
+        var game = await Enroll(deck, SwitchEmulators.Scan([deckSetup], []), Title);
+        var api = ApiClient.For(deck);
+        var server = (await api.ListGamesAsync()).Single(g => g.Id == game.GameId);
+        Assert.Null(server.EmulatorProfile);
+        Assert.False(SwitchCopies.ShouldSayDeviceSave(game, server));
+        Assert.Null(await SwitchCopies.MoveToDeviceSaveAsync(deck, game, api, _ => { }));
+        Assert.Equal(underUser, game.SaveDirectory);
+
+        // The PC syncs it from its device save, and says so.
+        var pcSetup = S.Eden(P("pc/Emulation"), EdenUser);
+        S.Write(Path.Combine(S.EdenSave(P("pc/Emulation"), SwitchEmulators.DeviceProfile, Title), "main.dat"), "island");
+        var pc = await Machine("pc");
+        var pcGame = await Enroll(pc, SwitchEmulators.Scan([pcSetup], []), Title);
+        Assert.Equal(game.GameId, pcGame.GameId);
+        var pcServer = (await ApiClient.For(pc).ListGamesAsync()).Single(g => g.Id == game.GameId);
+        Assert.Equal(EmulatorProfiles.SwitchDevice, pcServer.EmulatorProfile);
+        // A PC that joined before it was recorded tells it the way the poller does.
+        Assert.True(SwitchCopies.ShouldSayDeviceSave(pcGame, pcServer with { EmulatorProfile = null }));
+        Assert.False(SwitchCopies.ShouldSayDeviceSave(pcGame, pcServer));
+        await ApiClient.For(pc).CreateGameAsync(new CreateGameRequest(pcServer.Name, null, null,
+            EmulatorProfile: EmulatorProfiles.SwitchDevice, EmulatorKey: pcServer.EmulatorKey));
+        server = (await api.ListGamesAsync()).Single(g => g.Id == game.GameId);
+        Assert.Equal(EmulatorProfiles.SwitchDevice, server.EmulatorProfile);
+
+        // The Deck moves it where Eden opens it, tells the server, and zips the old folder.
+        game.EmulatorProfile = server.EmulatorProfile;
+        Assert.Null(await SwitchCopies.MoveToDeviceSaveAsync(deck, game, api, _ => { }));
+        var device = S.EdenSave(P("deck/Emulation"), SwitchEmulators.DeviceProfile, Title);
+        Assert.Equal(device, game.SaveDirectory);
+        Assert.Equal("island", File.ReadAllText(Path.Combine(device, "main.dat")));
+        Assert.False(Directory.Exists(underUser));
+        Assert.Equal(device, AgentConfig.Load(deck.ConfigPath).Games.Single(g => g.GameId == game.GameId).SaveDirectory);
+        Assert.Equal(Path.GetFullPath(device), Path.GetFullPath((await api.ListGamesAsync()).Single(g => g.Id == game.GameId).MachineSavePath!));
+        Assert.Single(Directory.GetFiles(Path.Combine(deck.StateDir, "emulator-copies", game.GameId.ToString("N")), "*user-folder-before-move.zip"));
+        Assert.Null(await SwitchCopies.MoveToDeviceSaveAsync(deck, game, api, _ => { }));
+    }
+
+    [Fact]
+    public void A_switch_profile_is_no_xenia_one() =>
+        Assert.Null(EmulatorProfiles.XeniaXuid(EmulatorProfiles.SwitchDevice));
+
+    [Fact]
     public async Task The_version_a_save_was_made_with_reaches_the_cloud_and_an_older_game_here_lacks_it()
     {
         // The maintainer's rig, 2026-10-16: the Deck's Yuzu runs 1.6.0, the PC's Eden the base game, which says the

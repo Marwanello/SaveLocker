@@ -219,16 +219,20 @@ public static class EmulatorKeys
     public static string Switch(string titleId) => SwitchPrefix + titleId.ToUpperInvariant();
 }
 
-/// <summary>The emulator profiles a game can be under (tasks/emulator-saves Phase 5c).</summary>
+/// <summary>The emulator profiles a game can be under (tasks/emulator-saves Phase 5c). A Switch game's says which save its
+/// main folder is the device save (<see cref="SwitchDevice"/>, Animal Crossing's island): every machine then keeps it in
+/// its device save, or the emulator never opens what was synced (the Deck, 2026-10-18).</summary>
 public static class EmulatorProfiles
 {
     public const string XeniaPrefix = "xenia:";
+    public const string SwitchDevice = "switch:device";
 
-    /// <summary>The value as stored — <c>xenia:</c> and 16 upper-case hex digits — or null for anything else.</summary>
+    /// <summary>The value as stored — <c>xenia:</c> and 16 upper-case hex digits, or <see cref="SwitchDevice"/> — or null for anything else.</summary>
     public static string? Clean(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         var v = value.Trim();
+        if (string.Equals(v, SwitchDevice, StringComparison.OrdinalIgnoreCase)) return SwitchDevice;
         if (!v.StartsWith(XeniaPrefix, StringComparison.OrdinalIgnoreCase)) return null;
         var xuid = v[XeniaPrefix.Length..];
         return xuid.Length == 16 && xuid.All(Uri.IsHexDigit) && xuid.Any(c => c != '0')
@@ -237,7 +241,7 @@ public static class EmulatorProfiles
     }
 
     /// <summary>The XUID of a Xenia profile value, or null.</summary>
-    public static string? XeniaXuid(string? value) => Clean(value) is { } v ? v[XeniaPrefix.Length..] : null;
+    public static string? XeniaXuid(string? value) => Clean(value) is { } v && v.StartsWith(XeniaPrefix, StringComparison.Ordinal) ? v[XeniaPrefix.Length..] : null;
 }
 
 // ----- Server settings (dashboard-managed) -----

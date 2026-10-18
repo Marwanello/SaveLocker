@@ -946,6 +946,9 @@ public sealed class TrackedGame
     /// <summary>The emulated title the game is across emulators (<c>switch:&lt;title ID&gt;</c>), as the server keeps it; null for
     /// every other game.</summary>
     public string? EmulatorKey { get; set; }
+    /// <summary>The emulator profile the server keeps for the game (<see cref="EmulatorProfiles"/>); for a Switch game, which
+    /// save its main folder is. Null when no machine has said.</summary>
+    public string? EmulatorProfile { get; set; }
     /// <summary>This game's other copies on this machine — the same Switch title in another emulator — and whether each is
     /// kept in step with the one that syncs (<see cref="SwitchCopies"/>). Empty for every other game.</summary>
     public List<EmulatorCopy> EmulatorCopies { get; set; } = new();
