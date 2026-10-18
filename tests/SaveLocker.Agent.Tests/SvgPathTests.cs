@@ -191,15 +191,53 @@ public class SvgPathTests
         Assert.Throws<FormatException>(() => SvgPath.Flatten(d));
     }
 
-    [Theory]
-    [InlineData("M0 0s1 2 3 4")]
-    [InlineData("M0 0q1 2 3 4")]
-    [InlineData("M0 0t1 2")]
-    [InlineData("M0 0a5 6 0 0 1 10 0")]    // elliptical
-    [InlineData("M0 0a5 5 30 0 1 10 0")]   // rotated
-    public void UnsupportedInput_Throws_NeverDrawsAWrongShape(string d)
+    [Fact]
+    public void SmoothCubic_ReflectsThePreviousControlPoint()
     {
-        Assert.Throws<NotSupportedException>(() => SvgPath.Flatten(d));
+        // The second half mirrors the first: a symmetric wave whose bounds are the first half's, flipped.
+        var sub = Only("M0 0C0 10 10 10 10 0S20 -10 20 0");
+        var (min, max) = Bounds(sub);
+        Assert.Equal(new Vector2(20, 0), sub.Points[^1]);
+        Assert.Equal(7.5f, max.Y, 0.2f);
+        Assert.Equal(-7.5f, min.Y, 0.2f);
+    }
+
+    [Fact]
+    public void Quadratic_AndSmoothQuadratic_Draw()
+    {
+        var q = Only("M0 0Q10 10 20 0");
+        Assert.Equal(5f, Bounds(q).Max.Y, 0.1f);
+        var t = Only("M0 0Q10 10 20 0T40 0");
+        Assert.Equal(-5f, Bounds(t).Min.Y, 0.1f);
+        Assert.Equal(new Vector2(40, 0), t.Points[^1]);
+    }
+
+    [Fact]
+    public void EllipticalAndRotatedArcs_Draw()
+    {
+        var e = Only("M0 0a10 5 0 0 1 20 0");
+        Assert.Equal(-5f, Bounds(e).Min.Y, 0.1f);
+        Assert.Equal(new Vector2(20, 0), e.Points[^1]);
+        // Rotated a quarter turn, the ellipse's short axis lies along the 20-wide chord and must be scaled up to span it
+        // (x2): its long axis, now upright, makes a half-ellipse 20 tall.
+        var r = Only("M0 0a10 5 90 0 1 20 0");
+        Assert.Equal(-20f, Bounds(r).Min.Y, 0.2f);
+    }
+
+    [Fact]
+    public void AnUnknownCommand_Throws_NeverDrawsAWrongShape() =>
+        Assert.Throws<NotSupportedException>(() => SvgPath.Flatten("M0 0x1 2"));
+
+    [Fact]
+    public void EveryEmulatorIcon_Flattens_OnItsGrid()
+    {
+        Assert.NotEmpty(EmulatorIcons.Paths);
+        foreach (var (name, paths) in EmulatorIcons.Paths)
+        {
+            var subs = paths.SelectMany(SvgPath.Flatten).ToList();
+            Assert.True(subs.Count > 0, name);
+            Assert.All(subs.SelectMany(x => x.Points), pt => Assert.True(pt.X is > -1 and < 49 && pt.Y is > -1 and < 49, $"{name}: {pt}"));
+        }
     }
 
     [Theory]

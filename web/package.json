@@ -9,6 +9,8 @@
     "gen:api": "openapi-typescript ../src/Server/openapi.json -o src/api-types.ts",
     "lint": "oxlint",
     "export:art": "node scripts/export-art.mjs",
+    "icons:build": "node scripts/build-platform-icons.mjs",
+    "icons:check": "node scripts/build-platform-icons.mjs --check",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,3 +1,5 @@
+import { PlatformIcon } from '../ui/PlatformIcon';
+import { consoleIcon } from '../../platformIcon';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Game, MachineGameSource } from '../../types';
@@ -71,6 +73,7 @@ export function ReleaseChip({ game, sources }: Props) {
           hover:bg-hover cursor-pointer transition-colors duration-150 ease-[var(--ease)]
           focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
       >
+        <PlatformIcon id={consoleIcon(release.console)} size={1.1} className="text-dim" />
         {region ?? 'Details'}
         <span aria-hidden className="w-1 h-1 rounded-full bg-accent" />
       </button>

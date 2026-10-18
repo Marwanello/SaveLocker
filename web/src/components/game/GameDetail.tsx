@@ -219,6 +219,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
             onRefresh={onRefresh}
             health={health}
             head={head}
+            sources={sources}
           />
           <RulesCard game={game} machines={machines} health={health} onRefresh={onRefresh} />
           <ExcludePatternsCard game={game} onRefresh={onRefresh} />

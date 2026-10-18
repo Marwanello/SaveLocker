@@ -1,5 +1,7 @@
 import type { Game } from '../../types';
 import { artSrc, artSrcSet } from '../../art';
+import { PlatformIcon } from '../ui/PlatformIcon';
+import { consoleIcon } from '../../platformIcon';
 
 interface Props {
   game: Game;
@@ -42,7 +44,10 @@ export function GameCover({ game, size }: Props) {
       className={`${BOX[size]} grid place-items-center shrink-0 border border-line text-dim font-semibold tracking-[.04em]
         bg-[linear-gradient(155deg,color-mix(in_oklab,var(--color-fg)_12%,var(--color-tile)),var(--color-tile)_70%)]`}
     >
-      {initials(game.name)}
+      {/* A console game with no art shows its console's glyph (tasks/emulator-saves Phase 21); anything else its initials. */}
+      {consoleIcon(game.release?.console)
+        ? <PlatformIcon id={consoleIcon(game.release?.console)} size={size === 's' ? 1.6 : 1.5} />
+        : initials(game.name)}
     </span>
   );
 }

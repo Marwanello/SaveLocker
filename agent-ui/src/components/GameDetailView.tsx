@@ -160,7 +160,7 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
       <Button size="sm" variant="quiet" className="sl-back" onClick={onBack}>← Games</Button>
 
       <div className="sl-gamehead">
-        <div className="sl-gamehead__cover"><GameArt id={game.id} name={game.name} kind="grid" w={192} /></div>
+        <div className="sl-gamehead__cover"><GameArt id={game.id} name={game.name} kind="grid" w={192} console={game.release?.console} /></div>
         <div className="sl-gamehead__main">
           <h2 className="sl-gamehead__title">{game.name}</h2>
           {(enrolled || game.release) && (

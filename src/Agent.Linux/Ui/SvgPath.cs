@@ -9,10 +9,10 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// path data instead of a hand-guessed copy of the shape. Pure — no ImGui here, so it can be unit-tested
 /// and the result cached per string (the strokes are then just a few <c>PathLineTo</c> calls a frame).
 ///
-/// Supports M/L/H/V/C/A/Z and their lowercase relative forms, and only circular arcs (rx == ry, no
-/// rotation) — which is all the lucide icons this UI draws use. Anything else (S/Q/T, elliptical arcs) throws
-/// <see cref="NotSupportedException"/>: an icon this cannot draw faithfully must fail loudly the first
-/// time it is drawn, not render as a plausible wrong shape.
+/// Supports every path command — M/L/H/V/C/S/Q/T/A/Z and their lowercase relative forms, elliptical and rotated
+/// arcs too: lucide's icons use M/L/H/V/C/A/Z, and the emulator icons (Arcticons, tasks/emulator-saves Phase 21) smooth
+/// curves and elliptical arcs. An unknown command throws <see cref="NotSupportedException"/>: an icon this cannot draw
+/// faithfully must fail loudly the first time it is drawn, not render as a plausible wrong shape.
 /// </summary>
 static class SvgPath
 {
@@ -32,6 +32,8 @@ static class SvgPath
         var pts = new List<Vector2>();
         Vector2 cur = default, start = default;
         char cmd = '\0';
+        // The last curve's second control point, for S and T's reflection; null after anything else.
+        Vector2? lastCubic = null, lastQuad = null;
 
         void Flush(bool closed)
         {
@@ -48,11 +50,47 @@ static class SvgPath
 
         void LineTo(Vector2 p) { Begun(); pts.Add(p); cur = p; }
 
+        void Cubic(Vector2 c1, Vector2 c2, Vector2 end)
+        {
+            Begun();
+            var from = cur;
+            // 12 steps: smooth at the 14-40 px this UI draws icons at, and the result is cached.
+            const int steps = 12;
+            for (int k = 1; k <= steps; k++)
+            {
+                var t = k / (float)steps;
+                var u = 1f - t;
+                pts.Add(u * u * u * from + 3f * u * u * t * c1 + 3f * u * t * t * c2 + t * t * t * end);
+            }
+            cur = end;
+            lastCubic = c2;
+        }
+
+        void Quad(Vector2 c, Vector2 end)
+        {
+            Begun();
+            var from = cur;
+            const int steps = 10;
+            for (int k = 1; k <= steps; k++)
+            {
+                var t = k / (float)steps;
+                var u = 1f - t;
+                pts.Add(u * u * from + 2f * u * t * c + t * t * end);
+            }
+            cur = end;
+            lastQuad = c;
+        }
+
         while (r.More())
         {
             if (r.AtCommand()) cmd = r.ReadCommand();
             else if (cmd == '\0') throw r.Fail("a command letter");
             // else: a bare number repeats the previous command with a fresh argument set.
+
+            // S and T reflect the previous curve's control point only straight after a curve of their own kind.
+            var prevCubic = lastCubic;
+            var prevQuad = lastQuad;
+            lastCubic = lastQuad = null;
 
             switch (cmd)
             {
@@ -84,11 +122,8 @@ static class SvgPath
                     var sweep = r.ReadFlag();
                     var end = r.ReadPoint();
                     if (cmd == 'a') end += cur;
-                    if (rx != ry || rotation != 0f)
-                        throw new NotSupportedException(
-                            $"SvgPath: only circular, unrotated arcs are supported (in \"{d}\")");
                     Begun();
-                    ArcTo(pts, cur, end, MathF.Abs(rx), largeArc, sweep);
+                    ArcTo(pts, cur, end, MathF.Abs(rx), MathF.Abs(ry), rotation, largeArc, sweep);
                     cur = end;
                     break;
                 }
@@ -101,17 +136,35 @@ static class SvgPath
                     var c2 = r.ReadPoint();
                     var end = r.ReadPoint();
                     if (cmd == 'c') { c1 += cur; c2 += cur; end += cur; }
-                    Begun();
-                    var from = cur;
-                    // 12 steps: smooth at the 14-40 px this UI draws icons at, and the result is cached.
-                    const int steps = 12;
-                    for (int k = 1; k <= steps; k++)
-                    {
-                        var t = k / (float)steps;
-                        var u = 1f - t;
-                        pts.Add(u * u * u * from + 3f * u * u * t * c1 + 3f * u * t * t * c2 + t * t * t * end);
-                    }
-                    cur = end;
+                    Cubic(c1, c2, end);
+                    break;
+                }
+                case 'S':
+                case 's':
+                {
+                    // Smooth cubic: the first control point is the previous cubic's second, reflected through the
+                    // current point — or the current point itself after anything else.
+                    var c2 = r.ReadPoint();
+                    var end = r.ReadPoint();
+                    if (cmd == 's') { c2 += cur; end += cur; }
+                    Cubic(prevCubic is { } p ? 2f * cur - p : cur, c2, end);
+                    break;
+                }
+                case 'Q':
+                case 'q':
+                {
+                    var c = r.ReadPoint();
+                    var end = r.ReadPoint();
+                    if (cmd == 'q') { c += cur; end += cur; }
+                    Quad(c, end);
+                    break;
+                }
+                case 'T':
+                case 't':
+                {
+                    var end = r.ReadPoint();
+                    if (cmd == 't') end += cur;
+                    Quad(prevQuad is { } p ? 2f * cur - p : cur, end);
                     break;
                 }
                 case 'Z':
@@ -130,28 +183,34 @@ static class SvgPath
     }
 
     /// <summary>
-    /// Circular-arc endpoint-to-centre parameterisation (SVG 1.1 spec appendix F.6.5), specialised to
-    /// rx == ry and no rotation. Appends the arc's points, ending exactly at <paramref name="p2"/>.
+    /// Endpoint-to-centre arc parameterisation (SVG 1.1 spec appendix F.6.5, with F.6.6's radius correction), elliptical
+    /// and rotated. Appends the arc's points, ending exactly at <paramref name="p2"/>.
     /// </summary>
-    private static void ArcTo(List<Vector2> pts, Vector2 p1, Vector2 p2, float r, bool largeArc, bool sweep)
+    private static void ArcTo(List<Vector2> pts, Vector2 p1, Vector2 p2, float rx, float ry, float rotationDeg, bool largeArc, bool sweep)
     {
         if (p1 == p2) return;                        // spec: an arc to the current point is omitted
-        if (r == 0f) { pts.Add(p2); return; }        // spec: a zero radius is a straight line
+        if (rx == 0f || ry == 0f) { pts.Add(p2); return; }   // spec: a zero radius is a straight line
 
-        var dist = (p2 - p1).Length();
-        if (dist > 2f * r) r = dist / 2f;            // spec: radii too small to span the chord are scaled up
+        var phi = rotationDeg * MathF.PI / 180f;
+        var (sin, cos) = MathF.SinCos(phi);
+        var dx = (p1.X - p2.X) / 2f;
+        var dy = (p1.Y - p2.Y) / 2f;
+        var x1p = cos * dx + sin * dy;
+        var y1p = -sin * dx + cos * dy;
 
-        var x1p = (p1.X - p2.X) / 2f;
-        var y1p = (p1.Y - p2.Y) / 2f;
-        var d2 = x1p * x1p + y1p * y1p;
-        var ratio = MathF.Max(0f, (r * r - d2) / MathF.Max(d2, 1e-6f));
-        var co = MathF.Sqrt(ratio) * (largeArc == sweep ? -1f : 1f);
-        var cxp = co * y1p;
-        var cyp = co * -x1p;
-        var centre = new Vector2(cxp + (p1.X + p2.X) / 2f, cyp + (p1.Y + p2.Y) / 2f);
+        // spec: radii too small to span the chord are scaled up
+        var lambda = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry);
+        if (lambda > 1f) { var k = MathF.Sqrt(lambda); rx *= k; ry *= k; }
 
-        var a1 = MathF.Atan2((y1p - cyp) / r, (x1p - cxp) / r);
-        var a2 = MathF.Atan2((-y1p - cyp) / r, (-x1p - cxp) / r);
+        var num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
+        var den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+        var co = MathF.Sqrt(MathF.Max(0f, num / MathF.Max(den, 1e-9f))) * (largeArc == sweep ? -1f : 1f);
+        var cxp = co * rx * y1p / ry;
+        var cyp = co * -ry * x1p / rx;
+        var centre = new Vector2(cos * cxp - sin * cyp + (p1.X + p2.X) / 2f, sin * cxp + cos * cyp + (p1.Y + p2.Y) / 2f);
+
+        var a1 = MathF.Atan2((y1p - cyp) / ry, (x1p - cxp) / rx);
+        var a2 = MathF.Atan2((-y1p - cyp) / ry, (-x1p - cxp) / rx);
         var delta = a2 - a1;
         if (!sweep && delta > 0) delta -= MathF.Tau;
         if (sweep && delta < 0) delta += MathF.Tau;
@@ -161,7 +220,8 @@ static class SvgPath
         for (int k = 1; k < segments; k++)
         {
             var a = a1 + delta * k / segments;
-            pts.Add(centre + new Vector2(MathF.Cos(a), MathF.Sin(a)) * r);
+            var (sa, ca) = MathF.SinCos(a);
+            pts.Add(centre + new Vector2(cos * rx * ca - sin * ry * sa, sin * rx * ca + cos * ry * sa));
         }
         pts.Add(p2);
     }

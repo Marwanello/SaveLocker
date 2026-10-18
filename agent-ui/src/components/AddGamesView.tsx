@@ -1,3 +1,5 @@
+import { PlatformIcon } from './ui/PlatformIcon'
+import { emulatorIcon, systemIcon } from '../platformIcon'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { RefreshCw, FolderSearch, Check, SearchCheck, TriangleAlert, Ban } from 'lucide-react'
 import type { Candidate, EnrollProgress, LinkOption } from '../types'
@@ -477,7 +479,7 @@ export function AddGamesView({ onEnrolled }: Props) {
             <button type="button" className="sl-fchip" aria-pressed={store === null} onClick={() => setStore(null)}>All</button>
             {stores.map(s => (
               <button key={s.id} type="button" className="sl-fchip" aria-pressed={store === s.id} onClick={() => setStore(s.id)}>
-                {s.label} <b>{s.count}</b>
+                <PlatformIcon id={systemIcon(s.id)} size={1.15} /> {s.label} <b>{s.count}</b>
               </button>
             ))}
           </div>
@@ -491,7 +493,7 @@ export function AddGamesView({ onEnrolled }: Props) {
             <button type="button" className="sl-fchip" aria-pressed={emulator === null} onClick={() => setEmulator(null)}>All</button>
             {emulators.map(e => (
               <button key={e.id} type="button" className="sl-fchip" aria-pressed={emulator === e.id} onClick={() => setEmulator(e.id)}>
-                {e.label} <b>{e.count}</b>
+                <PlatformIcon id={emulatorIcon(e.id)} size={1.15} /> {e.label} <b>{e.count}</b>
               </button>
             ))}
           </div>
@@ -540,7 +542,10 @@ export function AddGamesView({ onEnrolled }: Props) {
                 <StatusMark c={c} />
                 <span className="sl-check-row__title">{c.name}</span>
                 <Chip>{c.source}</Chip>
-                {c.emulatorName && <Chip>{c.emulatorName}</Chip>}
+                {c.emulatorName && <Chip><PlatformIcon id={emulatorIcon(c.emulatorName)} /> {c.emulatorName}</Chip>}
+                {c.emulatorSystem && systemIcon(c.emulatorSystem) && (
+                  <span className="sl-chip" title={c.emulatorConsole ?? c.emulatorSystem}><PlatformIcon id={systemIcon(c.emulatorSystem)} /> {c.emulatorConsole ?? c.emulatorSystem}</span>
+                )}
                 {/* A console release's region, kept out of the name: two regions' saves are two games of one name. */}
                 {c.region && <Chip>{c.region}</Chip>}
                 {/* The save file's own name: two ROMs (two regions, two consoles) can share a title. */}

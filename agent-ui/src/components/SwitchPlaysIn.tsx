@@ -1,3 +1,5 @@
+import { PlatformIcon } from './ui/PlatformIcon'
+import { emulatorIcon } from '../platformIcon'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { formatAgo } from '../format'
@@ -179,7 +181,7 @@ export function SwitchPlaysIn({ gameId, gameName, machineName, refreshKey, onCha
               >
                 <span className="sl-plays__radio" aria-hidden="true" />
                 <span className="sl-plays__txt">
-                  <b>{label(c)}</b>
+                  <b><PlatformIcon id={emulatorIcon(c.emulator)} /> {label(c)}</b>
                   {lines(c, S, machineName, elsewhere(c.emulator)).map((l, i) => <span key={i} className={l.tone ? `sl-plays__line--${l.tone}` : undefined}>{l.text}</span>)}
                 </span>
               </button>
