@@ -2038,6 +2038,12 @@ under a user, where the emulator never opens it — the server now records a dev
 Agent tests **656**. Details: `session_summary.md`, `progress.md`.
 <br>**Gotcha:** `testenv.ps1 build` builds the Deck/WSL agents from the WSL clone — run `testenv.ps1 sync` first after
 committing, or the Deck keeps the previous build (check `testenv.ps1 status`'s build labels).
+<br>**2026-10-18, second review of PR #73 (the commits since 2026-10-14):** a Switch copy is now recorded per install
+(`EmulatorCopy.Saves`), so keep-in-sync for a standalone install of the synced emulator no longer stops at the EmuDeck one;
+`SwitchUserSharing` adopts or undoes one pass at a time (the poller and the Settings button raced on one install), and a
+failed adopt restores the saves it set aside for titles under both users from its backup; `NowReady` runs under the game's
+lock with the keep-in-sync pass; `SwitchGameVersion` reads each log once per size and write time instead of on every page
+load, push and pull; three misplaced doc comments fixed. Unit **659**.
 <br>**Next action for this item:** merge PR #73; then Group G, H (the other emulators), I or J.
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
 steps 1–5 of the profile and 1–11 of the DLC hand-over), then Forza Horizon for real between PC and Deck (Group H).
