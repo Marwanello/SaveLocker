@@ -85,14 +85,74 @@ public static partial class DuckStationSaves
             }
         }
 
+        // A game played from states alone so far (Phase 19). A save anywhere on this machine — any card carrying one of
+        // its product codes — wins.
+        var saved = found
+            .SelectMany(f => f.Candidate.ExtraSaveDirs?.SelectMany(d => d.IncludeGlobs ?? []) ?? [])
+            .Select(glob => glob.EndsWith("_*.sav", StringComparison.Ordinal) ? glob[..^6] : glob)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var setup in folders)
+            foreach (var (serial, written) in StateOnlyGames(setup.States))
+                if (!saved.Contains(serial))
+                    found.Add((StatesOnlyCandidate(setup, serial), written));
+
         return found
             .GroupBy(f => f.Candidate.EmulatorRom, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.OrderByDescending(f => f.WrittenUtc).First().Candidate)
+            .Select(g => g.OrderBy(f => f.Candidate.StatesOnly).ThenByDescending(f => f.WrittenUtc).First().Candidate)
             .Concat(shared)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(c => c.EmulatorRom, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+
+    /// <summary>
+    /// A game known only by its states' product code. DuckStation names a per-game card after the title its own game
+    /// database gives the disc (<c>System::GetMemoryCardPathForSlot</c>, <c>Path::SanitizeFileName</c>), which nothing here
+    /// can read; the bundled table's title is the same name for most discs, so the card is declared under it (else the
+    /// code itself, DuckStation's <c>PerGame</c> naming). When DuckStation picks another name, the first in-game save is a
+    /// row of its own and **Change** links it.
+    /// </summary>
+    private static ScanCandidate StatesOnlyCandidate(RomSaveFolders setup, string serial)
+    {
+        var known = ConsoleTitles.For(System, serial)?.Title;
+        var card = known is null ? serial : SanitizeFileName(known);
+        return new ScanCandidate(
+            Name: known ?? serial,
+            SuggestedSaveDir: EmuDeckRoots.RealPath(setup.Saves),
+            Source: ScanSource.Emulator,
+            HasSteamCloud: false,
+            EmulatorName: EmulatorName,
+            EmulatorSystem: System,
+            EmulatorRom: card,
+            ViaEmuDeck: setup.EmuDeck,
+            IncludeGlobs: SaveGlobsFor(card),
+            ExtraSaveDirs: [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(setup.States!), StateGlobsFor([serial]))],
+            Release: ConsoleTitles.Release(System, [serial]),
+            StatesOnly: true);
+    }
+
+    /// <summary>DuckStation's <c>Path::SanitizeFileName</c>: a character no file name may hold becomes <c>_</c>.</summary>
+    public static string SanitizeFileName(string name) =>
+        string.Concat(name.Select(c => c < ' ' || "<>:\"/\\|?*".Contains(c) ? '_' : c));
+
+    /// <summary>The product codes with a non-empty state in a states folder (<c>SLUS-00594_1.sav</c>,
+    /// <c>SLUS-00594_resume.sav</c>), and when the newest was written.</summary>
+    public static IEnumerable<(string Serial, DateTime WrittenUtc)> StateOnlyGames(string? statesDir)
+    {
+        FileInfo[] files;
+        try { files = statesDir is not null && Directory.Exists(statesDir) ? new DirectoryInfo(statesDir).GetFiles("*.sav") : []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+        return files
+            .Where(f => f.Length > 0 && f.LinkTarget is null)
+            .Select(f => (File: f, Match: StateName().Match(f.Name)))
+            .Where(x => x.Match.Success)
+            .GroupBy(x => x.Match.Groups["serial"].Value.ToUpperInvariant())
+            .Select(g => (g.Key, g.Max(x => x.File.LastWriteTimeUtc)))
+            .ToList();
+    }
+
+    [GeneratedRegex(@"^(?<serial>[A-Z]{4}-\d{5})_(?:\d+|resume)\.sav$", RegexOptions.IgnoreCase)]
+    private static partial Regex StateName();
 
     /// <summary>A game's cards in both slots, each named exactly: <c>Crash_*.mcd</c> would take
     /// <c>Crash_Team_1.mcd</c>.</summary>

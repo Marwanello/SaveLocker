@@ -814,6 +814,14 @@ function New-EmuDeckFixture {
     $homebrew = '01005A7E57E57000'
     Write-FixtureFile (Join-Path $target "saves\eden\saves\0000000000000000\$edenUser\$homebrew\save.dat") "homebrew on eden $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $target "roms\switch\SaveLocker Homebrew Test [$homebrew][v0].nsp") ''
+    # Group I (Phase 19): one game per emulator played from states alone, before its first in-game save - each listed as
+    # "Save states only so far", its save folder declared so the first in-game save joins it.
+    Write-FixtureFile (Join-Path $states 'Super Mario World (USA).state1') "smw slot 1 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $melon 'states\New Super Mario Bros. (USA).ml2') "nsmb slot 2 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $ps2 'states\SLUS-20778 (6F8545DB).01.p2s') "god of war slot 1 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $ds 'states\SLUS-00594_1.sav') "metal gear solid slot 1 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $dol 'states\GZLE01.s02') "wind waker slot 2 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $target 'saves\azahar\states\0004000000033500.01.cst') "ocarina 3d slot 1 $(Get-Date -Format o)"
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
