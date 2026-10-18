@@ -95,7 +95,9 @@ public static class EmuDeckRoots
     /// <paramref name="path"/> with a symlink at ANY component resolved, not just the last one.
     /// EmuDeck's <c>Emulation/saves/&lt;emulator&gt;/…</c> entries are links into each emulator's own
     /// folders, and EmuDeck's own docs warn that backing up the link instead of its target loses the
-    /// data — so a save folder is always recorded by where its bytes really live.
+    /// data — so a save folder is always recorded by where its bytes really live. Never with a trailing separator: EmuDeck
+    /// writes some link targets with one (the Deck's Eden, <c>…/nand/user/save/</c>, 2026-10-18), and the same folder read
+    /// from an emulator's own config has none, so the two must come out the same.
     /// </summary>
     public static string RealPath(string path)
     {
@@ -116,7 +118,7 @@ public static class EmuDeckRoots
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
-        return current;
+        return Path.TrimEndingDirectorySeparator(current);
     }
 
     private static bool SafeDirectoryExists(string path)

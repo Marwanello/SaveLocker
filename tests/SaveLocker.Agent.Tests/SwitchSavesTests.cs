@@ -116,6 +116,27 @@ public sealed class SwitchSavesTests : IDisposable
 
     private string P(string rel) => Path.Combine(_dir, rel.Replace('/', Path.DirectorySeparatorChar));
 
+    [Fact]
+    public void One_eden_is_one_install_when_emudecks_link_ends_in_a_separator()
+    {
+        // The Deck, 2026-10-18: EmuDeck links saves/eden/saves to the SD card's NAND with a trailing slash, and Eden's own
+        // config names the same NAND without one. It was listed as two Edens, "EmuDeck" and "Standalone".
+        var nand = P("SDCard/Emulation/storage/eden/nand");
+        Directory.CreateDirectory(Path.Combine(nand, "user", "save"));
+        Directory.CreateDirectory(P("Emulation/saves/eden"));
+        try { Directory.CreateSymbolicLink(P("Emulation/saves/eden/saves"), Path.Combine(nand, "user", "save") + Path.DirectorySeparatorChar); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; } // no symlink right on this Windows box
+        SwitchFixtures.Write(P("config/eden/qt-config.ini"), $"[Data%20Storage]\nnand_directory={nand}\nnand_directory\\default=false\n");
+
+        var setups = SwitchEmulators.Dedupe([.. SwitchEmulators.FromEmuDeck([P("Emulation")]),
+            SwitchEmulators.YuzuSetup("Eden", P("config/eden/qt-config.ini"), P("share/eden"))]);
+
+        var eden = Assert.Single(setups, s => s.Emulator == "Eden");
+        Assert.True(eden.EmuDeck);
+        Assert.Equal(P("share/eden"), eden.Data);
+        Assert.Equal(P("config/eden/qt-config.ini"), eden.Config);
+    }
+
     private const string RyuDefaultUser = "00000000000000010000000000000000";
     private const string Mp4 = "010019A01E2F2000";
     private const string Acnh = "01006F8002326000";
