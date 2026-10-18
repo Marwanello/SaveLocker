@@ -262,7 +262,13 @@ public static class Doctor
             if (g.ExtraPaths.Count > 0 && SaveArchive.FolderRulesError(g.Roots(config.StateDir)) is { } rules)
                 Problem($"'{g.Name}': {rules} Nothing is synced for it until that is fixed.");
 
-            if (g.SteamAppId is not null && config.Games.Any(o => o != g && o.SteamAppId == g.SteamAppId))
+            // A Steam ROM Manager shortcut tracked as a game of its own while the emulator game it starts is tracked too
+            // (tasks/emulator-saves Phase 20): one save, two server games.
+            if (g.SteamAppId is not null && g.Source?.Kind != GameSourceKinds.Emulator &&
+                config.Games.FirstOrDefault(o => o != g && o.ShortcutAppIds.Contains(g.SteamAppId)) is { } emulatorGame)
+                Problem($"'{g.Name}' is the same game as '{emulatorGame.Name}' ({emulatorGame.Source?.Detail ?? "emulator"}): its Steam " +
+                        "shortcut starts that emulator game. Stop tracking this copy (Add games, or the game's page).");
+            else if (g.SteamAppId is not null && config.Games.Any(o => o != g && o.LaunchesUnder(g.SteamAppId)))
                 Problem($"more than one tracked game claims appid {g.SteamAppId}; " +
                         "the launch wrapper would pick one arbitrarily.");
         }

@@ -187,6 +187,23 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
         />
       )}
 
+      {game.sameGameAs && (
+        <Banner
+          tone="warn"
+          title={`Same game as ${game.sameGameAs.name}${game.sameGameAs.emulator ? ` (${game.sameGameAs.emulator})` : ''}`}
+          detail="This Steam shortcut starts that emulator game, so its save is synced twice, as two games. Stop tracking this copy; to keep its history, merge the two games in the console first."
+          action={
+            <Button
+              variant="primary"
+              data-pad-label="Stop tracking this copy"
+              onClick={() => void api.removeGame(game.id).then(() => { onChanged(); onRemoved() })}
+            >
+              Stop tracking this copy
+            </Button>
+          }
+        />
+      )}
+
       {dlc?.held && dlcMissing > 0 && (
         <Banner
           tone="warn"

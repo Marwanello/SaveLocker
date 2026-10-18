@@ -846,6 +846,15 @@ public sealed class AgentConfig
     public void SaveGameSteamAppId(Guid gameId, string appId) =>
         MutateGameUnderLock(gameId, g => g.SteamAppId = appId);
 
+    /// <summary>Record the Steam shortcuts that start an emulator game (<see cref="SrmShortcuts.Backfill"/>): their app IDs,
+    /// the first one as its <see cref="TrackedGame.SteamAppId"/> when it had none.</summary>
+    public void SaveGameShortcuts(Guid gameId, IReadOnlyList<string> appIds) =>
+        MutateGameUnderLock(gameId, g =>
+        {
+            g.ShortcutAppIds = g.ShortcutAppIds.Union(appIds, StringComparer.Ordinal).ToList();
+            if (string.IsNullOrWhiteSpace(g.SteamAppId)) g.SteamAppId = appIds.FirstOrDefault();
+        });
+
     /// <summary>
     /// Persist which folders <paramref name="game"/> has here — primary folder, its scope and the
     /// extra folders — without clobbering anything else, for the paths that change them mid-sync (a
@@ -963,6 +972,9 @@ public sealed class TrackedGame
     /// before that, so it is no longer reliably null there.
     /// </summary>
     public string? SteamAppId { get; set; }
+    /// <summary>Every Steam shortcut app ID that starts this emulator game (Steam ROM Manager's, tasks/emulator-saves Phase 20),
+    /// <see cref="SteamAppId"/> among them: a ROM SRM added twice is launched under either. Empty for every other game.</summary>
+    public List<string> ShortcutAppIds { get; set; } = new();
     /// <summary>
     /// Whether this game was actually enrolled AS a Steam install — decided once, at enrollment, from
     /// the candidate's own <see cref="ScanCandidate.HasSteamCloud"/> (<c>GameScanner</c> only sets
@@ -1140,6 +1152,10 @@ public sealed class TrackedGame
         string.IsNullOrWhiteSpace(SteamAppId)
             ? SteamLayout.CompatDataIdIn(SaveDirectory)
             : SteamAppId;
+
+    /// <summary>Does Steam start this game under <paramref name="appId"/> — its own app ID, or one of its emulator shortcuts'?</summary>
+    public bool LaunchesUnder(string? appId) =>
+        !string.IsNullOrEmpty(appId) && (ResolveSteamAppId() == appId || ShortcutAppIds.Contains(appId, StringComparer.Ordinal));
 }
 
 /// <summary>

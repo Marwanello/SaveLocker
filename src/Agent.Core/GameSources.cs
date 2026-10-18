@@ -23,6 +23,7 @@ public static class GameSources
                 var dir = (c.SuggestedSaveDir ?? "").Replace('\\', '/');
                 if (dir.Contains("/.var/app/", StringComparison.Ordinal)) tags.Add("Flatpak");
                 if (c.ViaEmuDeck) tags.Add("EmuDeck");
+                if (c.ShortcutAppIds is { Count: > 0 }) tags.Add("Steam shortcut");
                 return Make(GameSourceKinds.Emulator, c.EmulatorName ?? "Emulator", tags);
             case ScanSource.SteamInstalled:
                 if (c.SteamAppId is { } appId) tags.Add("AppID " + appId);

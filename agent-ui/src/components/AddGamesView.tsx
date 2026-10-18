@@ -595,6 +595,11 @@ export function AddGamesView({ onEnrolled }: Props) {
                   </Button>
                 </div>
               )}
+              {c.steamShortcut && (
+                <span className="sl-check-row__note" style={{ display: 'block', marginTop: 4 }}>
+                  Also in Steam as “{c.steamShortcut}”: that shortcut starts this game, so it is not listed on its own. Launching it from Steam syncs this game.
+                </span>
+              )}
               {!c.enrolled && c.statesOnly && (
                 <span className="sl-check-row__note" style={{ display: 'block', marginTop: 4 }}>
                   Save states only so far. Its in-game saves sync too once the game makes one.

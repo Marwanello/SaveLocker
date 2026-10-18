@@ -62,6 +62,14 @@ public sealed class GameScanner : IGameScanner
         foreach (var (name, scan) in EmulatorSaves.Sources)
             all.AddRange(await SafeSourceAsync(name, () => Task.Run(scan, ct), ct));
 
+        // A Steam ROM Manager shortcut is the emulator's game, not a game of its own (tasks/emulator-saves Phase 20).
+        if (steamPath is not null)
+        {
+            try { all = SrmShortcuts.Apply(all, await SrmShortcuts.FindAsync([steamPath], ct), SrmShortcuts.NoSaveYet); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { AgentLogger.LogException("Scan source 'Steam ROM Manager shortcuts'", ex); }
+        }
+
         // De-dupe by name: prefer a candidate that already has a suggested save dir.
         // Grouped on the NORMALISED name: the same game reaches us spelled differently by
         // different sources — a Steam shortcut says "DRAGON QUEST III HD 2D Remake", the save-root

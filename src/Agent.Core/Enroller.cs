@@ -259,6 +259,7 @@ public static class Enroller
                         ManifestKey = c.ManifestKey,
                         SaveDirectory = check.Canonical!,
                         SteamAppId = c.SteamAppId,
+                        ShortcutAppIds = c.ShortcutAppIds?.ToList() ?? new(),
                         HasSteamCloud = c.HasSteamCloud,
                         InstallDir = c.InstallDir,
                         Source = GameSources.From(c),

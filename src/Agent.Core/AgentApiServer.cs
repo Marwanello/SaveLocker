@@ -643,7 +643,8 @@ public sealed class AgentApiServer : IDisposable
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
                 g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt,
-                SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null, g.Release, g.IncludeGlobs.FirstOrDefault()))
+                SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null, g.Release, g.IncludeGlobs.FirstOrDefault(),
+                SameGameAsDto.For(g, _config.Games)))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -1052,8 +1053,7 @@ public sealed class AgentApiServer : IDisposable
         // the user discovering it as a save that silently never synced.
         app.MapPost("/api/launch-options/applied", (LaunchOptionsAppliedRequest body) =>
         {
-            var game = _config.Games.FirstOrDefault(
-                g => SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()) == body.SteamAppId);
+            var game = _config.Games.FirstOrDefault(g => g.LaunchesUnder(body.SteamAppId.ToString()));
             if (game is null) return TypedResults.Ok(new OkResponse());
 
             game.LaunchOptionsAppliedAt = body.Applied ? DateTime.UtcNow : null;
@@ -1965,9 +1965,11 @@ public sealed class AgentApiServer : IDisposable
         if (wrapper is null) return [];
 
         var desired = LaunchOptions.Invocation(wrapper);
+        // An emulator game started from Steam ROM Manager's shortcuts needs the wrapper on each of them.
         return _config.Games
-            .Select(g => (game: g, appId: SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId())))
-            .Where(x => x.appId is not null)
+            .SelectMany(g => new[] { g.ResolveSteamAppId() }.Concat(g.ShortcutAppIds)
+                .Select(SteamShortcuts.UnsignedAppId).Where(id => id is not null).Distinct()
+                .Select(appId => (game: g, appId)))
             .Select(x => new LaunchOptionRowDto(
                 x.appId!.Value, x.game.GameId, x.game.Name, desired,
                 x.game.LaunchOptionsAppliedAt, x.game.LaunchOptionsError))
@@ -2061,6 +2063,7 @@ public sealed class AgentApiServer : IDisposable
         _candidateCache = result;
         try
         {
+            SrmShortcuts.Backfill(_config, result);
             var filled = GameSources.Backfill(_config, result);
             if (filled.Count > 0 && !string.IsNullOrEmpty(_config.ApiKey))
                 foreach (var game in filled) await GameSources.ReportAsync(ApiClient.For(_config), game);
@@ -2107,7 +2110,8 @@ public sealed class AgentApiServer : IDisposable
             candidate.Release?.Region,
             candidate.StatesOnly,
             candidate.NoSaveYet,
-            candidate.DuplicateShortcuts is { Count: > 0 } duplicates ? duplicates.ToArray() : null)).ToArray();
+            candidate.DuplicateShortcuts is { Count: > 0 } duplicates ? duplicates.ToArray() : null,
+            candidate.ShortcutName)).ToArray();
 
     private readonly SemaphoreSlim _switchUserGate = new(1, 1);
 
@@ -2291,7 +2295,10 @@ public sealed record CandidateDto(
     bool NoSaveYet = false,
     /// <summary>Same-named Steam shortcuts under different AppIDs (<see cref="ScanCandidate.DuplicateShortcuts"/>):
     /// one entry per AppID, <see cref="DuplicateShortcut.Tracked"/> on the one the scan uses. Null when not the shape.</summary>
-    DuplicateShortcut[]? DuplicateShortcuts = null);
+    DuplicateShortcut[]? DuplicateShortcuts = null,
+    /// <summary>The Steam shortcut (Steam ROM Manager's) that starts this emulator game's ROM, by its name in Steam: it is this
+    /// game, never one of its own (<see cref="ScanCandidate.ShortcutName"/>). Null when none does.</summary>
+    string? SteamShortcut = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
@@ -2357,7 +2364,21 @@ public sealed record TrackedGameDto(
     GameReleaseDto? Release = null,
     /// <summary>The first of the primary folder's include patterns — the save's own files, in the details the
     /// release chip opens; null for a game that keeps its whole folder.</summary>
-    string? SaveFiles = null);
+    string? SaveFiles = null,
+    /// <summary>The emulator game this one's Steam shortcut starts, when both are tracked here: one save as two games
+    /// (<see cref="SrmShortcuts"/>, tasks/emulator-saves Phase 20). Null otherwise.</summary>
+    SameGameAsDto? SameGameAs = null);
+
+/// <summary>A tracked emulator game a tracked Steam shortcut game is a copy of: its id, name and emulator.</summary>
+public sealed record SameGameAsDto(Guid GameId, string Name, string? Emulator)
+{
+    /// <summary>The emulator game <paramref name="g"/>'s shortcut starts, or null — never for an emulator game itself.</summary>
+    public static SameGameAsDto? For(TrackedGame g, IEnumerable<TrackedGame> games) =>
+        g.Source?.Kind == GameSourceKinds.Emulator || string.IsNullOrEmpty(g.SteamAppId) ? null
+        : games.FirstOrDefault(o => o.GameId != g.GameId && o.ShortcutAppIds.Contains(g.SteamAppId, StringComparer.Ordinal)) is { } e
+            ? new SameGameAsDto(e.GameId, e.Name, e.Source?.Detail)
+            : null;
+}
 
 /// <summary>One save folder of a tracked game on this machine.</summary>
 /// <param name="Path">This machine's folder, or <c>""</c> when it is not mapped here — an unmapped

@@ -175,7 +175,13 @@ public sealed record ScanCandidate(
     /// <summary>A Yuzu fork's title found with only its device save (<see cref="SuggestedSaveDir"/>): the current user's
     /// folder for it, where an account save would go when the server's game keeps one
     /// (<see cref="SwitchEmulators.AlignToGameFolders"/>). Null for everything else.</summary>
-    string? SwitchAccountDir = null)
+    string? SwitchAccountDir = null,
+    /// <summary>The Steam shortcuts that start this emulator game's ROM (Steam ROM Manager's, or hand-made — <see cref="SrmShortcuts"/>):
+    /// their app IDs, the first also the game's <see cref="SteamAppId"/>, so the launch wrapper's pull before launch and push after
+    /// exit work for it. Null when no shortcut starts it.</summary>
+    IReadOnlyList<string>? ShortcutAppIds = null,
+    /// <summary>The first such shortcut's name in Steam, for "Also in Steam as …". Null with <see cref="ShortcutAppIds"/>.</summary>
+    string? ShortcutName = null)
 {
     /// <summary>
     /// What a scanner merges duplicates on: the normalised name, so one game found by two sources is one

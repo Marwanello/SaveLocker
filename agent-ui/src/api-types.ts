@@ -3875,6 +3875,7 @@ export interface components {
             /** @default false */
             noSaveYet: boolean;
             duplicateShortcuts?: null | components["schemas"]["DuplicateShortcut"][];
+            steamShortcut?: null | string;
         };
         CandidateLinksDto: {
             /** Format: int32 */
@@ -4368,6 +4369,12 @@ export interface components {
             desired: string;
             changed: boolean;
         };
+        SameGameAsDto: {
+            /** Format: uuid */
+            gameId: string;
+            name: string;
+            emulator: null | string;
+        };
         SaveFolderDto: {
             key: string;
             label: null | string;
@@ -4561,6 +4568,7 @@ export interface components {
             source?: null | components["schemas"]["GameSourceDto"];
             release?: null | components["schemas"]["GameReleaseDto"];
             saveFiles?: null | string;
+            sameGameAs?: null | components["schemas"]["SameGameAsDto"];
         };
         TransferAnswerRequest: {
             approve: boolean;
