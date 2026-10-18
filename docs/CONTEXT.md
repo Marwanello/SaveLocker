@@ -2437,11 +2437,14 @@ history, which already caused one wrong conclusion. Log state at *render* time, 
 `store/plugins` with the artifact's SHA-256 — Decky verifies that hash, so index and artifact must
 come from the same job. Bump `package.json` too: Decky reads the installed version from it.
 
-## Parked on a branch — `offline-backoff-task` (`bee3116`, pushed, not merged)
+## Offline backoff — no longer only on a branch (2026-10-18)
 
-`main` carries **no** task file now. Do not conclude there is no open work. `tasks/OfflineBackoff.md`
-and its Backlog entry exist only on that branch, deliberately (2026-07-29) — the task was written and
-the work deferred. `git checkout offline-backoff-task` to pick it up.
+The task parked on `offline-backoff-task` (`bee3116`) since 2026-07-29 now lives on `main` as
+`tasks/offline-backoff/summary.md` ([[Backlog]] → Medium), with the 2026-10-18 competitor research
+added; the branch can be deleted. That review (`logs/2026-10-18_competitor-gap-analysis.md`) also
+added fourteen other items to [[Backlog]], two of them possible data-safety bugs at the top of High
+(an emptied save folder pushed as a new version; a pull deleting excluded files), both still to be
+confirmed by a failing test.
 
 An agent that cannot reach the server retries forever at a fixed cadence: the offline drainer every
 30 s, *re-archiving the save folder each time before it finds out*, and the command poller every 20 s
