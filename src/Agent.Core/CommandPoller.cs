@@ -161,10 +161,13 @@ public sealed class CommandPoller : IDisposable
             {
                 setups ??= SwitchEmulators.Find();
                 var found = setups;
-                var (ran, lines) = await _engine().WithGameLockAsync(game,
-                    () => Task.FromResult(SwitchCopies.Reconcile(_config, game, AgentLogger.Log, found)), TimeSpan.Zero);
-                if (ran) foreach (var line in lines) _notify(line);
-                foreach (var emulator in SwitchCopies.NowReady(_config, game, found))
+                // Both write the game's copies, so both run under its lock.
+                var (ran, result) = await _engine().WithGameLockAsync(game,
+                    () => Task.FromResult((Lines: SwitchCopies.Reconcile(_config, game, AgentLogger.Log, found),
+                        Ready: SwitchCopies.NowReady(_config, game, found))), TimeSpan.Zero);
+                if (!ran) continue;
+                foreach (var line in result.Lines) _notify(line);
+                foreach (var emulator in result.Ready)
                 {
                     _notify($"[{game.Name}] {emulator} can sync it now.");
                     _notices?.Raise(NoticeCatalog.EmulatorReady(game.GameId, game.Name, emulator));
@@ -205,7 +208,8 @@ public sealed class CommandPoller : IDisposable
             var outcome = await SwitchUserSharing.ApplyAsync(_config, shared, setups, _api(), SwitchUserSharing.LocksOf(_engine()), null, AgentLogger.Log);
             if (outcome.Refusal is { } why)
             {
-                if (_switchUserAsked == shared.Id) return;
+                // The page's button is changing it right now: nothing to say, the next tick sees what it did.
+                if (why == SwitchUserSharing.Busy || _switchUserAsked == shared.Id) return;
                 _switchUserAsked = shared.Id;
                 _notify($"Could not switch to the shared Switch user {shared.Name}: {why}");
                 return;

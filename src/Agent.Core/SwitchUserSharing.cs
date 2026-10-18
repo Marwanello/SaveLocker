@@ -63,6 +63,12 @@ public static class SwitchUserSharing
 
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
+    // One adopt or undo at a time in this process: the poller adopts on its own tick while the page's button can too, and
+    // two passes over one install would move its folders and rewrite its profiles.dat at once. A tracked game's sync lock
+    // doesn't cover it — an install whose user has no tracked game takes none.
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+    public const string Busy = "The Switch user is already being changed. Try again in a moment.";
+
     // ---------------------------------------------------------------- what is here
 
     /// <summary>The users of every Yuzu-based install here, for the heartbeat; the current one marked.</summary>
@@ -122,6 +128,14 @@ public static class SwitchUserSharing
         ApiClient? api, GameLock gameLock, IReadOnlyDictionary<string, string>? keep, Action<string> log, Func<string?>? running = null)
     {
         if (!SwitchUserReport.IsUserId(shared.Id)) return new Outcome("That isn't a Switch user ID.", []);
+        if (!await Gate.WaitAsync(0)) return new Outcome(Busy, []);
+        try { return await ApplyGatedAsync(config, shared, setups, api, gameLock, keep, log, running); }
+        finally { Gate.Release(); }
+    }
+
+    private static async Task<Outcome> ApplyGatedAsync(AgentConfig config, SwitchUserDto shared, IReadOnlyList<SwitchEmulators.Setup> setups,
+        ApiClient? api, GameLock gameLock, IReadOnlyDictionary<string, string>? keep, Action<string> log, Func<string?>? running)
+    {
         var newId = shared.Id.ToUpperInvariant();
         var states = States(config, shared, setups);
         var todo = states.Where(s => s.UserId is not null && !s.Matches).ToList();
@@ -224,6 +238,12 @@ public static class SwitchUserSharing
                 try { RewriteProfile(s.Profiles!, newId, oldId); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
             foreach (var name in record.Moved.AsEnumerable().Reverse())
                 try { MoveEntry(Path.Combine(newDir, name), Path.Combine(oldDir, name)); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            // A title saved under both had one side deleted to make way for the other: it comes back from the backup.
+            try { RestoreKept(record, oldDir, newDir); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                log($"{s.Emulator}: could not restore a replaced save from {record.Backup}: {e.Message}");
+            }
             await Untell(api!, told, log);
             return $"Could not move {s.Emulator}'s saves to the new user, and put back what had moved (the backup is {record.Backup}): {ex.Message}";
         }
@@ -243,6 +263,14 @@ public static class SwitchUserSharing
     /// <summary>Put back the user each install here had before it last adopted a shared one, and stop adopting that one here.</summary>
     public static async Task<Outcome> UndoAsync(AgentConfig config, IReadOnlyList<SwitchEmulators.Setup> setups, ApiClient? api,
         GameLock gameLock, Action<string> log, Func<string?>? running = null)
+    {
+        if (!await Gate.WaitAsync(0)) return new Outcome(Busy, []);
+        try { return await UndoGatedAsync(config, setups, api, gameLock, log, running); }
+        finally { Gate.Release(); }
+    }
+
+    private static async Task<Outcome> UndoGatedAsync(AgentConfig config, IReadOnlyList<SwitchEmulators.Setup> setups, ApiClient? api,
+        GameLock gameLock, Action<string> log, Func<string?>? running)
     {
         var applied = ReadApplied(config);
         var work = Forks(setups)
@@ -294,12 +322,9 @@ public static class SwitchUserSharing
             foreach (var name in record.Moved)
                 if (Exists(Path.Combine(newDir, name)) && !Exists(Path.Combine(oldDir, name)))
                     MoveEntry(Path.Combine(newDir, name), Path.Combine(oldDir, name));
+            RestoreKept(record, oldDir, newDir);
             using (var zip = ZipFile.OpenRead(record.Backup))
             {
-                // A title kept from here put the shared user's own save aside; one kept from the shared user, this one's.
-                foreach (var (title, kept) in record.Kept)
-                    if (kept == Here) Extract(zip, $"shared/{title}/", Path.Combine(newDir, title));
-                    else Extract(zip, $"old/{title}/", Path.Combine(oldDir, title));
                 if (zip.GetEntry("profiles.dat") is { } profiles)
                 {
                     using var src = profiles.Open();
@@ -423,6 +448,17 @@ public static class SwitchUserSharing
         if (!Directory.Exists(dir)) return;
         foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
             zip.CreateEntryFromFile(f, prefix + "/" + Path.GetRelativePath(dir, f).Replace('\\', '/'));
+    }
+
+    /// <summary>Each title saved under both users back on the side it was taken from: a title kept from here put the shared
+    /// user's own save aside, one kept from the shared user this one's.</summary>
+    private static void RestoreKept(Applied record, string oldDir, string newDir)
+    {
+        if (record.Kept.Count == 0) return;
+        using var zip = ZipFile.OpenRead(record.Backup);
+        foreach (var (title, kept) in record.Kept)
+            if (kept == Here) Extract(zip, $"shared/{title}/", Path.Combine(newDir, title));
+            else Extract(zip, $"old/{title}/", Path.Combine(oldDir, title));
     }
 
     private static void Extract(ZipArchive zip, string prefix, string dir)

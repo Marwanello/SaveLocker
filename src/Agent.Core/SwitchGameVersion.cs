@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using SaveLocker.Shared;
 
@@ -85,7 +86,7 @@ public static partial class SwitchGameVersion
         try { logs = new DirectoryInfo(dir).GetFiles("*_log.txt*").OrderByDescending(f => f.LastWriteTimeUtc).ToList(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
         foreach (var log in logs)
-            if (LastMatch(log, YuzuBoot(), m => Is(m.Groups[1].Value, titleId) ? m.Groups[2].Value : null) is { } v)
+            if (Booted(log, ryujinx: false).GetValueOrDefault(titleId) is { } v)
                 return (v, log.LastWriteTimeUtc);
         return null;
     }
@@ -98,7 +99,7 @@ public static partial class SwitchGameVersion
         try { logs = new DirectoryInfo(dir).GetFiles("*.log").OrderByDescending(f => f.LastWriteTimeUtc).Take(RyujinxLogsRead).ToList(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
         foreach (var log in logs)
-            if (LastMatch(log, RyujinxBoot(), m => Is(m.Groups[2].Value, titleId) ? m.Groups[1].Value : null) is { } v)
+            if (Booted(log, ryujinx: true).GetValueOrDefault(titleId) is { } v)
                 return (v, log.LastWriteTimeUtc);
         return null;
     }
@@ -131,25 +132,44 @@ public static partial class SwitchGameVersion
             yield return Path.Combine(EmulatorPaths.XdgCache, folder);
     }
 
-    // The emulator holds its log open while it runs, so it is read shared.
-    private static string? LastMatch(FileInfo log, Regex pattern, Func<Match, string?> pick)
+    // Each log's boots, by the file's path, size and last write: the page asks for every install's version each time it
+    // opens, and every push and pull asks the synced one's — and a log can be tens of MB. One that grows is read again.
+    private static readonly ConcurrentDictionary<(string Path, long Length, DateTime Written), IReadOnlyDictionary<string, string>> Logs = new();
+
+    /// <summary>The version each title last booted with in <paramref name="log"/>, title ID → version.</summary>
+    private static IReadOnlyDictionary<string, string> Booted(FileInfo log, bool ryujinx)
     {
-        try
-        {
-            if (log.Length > MaxLogBytes) return null;
-            using var fs = new FileStream(log.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var reader = new StreamReader(fs);
-            string? found = null;
-            while (reader.ReadLine() is { } line)
-            {
-                if (!line.Contains("Booting game", StringComparison.Ordinal) && !line.Contains("Application Loaded", StringComparison.Ordinal)) continue;
-                var m = pattern.Match(line);
-                if (m.Success && pick(m) is { } v) found = v;
-            }
-            return found;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+        var key = (log.FullName, log.Length, log.LastWriteTimeUtc);
+        if (Logs.TryGetValue(key, out var known)) return known;
+        // A read that failed (the emulator rotating it) is tried again next time, not remembered as empty.
+        if (ReadBoots(log, ryujinx) is not { } boots) return new Dictionary<string, string>();
+        // Only the newest read of a file is worth keeping.
+        foreach (var stale in Logs.Keys.Where(k => k.Path == key.FullName && k != key)) Logs.TryRemove(stale, out _);
+        Logs[key] = boots;
+        return boots;
     }
 
-    private static bool Is(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+    // The emulator holds its log open while it runs, so it is read shared.
+    private static IReadOnlyDictionary<string, string>? ReadBoots(FileInfo log, bool ryujinx)
+    {
+        var boots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            if (log.Length > MaxLogBytes) return boots;
+            using var fs = new FileStream(log.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(fs);
+            while (reader.ReadLine() is { } line)
+            {
+                if (!line.Contains(ryujinx ? "Application Loaded" : "Booting game", StringComparison.Ordinal)) continue;
+                var m = (ryujinx ? RyujinxBoot() : YuzuBoot()).Match(line);
+                if (!m.Success) continue;
+                // The last boot of each title wins.
+                if (ryujinx) boots[m.Groups[2].Value] = m.Groups[1].Value;
+                else boots[m.Groups[1].Value] = m.Groups[2].Value;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+        return boots;
+    }
+
 }

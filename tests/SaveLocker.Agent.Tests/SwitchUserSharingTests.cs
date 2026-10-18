@@ -178,4 +178,27 @@ public sealed class SwitchUserSharingTests : IClassFixture<ServerProcess>, IDisp
         await ApiClient.For(pc).ClearSwitchSharedUserAsync();
         Assert.Null((await deckApi.ReportHealthAsync(new AgentHeartbeat("9.9.9", "Linux"))).SwitchSharedUser);
     }
+
+    [Fact]
+    public async Task One_change_of_user_at_a_time_the_poller_and_the_page_never_both_move_an_install()
+    {
+        var eden = S.Eden(P("pc/Emulation"), PcUser, "maro");
+        S.Write(Path.Combine(S.EdenSave(P("pc/Emulation"), PcUser, Title('A')), "save.bin"), "pc");
+        var pc = await Machine("pc");
+        var shared = new SwitchUserDto(DeckUser, "maro");
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+
+        // The first pass is held inside, where it checks for a running emulator.
+        var first = Task.Run(() => SwitchUserSharing.ApplyAsync(pc, shared, [eden], ApiClient.For(pc), Unlocked, null, _ => { },
+            () => { entered.Set(); release.Wait(TimeSpan.FromSeconds(30)); return "Eden"; }));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(30)));
+        Assert.Equal(SwitchUserSharing.Busy, (await SwitchUserSharing.ApplyAsync(pc, shared, [eden], ApiClient.For(pc), Unlocked, null, _ => { }, NothingRunning)).Refusal);
+        Assert.Equal(SwitchUserSharing.Busy, (await SwitchUserSharing.UndoAsync(pc, [eden], ApiClient.For(pc), Unlocked, _ => { }, NothingRunning)).Refusal);
+        release.Set();
+        Assert.Equal("Eden is running. Close it first.", (await first).Refusal);
+
+        // Free again once it is done.
+        Assert.Null((await SwitchUserSharing.ApplyAsync(pc, shared, [eden], ApiClient.For(pc), Unlocked, null, _ => { }, NothingRunning)).Refusal);
+    }
 }

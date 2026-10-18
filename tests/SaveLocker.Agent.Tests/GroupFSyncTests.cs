@@ -646,4 +646,22 @@ public sealed class GroupFSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Contains("device save", await SwitchCopies.MakeSyncedAsync(pc2, withDevice, "Ryujinx", ApiClient.For(pc2), _ => { }, setups2));
         Assert.Equal(eden2Dir, AgentConfig.Load(pc2.ConfigPath).Games.Single(g => g.GameId == withDevice.GameId).SaveDirectory);
     }
+
+    [Fact]
+    public async Task A_second_install_of_the_synced_emulator_is_kept_in_step_as_its_own_copy()
+    {
+        // EmuDeck's Eden syncs; a standalone Eden on the same machine is the copy.
+        var deck = S.Eden(P("pc/Emulation"), EdenUser);
+        var standalone = S.Eden(P("pc/standalone"), EdenUser) with { EmuDeck = false };
+        S.Write(Path.Combine(S.EdenSave(P("pc/Emulation"), EdenUser, Title), "save.bin"), "deck");
+        IReadOnlyList<SwitchEmulators.Setup> setups = [deck, standalone];
+        var pc = await Machine("pc");
+        var game = await Enroll(pc, SwitchEmulators.Scan(setups, []), Title);
+        Assert.Equal([("Eden", true), ("Eden", false)], SwitchCopies.List(pc, game, setups).Select(r => (r.Emulator, r.Synced)));
+
+        SwitchCopies.SetKeepInSync(pc, game, "Eden", true, setups, saves: standalone.Saves);
+        Assert.Equal(standalone.Saves, game.EmulatorCopies.Single().Saves);
+        Assert.Single(SwitchCopies.Reconcile(pc, game, _ => { }, setups));
+        Assert.Equal("deck", File.ReadAllText(Path.Combine(S.EdenSave(P("pc/standalone"), EdenUser, Title), "save.bin")));
+    }
 }

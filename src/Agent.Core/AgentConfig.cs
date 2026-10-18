@@ -469,6 +469,13 @@ public sealed class AgentConfig
         if (after != before) AppearanceChanged?.Invoke(after);
     }
 
+    /// <summary>Store the shared Switch user a heartbeat carried (null: none chosen). Written only when it changed.</summary>
+    public void ApplySwitchSharedUser(SwitchUserDto? user)
+    {
+        if (SwitchSharedUser == user) return;
+        UpdateSettings(c => c.SwitchSharedUser = user);
+    }
+
     /// <summary>
     /// The console's manifest refresh window, applied from a heartbeat. Runs on every ~20 s
     /// heartbeat, so the unchanged case answers from memory and writes nothing.
@@ -479,13 +486,6 @@ public sealed class AgentConfig
     /// the local default.
     /// </para>
     /// </summary>
-    /// <summary>Store the shared Switch user a heartbeat carried (null: none chosen). Written only when it changed.</summary>
-    public void ApplySwitchSharedUser(SwitchUserDto? user)
-    {
-        if (SwitchSharedUser == user) return;
-        UpdateSettings(c => c.SwitchSharedUser = user);
-    }
-
     public void ApplyManifestSettings(int? refreshDays)
     {
         if (refreshDays is not { } pushed) return;
@@ -1176,10 +1176,13 @@ public sealed class TrackedSavePath
 /// had when they were last made the same — so a copy changed since can be told from one that only fell behind.
 /// <see cref="Conflict"/>: both changed since then, and the user is asked which to keep. <see cref="TellWhenReady"/>: the
 /// emulator isn't installed here or hasn't started the game, and the user asked to be told once it can sync it.
+/// <see cref="Saves"/>: the install's saves folder, which tells two installs of one emulator apart (EmuDeck's and a standalone
+/// one); null on a copy recorded before they were, which stands for any install of the emulator but the synced one.
 /// </summary>
 public sealed record EmulatorCopy
 {
     public string Emulator { get; set; } = "";
+    public string? Saves { get; set; }
     public bool KeepInSync { get; set; }
     public string? LastHash { get; set; }
     public bool Conflict { get; set; }

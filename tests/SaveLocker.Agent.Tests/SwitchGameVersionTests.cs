@@ -116,4 +116,18 @@ public sealed class SwitchGameVersionTests : IDisposable
         game.SaveDirectory = P("elsewhere/" + Acnh);
         Assert.Null(SwitchGameVersion.Inventory(game, [eden]));
     }
+
+    [Fact]
+    public void A_log_written_since_it_was_read_is_read_again()
+    {
+        var data = P("eden-windows-msvc/user");
+        var eden = S.Eden(P("Emulation"), "C4D7AB8B14D1F6F277CD40D6A0F00ECA") with { Data = data };
+        var log = Path.Combine(data, "log", "eden_log.txt");
+        At(log, Boot(Acnh, "1.0.0"), 5);
+        Assert.Equal("1.0.0", SwitchGameVersion.Of(eden, Acnh));
+
+        // The update installed and the game started with it: the same log, rewritten.
+        At(log, Boot(Acnh, "1.0.0") + Boot(Acnh, "1.6.0"), 1);
+        Assert.Equal("1.6.0", SwitchGameVersion.Of(eden, Acnh));
+    }
 }

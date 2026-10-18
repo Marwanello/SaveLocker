@@ -286,11 +286,6 @@ public sealed class SettingsService
         await _db.SaveChangesAsync(ct);
     }
 
-    /// <summary>
-    /// The manifest refresh window in force, and when "Refresh now" was last pressed. Always a
-    /// usable window: an unreadable or out-of-range stored value falls back to the default here, at
-    /// the one place every reader — the console and every heartbeat — goes through.
-    /// </summary>
     /// <summary>The shared Switch user, or null when none is chosen or the stored one can't be read.</summary>
     public async Task<SwitchUserDto?> GetSwitchSharedUserAsync(CancellationToken ct = default)
     {
@@ -308,6 +303,11 @@ public sealed class SettingsService
         SetAsync(SwitchSharedUser, user is null ? null
             : System.Text.Json.JsonSerializer.Serialize(user with { Id = user.Id.ToUpperInvariant() }, System.Text.Json.JsonSerializerOptions.Web), ct);
 
+    /// <summary>
+    /// The manifest refresh window in force, and when "Refresh now" was last pressed. Always a
+    /// usable window: an unreadable or out-of-range stored value falls back to the default here, at
+    /// the one place every reader — the console and every heartbeat — goes through.
+    /// </summary>
     public async Task<ManifestRefreshSettingsDto> GetManifestRefreshAsync(CancellationToken ct = default)
     {
         // Unset or unreadable means the product default; a stored value is honoured, 0 included.
