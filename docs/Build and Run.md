@@ -354,8 +354,9 @@ Group D adds, on both machines (each `PARAM.SFO` written byte-accurate by `New-P
 
 Group E adds (title-ID folders; the 3DS ROM headers written by `New-Ncsd`/`New-Ncch`):
 - **Cemu:** *Mario Kart 8* (`saves\Cemu\saves\00050000\10145d00`, named by a `title_list_cache.xml` in the Windows
-  fixture home); WSL has an older save and no cache, so it calls it *Wii U 10145D00* and must still join. *Wii U
-  101C9500* (Windows, in no cache) must survive every Mario Kart pull; the `00050010` system app is never listed.
+  fixture home); WSL has an older save and no cache, so it calls it *Wii U 10145D00* and must still join. *The Legend
+  of Zelda Breath of the Wild* (Windows, in no cache: named by its game folder's `meta/meta.xml` in `roms\wiiu`) must
+  survive every Mario Kart pull; *Wii U 10176900* (Splatoon) is named by nothing; the `00050010` system app is never listed.
 - **Azahar:** *Super Mario 3D Land* (USA, from its ROM's product code `CTR-P-AREE` in `roms\n3ds`; a state
   `0004000000054000.01.cst` on Windows, an older save on WSL). *Metroid - Samus Returns* (Windows) is named from its
   installed `content\00000000.app`, which never syncs; WSL's *3DS 0016E300* (no ROM) must survive every Mario pull.
