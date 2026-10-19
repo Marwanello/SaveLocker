@@ -24,6 +24,8 @@ interface Props {
   /** Which trigger edge the list lines up with ‚Äî `end` near the right of the page, so it opens inward. */
   align?: 'start' | 'end';
   disabled?: boolean;
+  /** A filter box at the top of the list, for a list too long to scroll through: typing narrows it by label. */
+  searchable?: boolean;
 }
 
 /**
@@ -32,20 +34,24 @@ interface Props {
  * ‚Üë/‚Üì/Home/End move, Enter or Space picks, Escape closes back onto the trigger, a letter jumps to the
  * next option that starts with it, and Tab or a click elsewhere closes.
  */
-export function Select({ value, options, onChange, label, placeholder = 'Choose‚Ä¶', variant = 'pill', align = 'start', disabled }: Props) {
+export function Select({ value, options: all, onChange, label, placeholder = 'Choose‚Ä¶', variant = 'pill', align = 'start', disabled, searchable }: Props) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const options = q ? all.filter(o => o.label.toLowerCase().includes(q)) : all;
+  const searchRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const id = useId();
-  const chosen = options.find(o => o.value === value) ?? null;
+  const chosen = all.find(o => o.value === value) ?? null;
 
   useEffect(() => {
     if (!open) return;
     const onPointer = (e: MouseEvent) => { if (!rootRef.current?.contains(e.target as Node)) setOpen(false); };
     document.addEventListener('mousedown', onPointer);
-    listRef.current?.focus();
+    (searchRef.current ?? listRef.current)?.focus();
     return () => document.removeEventListener('mousedown', onPointer);
   }, [open]);
 
@@ -54,7 +60,8 @@ export function Select({ value, options, onChange, label, placeholder = 'Choose‚
   }, [open, active, id]);
 
   function show(at?: number) {
-    const i = options.findIndex(o => o.value === value);
+    setQuery('');
+    const i = all.findIndex(o => o.value === value);
     setActive(at ?? Math.max(0, i));
     setOpen(true);
   }
@@ -82,13 +89,15 @@ export function Select({ value, options, onChange, label, placeholder = 'Choose‚
     switch (e.key) {
       case 'ArrowDown': e.preventDefault(); setActive(a => Math.min(last, a + 1)); return;
       case 'ArrowUp': e.preventDefault(); setActive(a => Math.max(0, a - 1)); return;
-      case 'Home': e.preventDefault(); setActive(0); return;
-      case 'End': e.preventDefault(); setActive(last); return;
-      case 'Enter': case ' ': e.preventDefault(); pick(active); return;
+      // In the filter box Home/End move its caret, as in any text field.
+      case 'Home': if (searchable) return; e.preventDefault(); setActive(0); return;
+      case 'End': if (searchable) return; e.preventDefault(); setActive(last); return;
+      case 'Enter': e.preventDefault(); pick(active); return;
+      case ' ': if (searchable) return; e.preventDefault(); pick(active); return;
       case 'Escape': e.preventDefault(); close(true); return;
       case 'Tab': close(false); return;
     }
-    if (e.key.length === 1 && /\S/.test(e.key)) {
+    if (!searchable && e.key.length === 1 && /\S/.test(e.key)) {
       const ch = e.key.toLowerCase();
       for (let step = 1; step <= options.length; step++) {
         const i = (active + step) % options.length;
@@ -96,6 +105,9 @@ export function Select({ value, options, onChange, label, placeholder = 'Choose‚
       }
     }
   }
+
+  const popup = `animate-drop absolute z-30 top-[calc(100%+6px)] ${align === 'end' ? 'right-0' : 'left-0'}
+            min-w-full w-max max-w-[min(340px,92vw)] bg-panel border border-line rounded-xl shadow-2xl`;
 
   const trigger = variant === 'pill'
     ? 'rounded-full bg-raise pl-2 pr-2.5 py-[5px] text-[12.5px]'
@@ -125,7 +137,7 @@ export function Select({ value, options, onChange, label, placeholder = 'Choose‚
           className={`text-dim transition-transform duration-150 ease-[var(--ease)] ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
+      {open && !searchable && (
         <div
           ref={listRef}
           id={`${id}-list`}
@@ -134,9 +146,7 @@ export function Select({ value, options, onChange, label, placeholder = 'Choose‚
           aria-label={label}
           aria-activedescendant={`${id}-${active}`}
           onKeyDown={onListKey}
-          className={`animate-drop absolute z-30 top-[calc(100%+6px)] ${align === 'end' ? 'right-0' : 'left-0'}
-            min-w-full w-max max-w-[min(340px,92vw)] max-h-[320px] overflow-y-auto
-            bg-panel border border-line rounded-xl shadow-2xl p-1 outline-none`}
+          className={`${popup} max-h-[320px] overflow-y-auto p-1 outline-none`}
         >
           {options.map((o, i) => {
             const selected = o.value === value;
@@ -160,6 +170,54 @@ export function Select({ value, options, onChange, label, placeholder = 'Choose‚
               </div>
             );
           })}
+        </div>
+      )}
+
+      {open && searchable && (
+        // The filter box keeps focus while the arrows move through the list: the combobox-with-listbox pattern.
+        <div className={`${popup} min-w-[260px] flex flex-col overflow-hidden`} onKeyDown={onListKey}>
+          <div className="p-1.5 border-b border-line">
+            <input
+              ref={searchRef}
+              type="text"
+              role="combobox"
+              aria-expanded
+              aria-controls={`${id}-list`}
+              aria-autocomplete="list"
+              aria-activedescendant={options.length > 0 ? `${id}-${active}` : undefined}
+              aria-label={`Search: ${label}`}
+              placeholder="Type to search"
+              autoComplete="off"
+              value={query}
+              onChange={e => { setQuery(e.target.value); setActive(0); }}
+              className="w-full bg-tile text-fg border border-line rounded-lg px-2.5 py-[5px] text-[12.5px] outline-none focus:border-accent-line"
+            />
+          </div>
+          <div ref={listRef} id={`${id}-list`} role="listbox" aria-label={label} className="max-h-[280px] overflow-y-auto p-1">
+            {options.map((o, i) => {
+              const selected = o.value === value;
+              return (
+                <div
+                  key={o.value}
+                  id={`${id}-${i}`}
+                  role="option"
+                  aria-selected={selected}
+                  onMouseMove={() => { if (active !== i) setActive(i); }}
+                  onClick={() => pick(i)}
+                  className={`flex items-center gap-2.5 pl-2 pr-2.5 py-[7px] rounded-lg cursor-pointer select-none
+                    ${i === active ? 'bg-row shadow-[inset_0_0_0_1px_var(--color-line)]' : ''}`}
+                >
+                  {o.icon}
+                  <span className="flex flex-col min-w-0 flex-1">
+                    <span className={`text-[13px] truncate ${selected ? 'font-semibold text-fg' : 'text-fg'}`}>{o.label}</span>
+                    {o.sub && <span className="text-[11.5px] text-dim truncate">{o.sub}</span>}
+                  </span>
+                  <Icon name="check" size={14} className={`ml-2 ${selected ? 'text-fg' : 'invisible'}`} />
+                </div>
+              );
+            })}
+            {options.length === 0 && <p className="px-2 py-2 text-[12.5px] text-dim">Nothing matches ‚Äú{query.trim()}‚Äù.</p>}
+          </div>
         </div>
       )}
     </div>
