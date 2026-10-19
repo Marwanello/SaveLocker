@@ -12,7 +12,9 @@ namespace SaveLocker.Shared;
 /// <param name="IncludeGlobs">When non-empty, only the files of <paramref name="Directory"/> matching one
 /// of these (relative to it, anchored at it) belong to this root — one game's saves inside a folder
 /// other games share. Null or empty: the whole folder.</param>
-public sealed partial record SaveRoot(string Key, string Directory, IReadOnlyList<string>? IncludeGlobs = null)
+/// <param name="Names">This machine's own names for the folder's files, when they differ from the server's
+/// (<see cref="FileNames"/>, tasks/emulator-saves Phase 17). Null: the server's names.</param>
+public sealed partial record SaveRoot(string Key, string Directory, IReadOnlyList<string>? IncludeGlobs = null, FileNames? Names = null)
 {
     public const string PrimaryKey = "main";
 

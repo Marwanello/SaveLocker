@@ -181,6 +181,10 @@ public sealed class ApiClient
         resp.EnsureSuccessStatusCode();
     }
 
+    /// <summary>This machine's own names for a game's files (tasks/emulator-saves Phase 17), the whole list; empty clears it.</summary>
+    public async Task SetFileNamesAsync(Guid gameId, FileNameDto[] names, CancellationToken ct = default) =>
+        (await _http.PutAsJsonAsync($"/api/agent/games/{gameId}/file-names", names, ct)).EnsureSuccessStatusCode();
+
     public async Task ReportLaunchProfileAsync(Guid gameId, LaunchProfileReport report, CancellationToken ct = default) =>
         (await _http.PutAsJsonAsync($"/api/agent/games/{gameId}/launch-profile", report, ct)).EnsureSuccessStatusCode();
 

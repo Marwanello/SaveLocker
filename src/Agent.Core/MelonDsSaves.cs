@@ -18,7 +18,12 @@ public static class MelonDsSaves
     public const string EmulatorName = "melonDS";
 
     public static readonly RomSaveRules Rules = new(EmulatorName, ".sav",
-        (rom, ext) => new[] { rom + ext }, rom => new[] { rom + ".ml*" }, System: "nds");
+        (rom, ext) => new[] { rom + ext }, rom => new[] { rom + ".ml*" }, System: "nds", StateRom: RomOfState);
+
+    /// <summary>The ROM a state is of: <c>&lt;rom&gt;.ml1</c>…<c>.ml8</c> (melonDS's eight slots). Null for anything else.</summary>
+    public static string? RomOfState(string fileName) =>
+        fileName.Length > 4 && fileName[^4..^1].Equals(".ml", StringComparison.OrdinalIgnoreCase) && fileName[^1] is >= '1' and <= '8'
+            ? fileName[..^4] : null;
 
     public static IReadOnlyList<ScanCandidate> Scan() =>
         Scan(EmuDeckRoots.Find(), EmulatorPaths.Standalone ? ConfigRoots() : Array.Empty<string>());

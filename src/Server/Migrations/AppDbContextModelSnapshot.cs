@@ -403,6 +403,9 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("ManifestKey")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("MergedGameIds")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -595,6 +598,9 @@ namespace SaveLocker.Server.Migrations
                         .HasColumnType("TEXT")
                         .HasDefaultValue("main");
 
+                    b.Property<string>("FileNames")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SavePath")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -656,6 +662,9 @@ namespace SaveLocker.Server.Migrations
 
                     b.Property<string>("MachineName")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MergedFrom")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid?>("ParentVersionId")

@@ -2045,6 +2045,26 @@ failed adopt restores the saves it set aside for titles under both users from it
 lock with the keep-in-sync pass; `SwitchGameVersion` reads each log once per size and write time instead of on every page
 load, push and pull; three misplaced doc comments fixed. Unit **659**.
 <br>**Next action for this item:** merge PR #73; then Group G, H (the other emulators), I or J.
+<br>**2026-10-18/19: Groups G, I and J built — [PR #78](https://github.com/Marwanello/SaveLocker/pull/78) (`emulator-saves-group-.g-i-j`),
+one commit per phase.** Phase 19 (I): every reader with states lists a game played from states alone. Phase 20 (G): a Steam ROM
+Manager shortcut is the emulator's game (`SrmShortcuts`; its app ID drives the launch wrapper), built against the Deck's real
+`shortcuts.vdf`, captured read-only. Phase 17 (G): a save links to a game of the same emulator whose files are named
+differently, with a per-machine file-by-file name list (`FileNames`, `OwnFileNames`), plus a **server merge** of two games
+(console, preview + typed name; merged versions read-only history). Migration `AddFileNamesAndMerge`. Phase 21 (J): emulator and
+console icons generated from Arcticons and RetroArch's Monochrome glyphs (`web/scripts/build-platform-icons.mjs`, `NOTICE-icons.md`)
+in all three UIs; `SvgPath` draws every path command. Agent tests **721**. Details: `tasks/emulator-saves/plan.md` → *Group G/I/J
+— as built*.
+<br>**2026-10-19: review fixes on the same PR.** A file that the name swap would give the server's name (another dump's
+`… (USA).state1` beside this machine's `… (USA) (Rev 1).state1`) is now that other dump's, never archived or deleted as this game's,
+and its presence refuses the link like a same-named `.srm` does. The archive's name map uses the platform's comparer again (it
+had made `save.dat`/`SAVE.DAT` one file on Linux, for every game). A machine moved by a merge clears its last synced hash, so a
+differing save meets the kept game's Latest as a conflict instead of being pulled over. `LaunchesUnder` compares unsigned app IDs;
+launch-options status is per shortcut (`ShortcutLaunchOptions`); a shortcut gone from Steam leaves the game's list; only the
+program word (or what `flatpak run` starts) names an emulator; merge also refuses on the kept game's lease/conflict. Agent tests
+**728** (in Release: the Debug agent output was held by a running test tray).
+<br>**Next action for this item:** the testenv pass with the Windows agent (Phase 17 Earthbound link Windows ⇄ WSL — the Windows
+test agent still maps a real `D:\Emulation` Animal Crossing save; unmap it first), the Deck pass (Forza Horizon listed once;
+launching it from Steam syncs), then merge PR #78. Group H stays open.
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
 steps 1–5 of the profile and 1–11 of the DLC hand-over), then Forza Horizon for real between PC and Deck (Group H).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.

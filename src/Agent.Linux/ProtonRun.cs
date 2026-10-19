@@ -316,8 +316,7 @@ public static class ProtonRun
         // matches this launch" and played the whole session with no sync at all, while the game was
         // tracked, its folder mapped and its launch options correct. Two of four tracked games on
         // real hardware were in exactly that state (2026-08-15).
-        var game = config.Games.FirstOrDefault(g =>
-            !string.IsNullOrEmpty(appId) && g.ResolveSteamAppId() == appId);
+        var game = config.Games.FirstOrDefault(g => g.LaunchesUnder(appId));
 
         // A prefix directory is named for its AppID, so its folder name identifies the game too.
         game ??= prefix is null

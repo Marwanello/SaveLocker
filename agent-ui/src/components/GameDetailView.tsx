@@ -61,6 +61,19 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
   const [pending, setPending] = useState<GameSyncMode | 'check' | null>(null)
   const [check, setCheck] = useState<SyncStatus | null>(null)
   const [toast, setToast] = useState<{ text: string; failed: boolean } | null>(null)
+  // The "Same game as …" banner's Stop tracking, asked once more before it acts.
+  const [stopCopy, setStopCopy] = useState(false)
+
+  async function stopTrackingCopy() {
+    try {
+      await api.removeGame(game.id)
+      onChanged()
+      onRemoved()
+    } catch (err) {
+      setStopCopy(false)
+      setToast({ text: `Could not stop tracking: ${err instanceof Error ? err.message : String(err)}`, failed: true })
+    }
+  }
   // Bumped when a pull from this page was held by the DLC check, so the card opens its choice.
   const [dlcAsk, setDlcAsk] = useState(0)
   // Emulator settings, open on one of its sections; null is the game's own page.
@@ -160,7 +173,7 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
       <Button size="sm" variant="quiet" className="sl-back" onClick={onBack}>← Games</Button>
 
       <div className="sl-gamehead">
-        <div className="sl-gamehead__cover"><GameArt id={game.id} name={game.name} kind="grid" w={192} /></div>
+        <div className="sl-gamehead__cover"><GameArt id={game.id} name={game.name} kind="grid" w={192} console={game.release?.console} /></div>
         <div className="sl-gamehead__main">
           <h2 className="sl-gamehead__title">{game.name}</h2>
           {(enrolled || game.release) && (
@@ -184,6 +197,26 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
           title={`${game.name} is waiting on you`}
           detail="This device and the cloud both changed. Open Conflicts to keep one."
           action={<Button variant="primary" onClick={() => onNavigate('conflicts')}>Choose</Button>}
+        />
+      )}
+
+      {game.sameGameAs && (
+        <Banner
+          tone="warn"
+          title={`Same game as ${game.sameGameAs.name}${game.sameGameAs.emulator ? ` (${game.sameGameAs.emulator})` : ''}`}
+          detail="This Steam shortcut starts that emulator game, so its save is synced twice, as two games. Stop tracking this copy; to keep its history, merge the two games in the console first."
+          action={stopCopy ? (
+            <span className="sl-confirm">
+              <Button variant="primary" data-pad-label="Stop tracking this copy" onClick={() => void stopTrackingCopy()}>
+                Stop tracking {game.name}
+              </Button>
+              <Button variant="quiet" data-pad-label="Keep tracking" onClick={() => setStopCopy(false)}>Keep tracking</Button>
+            </span>
+          ) : (
+            <Button variant="primary" data-pad-label="Stop tracking this copy…" onClick={() => setStopCopy(true)}>
+              Stop tracking this copy…
+            </Button>
+          )}
         />
       )}
 

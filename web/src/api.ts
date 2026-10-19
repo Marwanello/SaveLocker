@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, ArtSource, SgdbGame, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, ManifestRefreshSettings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineGameSource, GameContent, ContentTransfer, HandoverOverview, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
+import type { ArtKind, ArtOptionsPage, ArtSource, SgdbGame, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, ManifestRefreshSettings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MergePreview, MachineGameSource, GameContent, ContentTransfer, HandoverOverview, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -206,6 +206,14 @@ export const api = {
     request<SgdbGame[]>(`/games/${gameId}/art/search?q=${encodeURIComponent(q)}`),
   setEnabled: (gameId: string, value: boolean) => request<void>(`/games/${gameId}/enabled?value=${value}`, { method: 'POST' }),
   deleteGame: (gameId: string) => request<void>(`/games/${gameId}`, { method: 'DELETE' }),
+  /** What merging a game into another would do (tasks/emulator-saves Phase 17); nothing changes. */
+  mergePreview: (gameId: string, intoId: string) =>
+    request<MergePreview>(`/games/${gameId}/merge-preview?into=${encodeURIComponent(intoId)}`),
+  /** Merge a game into another; `confirmName` is the merged game's name, typed. */
+  mergeGames: (gameId: string, intoId: string, confirmName: string) =>
+    request<void>(`/games/${gameId}/merge`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intoId, confirmName }),
+    }),
   addGame: (name: string, suggestedSaveDir: string | null) =>
     request<void>('/games', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, manifestKey: null, customPathsJson: null, suggestedSaveDir }) }),
   /** A save folder's template for every machine; `key` names an extra folder (none: the main one). */

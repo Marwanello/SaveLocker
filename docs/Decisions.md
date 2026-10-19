@@ -908,6 +908,16 @@ session can judge an edge case, not to reopen the choice.
   **Change** on Add games picks between games keeping the *same* files (or keeps the save as its own game) — no
   server or sync change. Phase 17 (Group G): saves whose files are named differently on each machine, which needs a
   per-machine name map on every push, pull and hash; its open questions are settled before it starts.
+- **Each machine's own file names: same emulator only, a file-by-file list, links from the agent** (2026-10-18, maintainer;
+  tasks/emulator-saves Phase 17). Two dumps of one ROM in one emulator can be one game; another emulator's save never. Each
+  machine keeps one pair per file (server name ⇄ its own), and new files whose names follow a listed one join the list by
+  themselves. A link is made in Add games and undone by stopping tracking it there; the console only shows the names. A clash
+  (a file of the server's name already here) refuses the link.
+- **Two server games can be merged, from the console only** (2026-10-18, maintainer). Preview first, the merged game's name
+  typed; its versions become protected, read-only history of the other (never Latest); machines with the same folders move.
+- **A Steam shortcut is an emulator's game when it starts an emulator SaveLocker reads with a ROM** (2026-10-18, maintainer;
+  Phase 20) — SRM's or hand-made alike; SRM's own record stands in for an unknown launcher. Such a shortcut is never listed as a
+  game of its own. A ROM with no save is listed (*No save here yet*) only where its reader knows the save's place.
 - **EmuDeck is the layout every emulator reader is designed around; a standalone install is a bonus**
   (2026-10-07, maintainer). EmuDeck on SteamOS/Linux and EmuDeck for Windows put every emulator, ROM and save in a
   standard, predictable place, so each reader starts from EmuDeck's folders and EmuDeck's own scripts (`*_init`,

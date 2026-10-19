@@ -378,6 +378,22 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
           </div>
         )}
 
+        {game.ownFileNames && game.ownFileNames.length > 0 && (
+          <div className="sl-setting__note" style={{ marginTop: 0 }}>
+            <strong style={{ display: 'block', marginBottom: 4 }}>This device's own file names</strong>
+            <span style={{ display: 'block', marginBottom: 6 }}>
+              Linked to the server's {game.name} under another dump's names. They are swapped on every push and pull; new
+              state slots join this list by themselves.
+            </span>
+            <ul style={{ margin: '0 0 8px', paddingLeft: 18, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+              {game.ownFileNames.map(n => (
+                <li key={`${n.key}:${n.server}`}>{n.local} · on the server: {n.server}{n.key !== 'main' ? ` (${n.key})` : ''}</li>
+              ))}
+            </ul>
+            <small>To unlink, stop tracking it below. Your files keep their names; Add games then offers this save again.</small>
+          </div>
+        )}
+
         <div className="sl-setting__note" style={{ marginTop: 0 }}>
           {stopping ? (
             <div className="sl-confirm">

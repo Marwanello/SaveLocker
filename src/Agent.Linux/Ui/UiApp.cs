@@ -1938,7 +1938,17 @@ sealed partial class UiApp
         Widgets.Text(c.Name, alreadyTracked ? Theme.Alpha(Theme.Safe, 0.85f) : Theme.Fg, Theme.BodyStrong);
         ImGui.SameLine(0, Theme.Space.Sm);
         ImGui.AlignTextToFramePadding();
-        Widgets.Text(c.Release?.Region is { } region ? $"[{c.Source}] {region}" : $"[{c.Source}]", Theme.Dim, Theme.Caption);
+        // An emulator save names its emulator, with its icon (tasks/emulator-saves Phase 21); every other row its source.
+        if (Icons.Emulator(c.EmulatorName) is { } emulatorGlyph)
+        {
+            var iconSize = MathF.Round(nameH * 0.95f);
+            ImGui.SetCursorPosY(tileY + (tile - iconSize) / 2f);
+            Icons.Draw(emulatorGlyph, iconSize, Theme.Dim);
+            ImGui.SameLine(0, Theme.Space.Xs);
+            ImGui.AlignTextToFramePadding();
+        }
+        var sourceText = c.EmulatorName is { } emulatorName ? emulatorName : $"[{c.Source}]";
+        Widgets.Text(c.Release?.Region is { } region ? $"{sourceText} {region}" : sourceText, Theme.Dim, Theme.Caption);
 
         if (alreadyTracked)
         {

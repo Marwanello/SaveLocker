@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GameSource, Machine, MachineGameSource, MachineSavePath } from '../../types';
 import { Icon } from '../ui/Icon';
+import { PlatformIcon } from '../ui/PlatformIcon';
+import { emulatorIcon } from '../../platformIcon';
 import type { IconName } from '../ui/Icon';
 
 /** The first level as people read it. A kind this console does not know shows as itself. */
@@ -20,7 +22,9 @@ function SourceText({ source }: { source: GameSource }) {
   const kind = kindOf(source);
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      <Icon name={kind.icon} size={14} strokeWidth={1.8} className="text-dim shrink-0" />
+      {source.kind === 'emulator' && emulatorIcon(source.detail)
+        ? <PlatformIcon id={emulatorIcon(source.detail)} size={1.05} className="text-dim shrink-0" />
+        : <Icon name={kind.icon} size={14} strokeWidth={1.8} className="text-dim shrink-0" />}
       <span className="text-dim">{kind.label}</span>
       <span className="text-faint" aria-hidden>›</span>
       <span className="font-semibold text-fg">{source.detail}</span>

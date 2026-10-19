@@ -1,3 +1,5 @@
+import { PlatformIcon } from './ui/PlatformIcon'
+import { consoleIcon } from '../platformIcon'
 import { useMemo, useState } from 'react'
 import type { Conflict, TrackedGame, View } from '../types'
 import { regionLabel } from '../format'
@@ -48,7 +50,7 @@ function Group({ title, note, games, mode, conflicted, onOpen }: GroupProps) {
             <Row
               key={g.id}
               onClick={() => onOpen(g.id)}
-              cover={<GameArt id={g.id} name={g.name} kind="icon" w={96} />}
+              cover={<GameArt id={g.id} name={g.name} kind="icon" w={96} console={g.release?.console} />}
               title={g.name}
               subtext={g.path || 'No save folder on this machine'}
               end={region(g) || conflicted.has(g.id)
@@ -65,7 +67,10 @@ function Group({ title, note, games, mode, conflicted, onOpen }: GroupProps) {
           {games.map(g => (
             <button key={g.id} type="button" className="sl-tile" onClick={() => onOpen(g.id)} title={g.name}>
               <span className="sl-tile__cover">
-                <GameArt id={g.id} name={g.name} kind="grid" w={256} />
+                <GameArt id={g.id} name={g.name} kind="grid" w={256} console={g.release?.console} />
+                {consoleIcon(g.release?.console) && (
+                  <span className="sl-tile__badge" title={g.release!.console}><PlatformIcon id={consoleIcon(g.release?.console)} /></span>
+                )}
                 {conflicted.has(g.id) && <span className="sl-tile__pin"><Chip tone="crit">Conflict</Chip></span>}
               </span>
               <span className="sl-tile__name">{g.name}</span>

@@ -1,3 +1,4 @@
+import { consoleIcon, emulatorIcon } from '../../platformIcon';
 import type { GameSummary, Machine } from '../../types';
 import { toMs } from '../../format';
 import { standingKey } from './gameState';
@@ -47,8 +48,9 @@ export const groupLabel = (g: GroupBy) => GROUP_OPTIONS.find(o => o.value === g)
 export const sortLabel = (s: SortBy) => SORT_OPTIONS.find(o => o.value === s)?.label ?? s;
 
 /** One heading's games; `label` is '' when the group has no emulator split. */
-export interface OrganizeSubGroup { id: string; label: string; entries: GameSummary[] }
-export interface OrganizeGroup { id: string; label: string; subGroups: OrganizeSubGroup[] }
+/** `icon` (tasks/emulator-saves Phase 21): a platform heading's console glyph, an emulator sub-heading's emulator icon. */
+export interface OrganizeSubGroup { id: string; label: string; entries: GameSummary[]; icon?: string | null }
+export interface OrganizeGroup { id: string; label: string; subGroups: OrganizeSubGroup[]; icon?: string | null }
 
 export interface OrganizeContext {
   machines: Machine[];
@@ -144,11 +146,11 @@ export function organize(games: GameSummary[], state: OrganizeState, ctx: Organi
       const emulators = [...new Set(entries.map(s => s.game.emulators?.[0] ?? 'Unknown emulator'))];
       const subGroups = emulators.length > 1
         ? emulators.map(e => ({
-            id: `plat:${consoleName}:${e}`, label: e,
+            id: `plat:${consoleName}:${e}`, label: e, icon: emulatorIcon(e),
             entries: entries.filter(s => (s.game.emulators?.[0] ?? 'Unknown emulator') === e),
           }))
         : [{ id: `plat:${consoleName}`, label: '', entries }];
-      return { id: 'plat:' + consoleName, label: consoleName, subGroups };
+      return { id: 'plat:' + consoleName, label: consoleName, subGroups, icon: consoleIcon(consoleName) };
     });
   }
 

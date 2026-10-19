@@ -3875,6 +3875,7 @@ export interface components {
             /** @default false */
             noSaveYet: boolean;
             duplicateShortcuts?: null | components["schemas"]["DuplicateShortcut"][];
+            steamShortcut?: null | string;
         };
         CandidateLinksDto: {
             /** Format: int32 */
@@ -4076,6 +4077,11 @@ export interface components {
             needsChoice: boolean;
             key?: null | string;
         };
+        FileNameDto: {
+            key: string;
+            server: string;
+            local: string;
+        };
         FolderRequest: {
             path: null | string;
             /** @default false */
@@ -4126,6 +4132,7 @@ export interface components {
             release?: null | components["schemas"]["GameReleaseDto"];
             emulatorProfile?: null | string;
             emulatorKey?: null | string;
+            mergedGameIds?: null | string[];
         };
         GameFilesDto: {
             folders: components["schemas"]["GameFolderFilesDto"][];
@@ -4368,6 +4375,12 @@ export interface components {
             desired: string;
             changed: boolean;
         };
+        SameGameAsDto: {
+            /** Format: uuid */
+            gameId: string;
+            name: string;
+            emulator: null | string;
+        };
         SaveFolderDto: {
             key: string;
             label: null | string;
@@ -4400,6 +4413,7 @@ export interface components {
             /** @default false */
             protected: boolean;
             content?: null | components["schemas"]["ContentPackageDto"][];
+            mergedFrom?: null | string;
         };
         SaveVsCloudDto: {
             state: string;
@@ -4561,6 +4575,8 @@ export interface components {
             source?: null | components["schemas"]["GameSourceDto"];
             release?: null | components["schemas"]["GameReleaseDto"];
             saveFiles?: null | string;
+            sameGameAs?: null | components["schemas"]["SameGameAsDto"];
+            ownFileNames?: null | components["schemas"]["FileNameDto"][];
         };
         TransferAnswerRequest: {
             approve: boolean;

@@ -734,6 +734,15 @@ agent.MapPut("/agent/games/{id:guid}/content", async (Guid id, HttpContext http,
 }).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
   .Produces(StatusCodes.Status404NotFound);
 
+// This machine's own names for a game's files (tasks/emulator-saves Phase 17): the whole list, empty to clear. Kept for the
+// console to show; the agent's own copy is the one its syncs use.
+agent.MapPut("/agent/games/{id:guid}/file-names", async (Guid id, HttpContext http, FileNameDto[] names, SyncService sync) =>
+{
+    if (FileNames.Validate(names) is { } why) return Results.BadRequest(why);
+    return await sync.SetFileNamesAsync(http.CurrentMachine().Id, id, names) ? Results.NoContent() : Results.NotFound();
+}).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
+  .Produces(StatusCodes.Status404NotFound);
+
 agent.MapPut("/agent/games/{id:guid}/launch-profile", async (Guid id, HttpContext http, LaunchProfileReport req, SyncService sync) =>
 {
     if (!LaunchProfileReport.Actions.Contains(req.Action) || req.GameXuid is not { Length: > 0 and <= 32 }
@@ -1393,6 +1402,21 @@ admin.MapPost("/conflicts/{id:guid}/resolve", async (
     var (ok, error) = await sync.ResolveConflictAsync(id, version, "admin", keepBoth ?? false);
     return ok ? Results.Ok() : Results.BadRequest(error ?? "Could not resolve conflict.");
 });
+
+// Merging two games (tasks/emulator-saves Phase 17): what it would do, then do it with the merged game's name typed.
+admin.MapGet("/games/{id:guid}/merge-preview", async (Guid id, Guid into, SyncService sync) =>
+    await sync.MergePreviewAsync(id, into) is { } preview ? Results.Ok(preview) : Results.NotFound())
+    .Produces<MergePreviewDto>().Produces(StatusCodes.Status404NotFound);
+
+admin.MapPost("/games/{id:guid}/merge", async (Guid id, MergeGamesRequest req, SyncService sync) =>
+    await sync.MergeGamesAsync(id, req.IntoId, req.ConfirmName, "admin") switch
+    {
+        null => Results.NoContent(),
+        "not_found" => Results.NotFound(),
+        var why => Results.BadRequest(why),
+    })
+    .Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound);
 
 admin.MapPost("/games/{id:guid}/rollback", async (Guid id, Guid version, SyncService sync) =>
     await sync.RollbackAsync(id, version, "admin")

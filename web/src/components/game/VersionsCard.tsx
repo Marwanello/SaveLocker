@@ -120,6 +120,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
   function state(v: Version) {
     if (v.id === headId) return <Chip tone="ok">Latest</Chip>;
     if (conflicting.has(v.id)) return <Chip tone="crit">Conflicting</Chip>;
+    if (v.mergedFrom) return <span title={`Made as ${v.mergedFrom}, merged into this game. Read-only history: it can be downloaded, never made Latest.`}><Chip>From {v.mergedFrom}</Chip></span>;
     if (v.protected) return <Chip tone="warn">Protected</Chip>;
     return <Chip>{view === 'main' ? 'Kept' : 'Backup'}</Chip>;
   }
@@ -194,7 +195,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
                 head: '', label: 'Actions', end: true,
                 cell: v => (
                   <span className="inline-flex gap-1.5 justify-end flex-wrap">
-                    {v.id !== headId && (
+                    {v.id !== headId && !v.mergedFrom && (
                       <InlineConfirm
                         label="Set as Latest"
                         tone="primary"

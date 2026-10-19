@@ -1,6 +1,8 @@
+import { PlatformIcon } from '../ui/PlatformIcon';
+import { emulatorIcon } from '../../platformIcon';
 import { useEffect, useRef, useState } from 'react';
 import { api, errorText } from '../../api';
-import type { AgentHealth, Game, GameIntent, Machine, MachineSavePath, MachineScanCandidate, Version, VersionFolder } from '../../types';
+import type { AgentHealth, Game, GameIntent, Machine, MachineGameSource, MachineSavePath, MachineScanCandidate, Version, VersionFolder } from '../../types';
 import { ago, when } from '../../format';
 import { isTemplate, toTemplate } from '../../savePathTemplate';
 import { toast, toastError } from '../../toast';
@@ -27,6 +29,8 @@ interface Props {
   health: AgentHealth[];
   /** Latest, whose files are listed under each folder. */
   head: Version | null | undefined;
+  /** How each machine found the game: an emulator's icon beside the machine's name (tasks/emulator-saves Phase 21). */
+  sources?: MachineGameSource[];
 }
 
 /**
@@ -58,7 +62,7 @@ const inputCls = `w-full min-w-0 bg-tile text-fg border border-line rounded-lg p
  * Save paths per machine). The forced Push / Pull sit behind "Force…" on each machine, each naming
  * what it overwrites: the plain ones never destroy anything, the forced ones can.
  */
-export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, pathsLoaded, latestByMachine, reloadPaths, intent, onRefresh, health, head }: Props) {
+export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, pathsLoaded, latestByMachine, reloadPaths, intent, onRefresh, health, head, sources = [] }: Props) {
   // The main folder's rows below are the card as it always was; every extra folder gets its own section.
   const paths = allPaths.filter(p => (p.pathKey ?? MAIN_KEY) === MAIN_KEY);
   const extraPaths = game.extraPaths ?? [];
@@ -179,6 +183,11 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
           <div key={m.id} ref={el => { rowRefs.current[m.id] = el; }} className="px-4 py-3 border-b border-row last:border-b-0 flex flex-col gap-2">
             <div className="flex items-baseline justify-between gap-2 flex-wrap">
               <span className="text-[13px] font-semibold text-fg inline-flex items-center gap-2">
+                {(() => {
+                  const source = sources.find(s => s.machineId === m.id)?.source;
+                  const icon = source?.kind === 'emulator' ? emulatorIcon(source.detail) : null;
+                  return icon && <span className="text-dim inline-flex" title={source!.detail}><PlatformIcon id={icon} size={1.05} /></span>;
+                })()}
                 {m.name}
                 {extraPaths.length > 0 && tooOldForFolders(agentOf(m)) && (
                   <span title={`${m.name} runs agent ${agentOf(m)}. Until it updates to 0.7.0 or later it keeps this game's other folders as a .savelocker folder inside the main one — nothing is lost, they just don't reach their own place on that machine.`}>
@@ -208,7 +217,17 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
                 </div>
               </form>
             ) : stored ? (
-              <PathField path={stored.savePath} />
+              <>
+                <PathField path={stored.savePath} />
+                {stored.fileNames && stored.fileNames.length > 0 && (
+                  <div className="text-[11.5px] text-dim">
+                    {m.name} keeps its own names for these files (another dump of the ROM):
+                    <ul className="font-mono text-[11px] text-fg mt-0.5">
+                      {stored.fileNames.map(n => <li key={`${n.key}:${n.server}`}>{n.local} · on the server: {n.server}{n.key !== 'main' ? ` (${n.key})` : ''}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </>
             ) : candidate ? (
               // The agent found this but has NOT adopted it — a human confirms here.
               <div className="flex flex-col gap-1">
