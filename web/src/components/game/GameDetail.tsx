@@ -21,6 +21,7 @@ import { RulesCard } from './RulesCard';
 import { ExcludePatternsCard } from './ExcludePatternsCard';
 import { RemoteCommandsCard } from './RemoteCommandsCard';
 import { BalancedColumns } from '../ui/BalancedColumns';
+import { MergeCard } from './MergeCard';
 
 interface Props {
   summary: GameSummary;
@@ -227,11 +228,13 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
               onRefresh={onRefresh}
               health={health}
               head={head}
+              sources={sources}
             />
           ),
         },
         { key: 'rules', node: <RulesCard game={game} machines={machines} health={health} onRefresh={onRefresh} /> },
         { key: 'exclude', node: <ExcludePatternsCard game={game} onRefresh={onRefresh} /> },
+        { key: 'merge', node: <MergeCard game={game} onRefresh={onRefresh} /> },
       ]} />
 
       <RemoteCommandsCard commands={gameCmds} />

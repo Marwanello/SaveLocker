@@ -9,6 +9,8 @@
     "gen:api": "openapi-typescript ../src/Server/openapi.json -o src/api-types.ts",
     "lint": "oxlint",
     "export:art": "node scripts/export-art.mjs",
+    "icons:build": "node scripts/build-platform-icons.mjs",
+    "icons:check": "node scripts/build-platform-icons.mjs --check",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -31,6 +33,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "openapi-typescript": "^7.13.0",
     "oxlint": "^1.69.0",
+    "svgpath": "^2.6.0",
     "tailwindcss": "^4.3.1",
     "typescript": "~6.0.2",
     "vite": "^8.1.0"

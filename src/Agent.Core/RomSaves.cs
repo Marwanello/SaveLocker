@@ -38,12 +38,22 @@ public static class RomSaves
                     found.AddRange(SavesIn(rules, f, sub, core: Path.GetFileName(sub), systems, gamelists, statesDir));
         }
 
+        // A game played from states alone so far (tasks/emulator-saves Phase 19): its save scope is declared all the
+        // same, so the first in-game save joins it. A save anywhere on this machine wins over states alone.
+        if (rules.StateRom is not null)
+        {
+            var saved = found.Select(f => f.Candidate.EmulatorRom!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var f in folders)
+                if (f.States is { } statesRoot)
+                    found.AddRange(StatesOnlyIn(rules, f, statesRoot, saved, systems, gamelists));
+        }
+
         // The same ROM's save in two places (two cores, two setups) is one game: the most recently written copy
         // is the one being played, and a played one always beats EmuDeck's untouched seed. Two DIFFERENT ROMs that
         // clean to one title stay two candidates — the enroller gives the second a name of its own (Enroller.NamesFor).
         return found
             .GroupBy(f => f.Candidate.EmulatorRom, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.OrderBy(f => f.Candidate.UntouchedSeed).ThenByDescending(f => f.WrittenUtc).First().Candidate)
+            .Select(g => g.OrderBy(f => f.Candidate.StatesOnly).ThenBy(f => f.Candidate.UntouchedSeed).ThenByDescending(f => f.WrittenUtc).First().Candidate)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(c => c.EmulatorRom, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -96,6 +106,52 @@ public static class RomSaves
                 ExtraSaveDirs: extras,
                 UntouchedSeed: rules.IsSeed?.Invoke(file) ?? false), file.LastWriteTimeUtc);
         }
+    }
+
+    /// <summary>
+    /// The games in a states folder (and, for an emulator that sorts by core, its core folders) that have a non-empty
+    /// state but no save in <paramref name="saved"/>. The save folder is the setup's own — its same-named core folder
+    /// when the state is in one and the saves folder has it too — so the scope reads exactly as a saved game's would.
+    /// </summary>
+    private static IEnumerable<(ScanCandidate, DateTime)> StatesOnlyIn(
+        RomSaveRules rules, RomSaveFolders setup, string statesRoot, IReadOnlySet<string> saved,
+        IReadOnlyDictionary<string, string>? systems, GamelistXml gamelists)
+    {
+        var dirs = new List<(string Dir, string? Core)> { (statesRoot, null) };
+        if (rules.PerCoreFolders) dirs.AddRange(SafeSubdirs(statesRoot).Select(d => (d, (string?)Path.GetFileName(d))));
+        var best = new Dictionary<string, (ScanCandidate Candidate, DateTime WrittenUtc)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (dir, core) in dirs)
+        {
+            FileInfo[] files;
+            try { files = Directory.Exists(dir) ? new DirectoryInfo(dir).GetFiles() : []; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+            foreach (var file in files)
+            {
+                if (file.LinkTarget is not null || file.Length == 0) continue;
+                if (rules.StateRom!(file.Name) is not { Length: > 0 } romBase || saved.Contains(romBase)) continue;
+                if (romBase.Contains('*') || romBase.Contains(':')) continue;
+                if (setup.RomExtensions is { Count: > 0 } romExts && !romExts.Any(e => File.Exists(Path.Combine(dir, romBase + e))))
+                    continue;
+                if (best.TryGetValue(romBase, out var seen) && seen.WrittenUtc >= file.LastWriteTimeUtc) continue;
+
+                var savesDir = core is not null && Directory.Exists(Path.Combine(setup.Saves, core)) ? Path.Combine(setup.Saves, core) : setup.Saves;
+                var system = rules.System ?? systems!.GetValueOrDefault(romBase);
+                best[romBase] = (new ScanCandidate(
+                    Name: RomNames.TitleFor(romBase, system, gamelists, rules.KnownTitle?.Invoke(romBase)),
+                    SuggestedSaveDir: EmuDeckRoots.RealPath(savesDir),
+                    Source: ScanSource.Emulator,
+                    HasSteamCloud: false,
+                    EmulatorName: rules.EmulatorName,
+                    EmulatorSystem: system,
+                    EmulatorCore: core,
+                    EmulatorRom: romBase,
+                    ViaEmuDeck: setup.EmuDeck,
+                    IncludeGlobs: rules.SaveGlobs(romBase, rules.SaveExtension),
+                    ExtraSaveDirs: [new DeclaredSavePath(StatesKey, EmuDeckRoots.RealPath(dir), rules.StateGlobs!(romBase))],
+                    StatesOnly: true), file.LastWriteTimeUtc);
+            }
+        }
+        return best.Values;
     }
 
     /// <summary>
@@ -173,6 +229,8 @@ public static class RomSaves
 /// <paramref name="System"/> is fixed for a one-console emulator, else read from <c>Emulation/roms</c>.
 /// <paramref name="IsSeed"/> marks a save file the user never made (EmuDeck's preinstalled NVRAM, <see cref="ScanCandidate.UntouchedSeed"/>);
 /// <paramref name="KnownTitle"/> names an arcade set from the emulator's own table.
+/// <paramref name="StateRom"/> reads the ROM name back out of a state file's name (null: not one of this emulator's
+/// states), so a game played from states alone is found too (Phase 19); null for an emulator not doing that.
 /// </summary>
 public sealed record RomSaveRules(
     string EmulatorName,
@@ -182,7 +240,8 @@ public sealed record RomSaveRules(
     string? System = null,
     bool PerCoreFolders = false,
     Func<FileInfo, bool>? IsSeed = null,
-    Func<string, string?>? KnownTitle = null);
+    Func<string, string?>? KnownTitle = null,
+    Func<string, string?>? StateRom = null);
 
 /// <summary>One emulator setup's folders: where it writes saves and where it writes states (which may not
 /// exist yet, or be null for an emulator without any). <paramref name="EmuDeck"/>: found through EmuDeck.

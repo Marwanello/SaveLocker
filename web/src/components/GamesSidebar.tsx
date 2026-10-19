@@ -7,6 +7,7 @@ import { Button } from './ui/Button';
 import { Chip } from './ui/Chip';
 import { Dot } from './ui/Dot';
 import { Icon } from './ui/Icon';
+import { PlatformIcon } from './ui/PlatformIcon';
 import { GameCover } from './game/GameCover';
 import { regionLabel } from './game/gameState';
 import { LAYOUT_OPTIONS, liveCommand, standing } from './game/gameState';
@@ -101,6 +102,7 @@ export function GamesSidebar({ games, groups, grouped, collapsed, onToggleGroup,
                 >
                   <Icon name="chevron-down" size={12} strokeWidth={2.4}
                     className={`shrink-0 text-faint transition-transform duration-150 ${isCollapsed ? '-rotate-90' : ''}`} />
+                  <PlatformIcon id={g.icon ?? null} size={1.1} className="text-faint" />
                   <span className="text-[9.5px] tracking-[0.14em] uppercase text-faint truncate">{g.label || 'All games'}</span>
                   <span className="ml-auto shrink-0 text-[9.5px] tabular-nums text-faint bg-tile border border-line rounded-full px-1.5 py-px">{count}</span>
                 </button>
@@ -109,6 +111,7 @@ export function GamesSidebar({ games, groups, grouped, collapsed, onToggleGroup,
                 <Fragment key={sg.id}>
                   {sg.label && (
                     <div className="flex items-center gap-2 pl-4 pr-1 pt-1.5 text-[10px] font-medium text-dim">
+                      <PlatformIcon id={sg.icon ?? null} size={1.1} />
                       <span className="truncate">{sg.label}</span>
                       <span className="text-[9.5px] text-faint tabular-nums">{sg.entries.length}</span>
                     </div>

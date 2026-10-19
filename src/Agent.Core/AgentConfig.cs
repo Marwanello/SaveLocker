@@ -846,6 +846,20 @@ public sealed class AgentConfig
     public void SaveGameSteamAppId(Guid gameId, string appId) =>
         MutateGameUnderLock(gameId, g => g.SteamAppId = appId);
 
+    /// <summary>Record the Steam shortcuts that start an emulator game (<see cref="SrmShortcuts.Backfill"/>): their app IDs as
+    /// the scan found them — a shortcut removed in Steam goes, with its launch-options status — and the first one as its
+    /// <see cref="TrackedGame.SteamAppId"/> when it had none or had a shortcut's that is gone.</summary>
+    public void SaveGameShortcuts(Guid gameId, IReadOnlyList<string> appIds) =>
+        MutateGameUnderLock(gameId, g =>
+        {
+            var gone = g.ShortcutAppIds.Except(appIds, StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+            if (string.IsNullOrWhiteSpace(g.SteamAppId) || (g.SteamAppId is { } own && gone.Contains(own)))
+                g.SteamAppId = appIds.FirstOrDefault();
+            g.ShortcutAppIds = appIds.Distinct(StringComparer.Ordinal).ToList();
+            foreach (var id in gone)
+                if (SteamShortcuts.UnsignedAppId(id) is { } unsigned) g.ShortcutLaunchOptions.Remove(unsigned.ToString());
+        });
+
     /// <summary>
     /// Persist which folders <paramref name="game"/> has here — primary folder, its scope and the
     /// extra folders — without clobbering anything else, for the paths that change them mid-sync (a
@@ -869,6 +883,10 @@ public sealed class AgentConfig
     public void SaveGameSource(Guid gameId, GameSourceDto source) =>
         MutateGameUnderLock(gameId, g => g.Source = source);
 
+    /// <summary>Persist a game's own file names (<see cref="OwnFileNames"/>, tasks/emulator-saves Phase 17).</summary>
+    public void SaveGameFileNames(Guid gameId, List<FileNameDto> names) =>
+        MutateGameUnderLock(gameId, g => g.OwnFileNames = names);
+
     /// <summary>
     /// Persist the user's answers to a game's "Also found" suggestions — see
     /// <see cref="MutateGameUnderLock"/>. A folder is in at most one of the two lists.
@@ -888,6 +906,13 @@ public sealed class AgentConfig
 
     public TrackedGame? FindGame(string name) =>
         Games.FirstOrDefault(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase));
+}
+
+/// <summary>One Steam shortcut's launch-options status (<see cref="TrackedGame.ShortcutLaunchOptions"/>).</summary>
+public sealed class LaunchOptionsState
+{
+    public DateTime? AppliedAt { get; set; }
+    public string? Error { get; set; }
 }
 
 /// <summary>A game this machine syncs, with its resolved local save location.</summary>
@@ -963,6 +988,13 @@ public sealed class TrackedGame
     /// before that, so it is no longer reliably null there.
     /// </summary>
     public string? SteamAppId { get; set; }
+    /// <summary>Every Steam shortcut app ID that starts this emulator game (Steam ROM Manager's, tasks/emulator-saves Phase 20),
+    /// <see cref="SteamAppId"/> among them: a ROM SRM added twice is launched under either. Empty for every other game.</summary>
+    public List<string> ShortcutAppIds { get; set; } = new();
+    /// <summary>This machine's own names for the game's files where they differ from the server's — another dump of the ROM
+    /// (tasks/emulator-saves Phase 17, <see cref="SaveLocker.Shared.FileNames"/>). Set when the save is linked to a server game
+    /// named otherwise, grown as new files appear (<see cref="OwnFileNames.Grow"/>). Empty: the server's names.</summary>
+    public List<FileNameDto> OwnFileNames { get; set; } = new();
     /// <summary>
     /// Whether this game was actually enrolled AS a Steam install — decided once, at enrollment, from
     /// the candidate's own <see cref="ScanCandidate.HasSteamCloud"/> (<c>GameScanner</c> only sets
@@ -1039,9 +1071,11 @@ public sealed class TrackedGame
     /// </summary>
     public IReadOnlyList<SaveRoot> Roots(string stateDir)
     {
-        var roots = new List<SaveRoot> { SaveRoot.Primary(SaveDirectory, IncludeGlobs) };
+        // This machine's own file names (Phase 17) apply to its own folders; a shadow holds the server's.
+        var roots = new List<SaveRoot> { new(SaveRoot.PrimaryKey, SaveDirectory, IncludeGlobs, FileNames.For(OwnFileNames, SaveRoot.PrimaryKey)) };
         foreach (var p in ExtraPaths)
-            roots.Add(new SaveRoot(p.Key, p.Directory ?? ShadowDir(stateDir, GameId, p.Key), p.IncludeGlobs));
+            roots.Add(new SaveRoot(p.Key, p.Directory ?? ShadowDir(stateDir, GameId, p.Key), p.IncludeGlobs,
+                p.Directory is null ? null : FileNames.For(OwnFileNames, p.Key)));
         return roots;
     }
 
@@ -1123,6 +1157,27 @@ public sealed class TrackedGame
     public DateTime? LaunchOptionsAppliedAt { get; set; }
     /// <inheritdoc cref="LaunchOptionsAppliedAt"/>
     public string? LaunchOptionsError { get; set; }
+    /// <summary>The same, for each of <see cref="ShortcutAppIds"/> that is not the game's own app ID, by unsigned app ID: each
+    /// Steam ROM Manager shortcut carries launch options of its own (tasks/emulator-saves Phase 20).</summary>
+    public Dictionary<string, LaunchOptionsState> ShortcutLaunchOptions { get; set; } = new();
+
+    /// <summary>When the launch options of app ID <paramref name="appId"/> were confirmed, and what went wrong if they could
+    /// not be: the game's own fields for its own app ID, else that shortcut's.</summary>
+    public (DateTime? AppliedAt, string? Error) LaunchOptionsFor(uint appId) =>
+        SteamShortcuts.UnsignedAppId(ResolveSteamAppId()) == appId
+            ? (LaunchOptionsAppliedAt, LaunchOptionsError)
+            : ShortcutLaunchOptions.GetValueOrDefault(appId.ToString()) is { } s ? (s.AppliedAt, s.Error) : (null, null);
+
+    /// <summary>Record what <see cref="LaunchOptionsFor"/> reads.</summary>
+    public void SetLaunchOptions(uint appId, DateTime? appliedAt, string? error)
+    {
+        if (SteamShortcuts.UnsignedAppId(ResolveSteamAppId()) == appId)
+        {
+            LaunchOptionsAppliedAt = appliedAt;
+            LaunchOptionsError = error;
+        }
+        else ShortcutLaunchOptions[appId.ToString()] = new LaunchOptionsState { AppliedAt = appliedAt, Error = error };
+    }
 
     /// <summary>
     /// The AppID this game launches under: the recorded one, or — when it was never recorded — the
@@ -1140,6 +1195,13 @@ public sealed class TrackedGame
         string.IsNullOrWhiteSpace(SteamAppId)
             ? SteamLayout.CompatDataIdIn(SaveDirectory)
             : SteamAppId;
+
+    /// <summary>Does Steam start this game under <paramref name="appId"/> — its own app ID, or one of its emulator shortcuts'?</summary>
+    /// <remarks>Compared unsigned: <c>add-game --appid</c> keeps whatever form the user typed
+    /// (<see cref="SteamShortcuts.UnsignedAppId"/>).</remarks>
+    public bool LaunchesUnder(string? appId) =>
+        SteamShortcuts.UnsignedAppId(appId) is { } wanted &&
+        new[] { ResolveSteamAppId() }.Concat(ShortcutAppIds).Any(id => SteamShortcuts.UnsignedAppId(id) == wanted);
 }
 
 /// <summary>

@@ -29,7 +29,21 @@ public static class Mapping
             ToDtos(extraPaths, machinePaths),
             Release: ReadRelease(g),
             EmulatorProfile: g.EmulatorProfile,
-            EmulatorKey: g.EmulatorKey);
+            EmulatorKey: g.EmulatorKey,
+            MergedGameIds: MergedIds(g));
+
+    /// <summary>The games merged into <paramref name="g"/>, or null for none.</summary>
+    public static Guid[]? MergedIds(Game g) =>
+        g.MergedGameIds?.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(s => Guid.TryParse(s, out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty).ToArray() is { Length: > 0 } ids ? ids : null;
+
+    /// <summary>A machine's stored file names, or null for none — or for JSON this build cannot read.</summary>
+    public static FileNameDto[]? ReadFileNames(string? json)
+    {
+        if (json is null) return null;
+        try { return JsonSerializer.Deserialize<FileNameDto[]>(json, JsonSerializerOptions.Web) is { Length: > 0 } names ? names : null; }
+        catch (JsonException) { return null; }
+    }
 
     /// <summary>The game's release, or null for none — or for JSON this build cannot read.</summary>
     public static GameReleaseDto? ReadRelease(Game g)
@@ -55,7 +69,7 @@ public static class Mapping
 
     public static SaveVersionDto ToDto(this SaveVersion v) =>
         new(v.Id, v.GameId, v.MachineId, UploaderName(v), v.CreatedAt,
-            v.ContentHash, v.Size, v.ParentVersionId, v.Protected, ReadContent(v.ContentJson));
+            v.ContentHash, v.Size, v.ParentVersionId, v.Protected, ReadContent(v.ContentJson), v.MergedFrom);
 
     /// <summary>A stored package list, or null for none — or for JSON this build cannot read.</summary>
     public static ContentPackageDto[]? ReadContent(string? json)

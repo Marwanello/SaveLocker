@@ -27,12 +27,20 @@ public sealed record SameNameShortcuts(string Name, IReadOnlyList<SteamShortcut>
 /// ALSO installed locally under Proton (played both ways, or migrated from local to streamed), this
 /// is the id whose prefix the real local save data lives in. Null for an ordinary shortcut.
 /// </param>
+/// <param name="RawExe">The <c>Exe</c> exactly as Steam keeps it. Steam ROM Manager often writes the whole command into
+/// it — <c>"…/retroarch.sh" -L core.so "…/rom.z64"</c> — which <paramref name="Exe"/>, trimmed of its quotes, does not
+/// keep apart (<see cref="SrmShortcuts"/>).</param>
+/// <param name="LaunchOptions">The shortcut's launch options as Steam keeps them, or null.</param>
+/// <param name="Tags">Its Steam categories (SRM's "Nintendo 64", "Xbox 360", …), empty when none.</param>
 public sealed record SteamShortcut(
     string AppName,
     string? Exe,
     string? StartDir,
     string? AppId,
-    string? MoonDeckAppId = null);
+    string? MoonDeckAppId = null,
+    string? RawExe = null,
+    string? LaunchOptions = null,
+    IReadOnlyList<string>? Tags = null);
 
 /// <summary>Reads non-Steam shortcuts out of Steam's binary <c>shortcuts.vdf</c>.</summary>
 public static class SteamShortcuts
@@ -84,7 +92,10 @@ public static class SteamShortcuts
                 Exe: Unquote(entry.String("Exe") ?? entry.String("exe")),
                 StartDir: Unquote(entry.String("StartDir") ?? entry.String("startdir")),
                 AppId: appId is null ? null : CompatDataId(appId.Value),
-                MoonDeckAppId: ParseMoonDeckAppId(launchOptions)));
+                MoonDeckAppId: ParseMoonDeckAppId(launchOptions),
+                RawExe: entry.String("Exe") ?? entry.String("exe"),
+                LaunchOptions: string.IsNullOrWhiteSpace(launchOptions) ? null : launchOptions,
+                Tags: entry.Object("tags") is { } tags ? tags.Items.Values.OfType<string>().ToList() : []));
         }
         return results;
     }

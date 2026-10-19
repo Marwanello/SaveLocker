@@ -4,6 +4,7 @@ import { ago, fmtSize } from '../format';
 import { Chip } from './ui/Chip';
 import { Dot } from './ui/Dot';
 import { Icon } from './ui/Icon';
+import { PlatformIcon } from './ui/PlatformIcon';
 import { GameCover } from './game/GameCover';
 import { regionLabel } from './game/gameState';
 import { standing } from './game/gameState';
@@ -79,6 +80,7 @@ export function GamesGrid({ groups, grouped, collapsed, onToggleGroup, onOpen, p
               >
                 <Icon name="chevron-down" size={13} strokeWidth={2.4}
                   className={`shrink-0 text-faint transition-transform duration-150 ${isCollapsed ? '-rotate-90' : ''}`} />
+                <PlatformIcon id={g.icon ?? null} size={1.15} className="text-dim" />
                 <span className="text-[13px] font-semibold tracking-[-0.01em]">{g.label || 'All games'}</span>
                 <span className="text-[11px] text-dim tabular-nums">{count === 1 ? '1 game' : `${count} games`}</span>
               </button>
@@ -87,6 +89,7 @@ export function GamesGrid({ groups, grouped, collapsed, onToggleGroup, onOpen, p
               <Fragment key={sg.id}>
                 {sg.label && (
                   <div className="flex items-center gap-2 -mb-1.5 text-[10px] tracking-[0.12em] uppercase text-faint">
+                    <PlatformIcon id={sg.icon ?? null} size={1.3} />
                     <span>{sg.label}</span>
                     <span className="text-faint tabular-nums">{sg.entries.length}</span>
                   </div>

@@ -91,6 +91,10 @@ public class Game
     /// <summary>The current authoritative version agents should pull. Null until first upload.</summary>
     public Guid? HeadVersionId { get; set; }
 
+    /// <summary>Newline-separated ids of the games merged into this one (tasks/emulator-saves Phase 17), or null: an agent
+    /// that synced one of them moves to this game.</summary>
+    public string? MergedGameIds { get; set; }
+
     public List<SaveVersion> Versions { get; set; } = new();
 }
 
@@ -122,6 +126,10 @@ public class SaveVersion
 
     /// <summary>Exempt from automatic retention until an admin unprotects it.</summary>
     public bool Protected { get; set; }
+
+    /// <summary>The name of the game this version was made under before that game was merged into this one (tasks/emulator-saves
+    /// Phase 17): read-only history — its files may be another dump's names — never made Latest. Null for the game's own.</summary>
+    public string? MergedFrom { get; set; }
 
     /// <summary>Relative path of the stored archive within the archive store.</summary>
     public string ArchivePath { get; set; } = "";
@@ -300,6 +308,10 @@ public class MachineSavePath
     /// <see cref="GameSavePath.Key"/>.</summary>
     public string PathKey { get; set; } = SaveRoot.PrimaryKey;
     public string SavePath { get; set; } = "";
+    /// <summary>This machine's own names for the game's files, every folder's (<see cref="FileNameDto"/> JSON, tasks/emulator-saves
+    /// Phase 17), on the primary folder's row only; null when it uses the server's names. Shown in the console; the agent's
+    /// own copy is the one its syncs use.</summary>
+    public string? FileNames { get; set; }
 }
 
 /// <summary>

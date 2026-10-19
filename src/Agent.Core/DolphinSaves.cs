@@ -35,7 +35,7 @@ namespace SaveLocker.Agent;
 /// custom GCI or NAND folder set in <c>Dolphin.ini</c> is not read.
 /// </para>
 /// </summary>
-public static class DolphinSaves
+public static partial class DolphinSaves
 {
     public const string EmulatorName = "Dolphin";
 
@@ -70,10 +70,17 @@ public static class DolphinSaves
                 found.AddRange(WiiGames(setup, Path.Combine(wii, "title")));
         }
 
+        // A game played from states alone so far (Phase 19). A save of it by the same emulator anywhere here wins.
+        var saved = found.Select(f => (f.Candidate.EmulatorName, f.Candidate.EmulatorRom!.ToUpperInvariant())).ToHashSet();
+        foreach (var setup in setups)
+            foreach (var (gameId, written) in StateOnlyGames(setup.States))
+                if (ForGameId(setup, gameId) is { } candidate && !saved.Contains((setup.Emulator, candidate.EmulatorRom!.ToUpperInvariant())))
+                    found.Add((candidate with { StatesOnly = true }, written));
+
         // One game in two setups of the same emulator: the copy most recently written is the one being played.
         return found
-            .GroupBy(f => (f.Candidate.EmulatorName, f.Candidate.EmulatorRom))
-            .Select(g => g.OrderByDescending(f => f.WrittenUtc).First().Candidate)
+            .GroupBy(f => (f.Candidate.EmulatorName, f.Candidate.EmulatorRom!.ToUpperInvariant()))
+            .Select(g => g.OrderBy(f => f.Candidate.StatesOnly).ThenByDescending(f => f.WrittenUtc).First().Candidate)
             .Concat(shared)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(c => c.EmulatorRom, StringComparer.OrdinalIgnoreCase)
@@ -132,6 +139,85 @@ public static class DolphinSaves
             ExtraSaveDirs: setup.States is { } states && stateId is not null
                 ? [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(states), StateGlobsFor(stateId))]
                 : null);
+
+    /// <summary>
+    /// A game known only by its six-letter game ID — from its states, or its disc (<see cref="DiscGameId"/>) — scoped exactly as
+    /// its first save will be. The ID's first letter
+    /// says the console: <c>G</c>, <c>D</c>, <c>P</c> and <c>U</c> are GameCube discs, saved as <c>.gci</c> files in Slot A's
+    /// folder for the disc's region (the fourth letter: <c>E</c> USA, <c>J</c> Japan, else Europe); <c>R</c> and <c>S</c> are
+    /// Wii discs, saved in <c>Wii/title/00010000/&lt;id&gt;/data</c>. Null when that folder is not there, or for another ID.
+    /// </summary>
+    public static ScanCandidate? ForGameId(DolphinFolders setup, string gameId)
+    {
+        ScanCandidate? candidate = null;
+        var code = gameId[..4];
+        if (gameId[0] is 'G' or 'D' or 'P' or 'U' && setup.Gc is { } gc)
+        {
+            var region = gameId[3] switch { 'E' => "USA", 'J' => "JAP", _ => "EUR" };
+            var cardDir = Path.Combine(gc, region, "Card A");
+            if (Directory.Exists(cardDir))
+                candidate = Candidate(setup, ConsoleTitles.For("gc", code)?.Title ?? gameId, gameId, "gc", EmuDeckRoots.RealPath(cardDir),
+                    [$"{gameId[4..]}-{code}-*.gci"], gameId, ConsoleTitles.Release("gc", [gameId]));
+        }
+        else if (gameId[0] is 'R' or 'S' && setup.Wii is { } wii && Directory.Exists(Path.Combine(wii, "title")))
+        {
+            var hex = Convert.ToHexStringLower(Encoding.ASCII.GetBytes(code));
+            candidate = Candidate(setup, ConsoleTitles.For("wii", code)?.Title ?? code, code, "wii", EmuDeckRoots.RealPath(Path.Combine(wii, "title")),
+                [$"00010000/{hex}/data/**"], code, ConsoleTitles.Release("wii", [code]));
+        }
+        return candidate;
+    }
+
+    /// <summary>
+    /// A disc image's six-letter game ID: the <c>[R3OE01]</c> a ROM tool put in its name, else the disc header's first six bytes —
+    /// at 0 in an <c>.iso</c>/<c>.gcm</c>, at 0x200 in a <c>.wbfs</c>, at 0x58 in a <c>.wia</c>/<c>.rvz</c> (its second header's copy of
+    /// the disc header). Null when there is none to read.
+    /// </summary>
+    public static string? DiscGameId(string path)
+    {
+        if (BracketId().Match(Path.GetFileName(path)) is { Success: true } m) return m.Groups[1].Value.ToUpperInvariant();
+        long offset = Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".iso" or ".gcm" => 0,
+            ".wbfs" => 0x200,
+            ".wia" or ".rvz" => 0x58,
+            _ => -1,
+        };
+        if (offset < 0) return null;
+        try
+        {
+            using var stream = File.OpenRead(path);
+            if (stream.Length < offset + 6) return null;
+            stream.Position = offset;
+            var id = new byte[6];
+            stream.ReadExactly(id);
+            var text = Encoding.ASCII.GetString(id);
+            return text.All(c => char.IsAsciiLetterUpper(c) || char.IsAsciiDigit(c)) ? text : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\[([A-Za-z0-9]{6})\]")]
+    private static partial System.Text.RegularExpressions.Regex BracketId();
+
+    /// <summary>The game IDs with a non-empty state in a states folder (<c>R3OE01.s01</c>…<c>.s10</c>), and when the newest
+    /// was written. The undo state <c>lastState.sav</c> and anything not named by a six-letter ID is no game's.</summary>
+    public static IEnumerable<(string GameId, DateTime WrittenUtc)> StateOnlyGames(string? statesDir)
+    {
+        FileInfo[] files;
+        try { files = statesDir is not null && Directory.Exists(statesDir) ? new DirectoryInfo(statesDir).GetFiles("*.s*") : []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+        return files
+            .Where(f => f.Length > 0 && f.LinkTarget is null)
+            .Select(f => (File: f, Match: StateName().Match(f.Name)))
+            .Where(x => x.Match.Success)
+            .GroupBy(x => x.Match.Groups["id"].Value.ToUpperInvariant())
+            .Select(g => (g.Key, g.Max(x => x.File.LastWriteTimeUtc)))
+            .ToList();
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(?<id>[A-Za-z0-9]{6})\.s(?:0[1-9]|10)$")]
+    private static partial System.Text.RegularExpressions.Regex StateName();
 
     /// <summary>
     /// One game's states: <c>GM8E01.s01</c>…<c>.s10</c>. A Wii title folder names only the four-letter game ID —

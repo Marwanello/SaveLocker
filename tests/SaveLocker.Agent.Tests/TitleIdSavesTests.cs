@@ -98,6 +98,62 @@ public sealed class TitleIdSavesTests : IDisposable
         Assert.Equal("Europe", game.Release!.Region);
     }
 
+    private static string RomMeta(string titleId, string name, string region = "00000002") => $"""
+        <?xml version="1.0" encoding="utf-8"?>
+        <menu type="complex" access="777">
+          <title_id type="hexBinary" length="8">{titleId}</title_id>
+          <region type="hexBinary" length="4">{region}</region>
+          <longname_en type="string" length="512">{name}</longname_en>
+        </menu>
+        """;
+
+    [Fact]
+    public void A_wii_u_game_in_no_cache_is_named_by_its_rom_folders_meta_xml()
+    {
+        const string save = "Emulation/saves/Cemu/saves/00050000";
+        Text($"{save}/10145d00/user/80000001/save.dat", "mk8");
+        Text($"{save}/101c9500/user/80000001/game_data.sav", "botw");
+        Text($"{save}/10176900/user/80000001/save.dat", "splatoon");
+        Text($"{save}/1010ec00/user/80000001/save.dat", "packed");
+        Text("cemu-data/title_list_cache.xml", CemuCache);
+        // EmuDeck's roms/wiiu: a game folder, one a level down, the cached game's own (the cache wins), an update's (no
+        // game's name), and the MLC EmuDeck keeps there (never read as a game folder).
+        Text("Emulation/roms/wiiu/Breath of the Wild [00050000101C9500]/meta/meta.xml",
+            RomMeta("00050000101C9500", "The Legend of Zelda\nBreath of the Wild", "00000004"));
+        Text("Emulation/roms/wiiu/roms/Splatoon/meta/meta.xml", RomMeta("0005000010176900", "Splatoon"));
+        Text("Emulation/roms/wiiu/MK8/meta/meta.xml", RomMeta("0005000010145D00", "Not the cache's name"));
+        Text("Emulation/roms/wiiu/Update/meta/meta.xml", RomMeta("0005000E1010EC00", "An update"));
+        Text("Emulation/roms/wiiu/mlc01/meta/meta.xml", RomMeta("000500001010EC00", "Inside the MLC"));
+        Text("Emulation/roms/wiiu/Packed.wua", "zarchive");
+
+        var found = CemuSaves.Scan([new CemuFolders(P("Emulation/saves/Cemu/saves"), null, [P("cemu-data/title_list_cache.xml")],
+            EmuDeck: true, RomFolders: [P("Emulation/roms/wiiu")])]);
+
+        var names = found.ToDictionary(c => c.EmulatorRom!, c => c.Name);
+        Assert.Equal("Mario Kart 8", names["10145d00"]);
+        Assert.Equal("The Legend of Zelda Breath of the Wild", names["101c9500"]);
+        Assert.Equal("Europe", found.Single(c => c.EmulatorRom == "101c9500").Release!.Region);
+        Assert.Equal("Splatoon", names["10176900"]);
+        Assert.Equal("Wii U 1010EC00", names["1010ec00"]);
+    }
+
+    [Fact]
+    public void Cemus_rom_folders_are_emudecks_roms_wiiu_and_each_cemus_game_paths()
+    {
+        Text("cemu/mlc01/usr/save/00050000/101c9500/user/80000001/game_data.sav", "botw");
+        Text("cemu/settings.xml", $"""
+            <?xml version="1.0"?>
+            <content><GamePaths><Entry>{P("D-games/WiiU")}</Entry><Entry>relative-games</Entry></GamePaths></content>
+            """);
+        Text("D-games/WiiU/BotW/meta/meta.xml", RomMeta("00050000101C9500", "The Legend of Zelda Breath of the Wild"));
+
+        var folders = CemuSaves.Folders([P("Emulation")], [new CemuSetup(P("cemu/settings.xml"), P("cemu"))]);
+        var cemu = Assert.Single(folders);
+
+        Assert.Equal([P("Emulation/roms/wiiu"), P("D-games/WiiU"), P("cemu/relative-games")], cemu.RomFolders!);
+        Assert.Equal("The Legend of Zelda Breath of the Wild", Assert.Single(CemuSaves.Scan(folders)).Name);
+    }
+
     [Fact]
     public void Cemus_mlc_is_beside_settings_when_it_names_none_and_emudecks_is_up_from_its_link()
     {

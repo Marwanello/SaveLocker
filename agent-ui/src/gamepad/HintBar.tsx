@@ -18,7 +18,7 @@ interface Hint {
 
 const FLASH_FOR: Partial<Record<PadAction, string>> = {
   up: 'move', down: 'move', left: 'move', right: 'move',
-  a: 'a', b: 'b', x: 'x', y: 'y', lb: 'lb', rb: 'rb', lt: 'lt', rt: 'rt', r3: 'r3',
+  a: 'a', b: 'b', x: 'x', y: 'y', lb: 'lb', rb: 'rb', lt: 'lt', rt: 'rt', r3: 'r3', start: 'start', startHold: 'start',
 }
 
 export function HintBar() {
@@ -59,6 +59,7 @@ export function HintBar() {
     hints.push({ key: 'x', glyphs: ['x'], label: nav.filtersActive ? 'List' : 'Filters' })
     hints.push({ key: 'lt', glyphs: ['lt', 'rt'], label: 'Clear / Add' })
     if (nav.folderActionAvailable) hints.push({ key: 'r3', glyphs: ['r3'], label: 'Change' })
+    hints.push({ key: 'start', glyphs: ['start'], label: 'Hide enrolled · hold: empty filters' })
   }
   if (hasKeepBothOption()) hints.push({ key: 'lt', glyphs: ['lt'], label: 'Keep backup' })
   if (hasResolveButton()) hints.push({ key: 'rt', glyphs: ['rt'], label: 'Resolve' })

@@ -479,6 +479,10 @@ public static partial class SwitchEmulators
 
     private static readonly HashSet<string> RomExtensions = new(StringComparer.OrdinalIgnoreCase) { ".nsp", ".xci", ".nsz", ".xcz", ".nca", ".nro" };
 
+    /// <summary>The base title ID a Switch ROM's file name carries in brackets, upper case, or null.</summary>
+    public static string? TitleIdOfRom(string fileName) =>
+        TitleIdInName().Matches(Path.GetFileNameWithoutExtension(fileName)).Select(m => m.Groups[1].Value.ToUpperInvariant()).FirstOrDefault(IsBaseTitle);
+
     [GeneratedRegex(@"\[([0-9A-Fa-f]{16})\]")]
     private static partial Regex TitleIdInName();
 

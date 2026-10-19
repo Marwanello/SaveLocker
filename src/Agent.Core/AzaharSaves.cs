@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace SaveLocker.Agent;
 
@@ -31,7 +32,7 @@ namespace SaveLocker.Agent;
 /// <c>use_custom_storage</c> is on.
 /// </para>
 /// </summary>
-public static class AzaharSaves
+public static partial class AzaharSaves
 {
     public const string EmulatorName = "Azahar";
     public const string System = "n3ds";
@@ -73,8 +74,55 @@ public static class AzaharSaves
                         ExtraSaveDirs: states,
                         Release: ConsoleTitles.Release(System, [rom?.ProductCode, programId])), game.WrittenUtc));
                 }
+
+        // A game played from states alone so far (Phase 19): the program ID in a state's name is the save folder's, so it
+        // is declared in the setup's title folder, where the first in-game save will be. A save here wins.
+        var saved = found.Select(f => f.Item1.EmulatorRom!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var setup in setups)
+        {
+            if (TitleDirs(setup.Sdmc).FirstOrDefault() is not { } titleDir) continue;
+            foreach (var (programId, written) in StateOnlyGames(setup.States))
+            {
+                if (saved.Contains(programId)) continue;
+                var low = programId[8..].ToLowerInvariant();
+                var rom = roms.GetValueOrDefault(programId);
+                var known = rom?.ProductCode is { } code ? ConsoleTitles.For(System, code) : null;
+                found.Add((new ScanCandidate(
+                    Name: known?.Title ?? (rom?.FileName is { } file ? RomNames.CleanTitle(file) : $"3DS {low.ToUpperInvariant()}"),
+                    SuggestedSaveDir: EmuDeckRoots.RealPath(titleDir),
+                    Source: ScanSource.Emulator,
+                    HasSteamCloud: false,
+                    EmulatorName: EmulatorName,
+                    EmulatorSystem: System,
+                    EmulatorRom: programId,
+                    ViaEmuDeck: setup.EmuDeck,
+                    IncludeGlobs: [$"{low}/data/**"],
+                    ExtraSaveDirs: [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(setup.States!), StateGlobsFor(programId))],
+                    Release: ConsoleTitles.Release(System, [rom?.ProductCode, programId]),
+                    StatesOnly: true), written));
+            }
+        }
         return TitleFolders.Newest(found);
     }
+
+    /// <summary>The program IDs (upper case) of a game application with a non-empty state in a states folder
+    /// (<c>0004000000054000.01.cst</c>, a recording's <c>….movie&lt;id&gt;.01.cst</c>), and when the newest was written.</summary>
+    public static IEnumerable<(string ProgramId, DateTime WrittenUtc)> StateOnlyGames(string? statesDir)
+    {
+        FileInfo[] files;
+        try { files = statesDir is not null && Directory.Exists(statesDir) ? new DirectoryInfo(statesDir).GetFiles("*.cst") : []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+        return files
+            .Where(f => f.Length > 0 && f.LinkTarget is null)
+            .Select(f => (File: f, Match: StateName().Match(f.Name)))
+            .Where(x => x.Match.Success)
+            .GroupBy(x => x.Match.Groups["id"].Value.ToUpperInvariant())
+            .Select(g => (g.Key, g.Max(x => x.File.LastWriteTimeUtc)))
+            .ToList();
+    }
+
+    [GeneratedRegex(@"^(?<id>00040000[0-9A-Fa-f]{8})\.(?:movie[0-9A-Fa-f]+\.)?\d{2}\.cst$", RegexOptions.IgnoreCase)]
+    private static partial Regex StateName();
 
     /// <summary>One game's states: every slot and every recording's, by the program ID Azahar names them with.</summary>
     public static IReadOnlyList<string> StateGlobsFor(string programId) => [$"{programId.ToUpperInvariant()}.*"];

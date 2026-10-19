@@ -17,7 +17,7 @@ namespace SaveLocker.Agent;
 /// defines the game with the same folders (tasks/emulator-saves → <i>Save states — decided</i>).
 /// </para>
 /// </summary>
-public static class RetroArchSaves
+public static partial class RetroArchSaves
 {
     public const string EmulatorName = "RetroArch";
 
@@ -27,7 +27,15 @@ public static class RetroArchSaves
     /// <summary>RetroArch as a row of the shared reader: <c>&lt;rom&gt;.srm</c> (+ <c>.rtc</c>), states
     /// <c>&lt;rom&gt;.state*</c>, one level of per-core folders.</summary>
     public static readonly RomSaveRules Rules = new(EmulatorName, ".srm",
-        (rom, _) => IncludeGlobsFor(rom), StateGlobsFor, PerCoreFolders: true);
+        (rom, _) => IncludeGlobsFor(rom), StateGlobsFor, PerCoreFolders: true, StateRom: RomOfState);
+
+    /// <summary>The ROM a state is of: <c>&lt;rom&gt;.state</c>, <c>.state1</c>…, <c>.state.auto</c> — not a slot's
+    /// <c>.png</c> thumbnail, which no game is found by. Null for anything else.</summary>
+    public static string? RomOfState(string fileName) =>
+        StateName().Match(fileName) is { Success: true } m ? m.Groups["rom"].Value : null;
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(?<rom>.+)\.state(?:\d+|\.auto)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex StateName();
 
     /// <summary>The candidates on this machine. Never throws for a missing or unreadable folder.</summary>
     public static IReadOnlyList<ScanCandidate> Scan()

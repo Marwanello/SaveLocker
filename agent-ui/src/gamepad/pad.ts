@@ -9,7 +9,7 @@ import { detectGlyphSet, type ResolvedGlyphSet } from './glyphs'
  * The keyboard listener is capture-phase and stops propagation for keys it consumes — otherwise a
  * component with its own arrow handling (PathBrowserModal) would act on the same key a second time.
  */
-export type PadAction = 'up' | 'down' | 'left' | 'right' | 'a' | 'b' | 'x' | 'y' | 'lb' | 'rb' | 'lt' | 'rt' | 'l3' | 'view' | 'start' | 'r3' | 'scrollUp' | 'scrollDown'
+export type PadAction = 'up' | 'down' | 'left' | 'right' | 'a' | 'b' | 'x' | 'y' | 'lb' | 'rb' | 'lt' | 'rt' | 'l3' | 'view' | 'start' | 'startHold' | 'r3' | 'scrollUp' | 'scrollDown'
 export type PadUiMode = 'auto' | 'on' | 'off'
 
 export interface PadSnapshot {
@@ -26,6 +26,8 @@ const REPEAT_EVERY_MS = 90
 const STICK_DEADZONE = 0.55
 const STICK_REPEAT_DELAY_MS = 380
 const SCROLL_DEADZONE = 0.18
+/** Start is two bindings in Add Games: a tap and a hold. A tap fires on release, a hold once this long in. */
+const HOLD_MS = 500
 /** The hint bar's Auto/On/Off is a device preference like the glyph ones, so it survives a restart. */
 const UI_MODE_KEY = 'savelocker.pad.uiMode'
 
@@ -126,7 +128,8 @@ function onKeyDown(ev: KeyboardEvent) {
   const action = KEYMAP[ev.key]
   if (!action) return
   consume(ev)
-  fire(action)
+  // Shift+T is the keyboard's Start hold (a held key only repeats, so it can't be timed the way a button is).
+  fire(action === 'start' && ev.shiftKey ? 'startHold' : action)
 }
 
 function consume(ev: KeyboardEvent) {
@@ -147,6 +150,7 @@ const DIRECTIONS: PadAction[] = ['up', 'down', 'left', 'right']
 const prev: Partial<Record<PadAction, boolean>> = {}
 const heldSince: Partial<Record<PadAction, number>> = {}
 const nextRepeat: Partial<Record<PadAction, number>> = {}
+let startHoldFired = false
 let stickDir: PadAction | null = null
 let stickSince = 0
 let stickNext = 0
@@ -174,6 +178,7 @@ function poll() {
       delete nextRepeat[key]
     }
     stickDir = null
+    startHoldFired = false
     lastFrame = 0
     return
   }
@@ -186,6 +191,7 @@ function poll() {
   // window with a button down doesn't fire it.
   if (!document.hasFocus()) {
     for (const [index, action] of BUTTONS) prev[action] = pad.buttons[index]?.pressed ?? false
+    startHoldFired = true
     stickDir = null
     lastFrame = 0
     return
@@ -197,6 +203,13 @@ function poll() {
   for (const [index, action] of BUTTONS) {
     const pressed = pad.buttons[index]?.pressed ?? false
     const was = prev[action] ?? false
+    if (action === 'start') {
+      if (pressed && !was) { heldSince.start = now; startHoldFired = false }
+      else if (pressed && !startHoldFired && now - (heldSince.start ?? now) >= HOLD_MS) { startHoldFired = true; fire('startHold') }
+      else if (!pressed && was && !startHoldFired) fire('start')
+      prev.start = pressed
+      continue
+    }
     if (pressed && !was) {
       heldSince[action] = now
       fire(action)

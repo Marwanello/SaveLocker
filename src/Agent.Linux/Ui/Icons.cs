@@ -71,6 +71,27 @@ static class Icons
         }
     }
 
+    /// <summary>
+    /// An emulator's line icon (tasks/emulator-saves Phase 21: Arcticons, drawn on a 48x48 grid, from
+    /// <see cref="EmulatorIcons"/>), or null for an emulator with none. Its strokes are scaled to the 24 grid's weight, so it
+    /// sits beside the lucide glyphs at the same thickness.
+    /// </summary>
+    public static Glyph? Emulator(string? name)
+    {
+        if (name is null || !EmulatorIcons.Paths.TryGetValue(name, out var paths)) return null;
+        return (dl, pos, size, col, stroke) =>
+        {
+            foreach (var d in paths)
+                foreach (var sub in SvgPath.Flatten(d))
+                {
+                    dl.PathClear();
+                    foreach (var pt in sub.Points)
+                        dl.PathLineTo(new Vector2(pos.X + pt.X / 48f * size, pos.Y + pt.Y / 48f * size));
+                    dl.PathStroke(col, sub.Closed ? ImDrawFlags.Closed : ImDrawFlags.None, stroke);
+                }
+        };
+    }
+
     private static void Line(ImDrawListPtr dl, Vector2 pos, float size, uint col, float stroke,
         float x1, float y1, float x2, float y2) =>
         dl.AddLine(P(pos, size, x1, y1), P(pos, size, x2, y2), col, stroke);

@@ -188,9 +188,10 @@ public sealed class LinkByHandTests : IClassFixture<ServerProcess>, IDisposable
 
         var pc = await Machine("pc");
         var save = Scan("pc", _rom);
-        // Another dump of the same title keeps other files: listed, never pickable.
-        var blocked = Assert.Single(EnrollLinks.For(await ApiClient.For(pc).ListGamesAsync(), save), o => o.GameId == rev1.GameId);
-        Assert.Equal((LinkKind.Blocked, "Different file names"), (blocked.Kind, blocked.Badge));
+        // Another dump of the same title keeps other files: since Phase 17 it is offered as a link under this machine's own
+        // names, never as a join of the same files.
+        var other = Assert.Single(EnrollLinks.For(await ApiClient.For(pc).ListGamesAsync(), save), o => o.GameId == rev1.GameId);
+        Assert.Equal((EnrollLinks.Rename, LinkKind.Join, "Different file names"), (other.Choice, other.Kind, other.Badge));
         Assert.Equal((0, 1), await Enroller.EnrollAsync(pc, new[] { save }, new[] { 0 }, links: Pick(EnrollLinks.Game, rev1.GameId)));
         Assert.Contains("keeps different save files", EnrollLinks.Resolve(await ApiClient.For(pc).ListGamesAsync(), save,
             save.ExtraSaveDirs!, new LinkChoice(EnrollLinks.Game, rev1.GameId)).Refusal);

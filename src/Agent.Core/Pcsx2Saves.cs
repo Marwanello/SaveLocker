@@ -29,7 +29,7 @@ namespace SaveLocker.Agent;
 /// and <c>sstates</c> in it.
 /// </para>
 /// </summary>
-public static class Pcsx2Saves
+public static partial class Pcsx2Saves
 {
     public const string EmulatorName = "PCSX2";
     public const string System = "ps2";
@@ -56,10 +56,21 @@ public static class Pcsx2Saves
             }
         }
 
+        // A game played from states alone so far (Phase 19) is a game on the setup's first folder card, where its first
+        // in-game save will go. With only a shared file card there is no such place; that card's own row says how to switch.
+        var saved = found.Select(f => MemoryCards.Ps1ProductCode(f.Candidate.EmulatorRom!)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var setup in folders)
+        {
+            if (FirstFolderCard(setup.Saves) is not { } card) continue;
+            foreach (var (serial, written) in StateOnlyGames(setup.States))
+                if (!saved.Contains(serial))
+                    found.Add((StatesOnlyCandidate(setup, card, serial), written));
+        }
+
         // One game on two cards or in two setups: the copy most recently written is the one being played.
         return found
             .GroupBy(f => f.Candidate.EmulatorRom, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.OrderByDescending(f => f.WrittenUtc).First().Candidate)
+            .Select(g => g.OrderBy(f => f.Candidate.StatesOnly).ThenByDescending(f => f.WrittenUtc).First().Candidate)
             .Concat(shared)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(c => c.EmulatorRom, StringComparer.OrdinalIgnoreCase)
@@ -103,6 +114,61 @@ public static class Pcsx2Saves
                 Release: ConsoleTitles.Release(System, [serial])), dirs.Max(LastWrite));
         }
     }
+
+    private static ScanCandidate StatesOnlyCandidate(RomSaveFolders setup, DirectoryInfo card, string serial)
+    {
+        var prefix = SavePrefix(serial);
+        return new ScanCandidate(
+            Name: ConsoleTitles.For(System, serial)?.Title ?? serial,
+            SuggestedSaveDir: Path.Combine(EmuDeckRoots.RealPath(setup.Saves), card.Name),
+            Source: ScanSource.Emulator,
+            HasSteamCloud: false,
+            EmulatorName: EmulatorName,
+            EmulatorSystem: System,
+            EmulatorRom: prefix,
+            ViaEmuDeck: setup.EmuDeck,
+            IncludeGlobs: [$"{prefix}*/**"],
+            ExtraSaveDirs: [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(setup.States!), StateGlobsFor(serial))],
+            Release: ConsoleTitles.Release(System, [serial]),
+            StatesOnly: true);
+    }
+
+    /// <summary>
+    /// The folder a PS2 game's saves get on a card: <c>B</c>, its region (<c>A</c> America, <c>E</c> Europe, <c>I</c>
+    /// Japan and Asia), then its product code — <c>SLUS-21050</c> → <c>BASLUS-21050</c>, how every PS2 game names its
+    /// own (<see cref="MemoryCards.ConsoleSaveName"/>).
+    /// </summary>
+    public static string SavePrefix(string serial)
+    {
+        var region = serial.Length >= 4 ? serial.Substring(2, 2).ToUpperInvariant() : "";
+        return "B" + (region switch { "US" => 'A', "ES" or "ED" => 'E', _ => 'I' }) + serial.ToUpperInvariant();
+    }
+
+    /// <summary>The first folder card in a memory cards folder (by name), or null when it has none.</summary>
+    private static DirectoryInfo? FirstFolderCard(string savesDir) =>
+        SafeEntries(savesDir).OfType<DirectoryInfo>()
+            .Where(d => d.LinkTarget is null && MemoryCards.IsFolderCard(d.FullName))
+            .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+
+    /// <summary>The games with a non-empty state in a states folder (<c>SLUS-21050 (1A2B3C4D).01.p2s</c>, the resume
+    /// state <c>….resume.p2s</c>), and when the newest was written. <c>.p2s.backup</c> copies are no game's.</summary>
+    public static IEnumerable<(string Serial, DateTime WrittenUtc)> StateOnlyGames(string? statesDir)
+    {
+        FileInfo[] files;
+        try { files = statesDir is not null && Directory.Exists(statesDir) ? new DirectoryInfo(statesDir).GetFiles("*.p2s") : []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+        return files
+            .Where(f => f.Length > 0 && f.LinkTarget is null)
+            .Select(f => (File: f, Match: StateName().Match(f.Name)))
+            .Where(x => x.Match.Success)
+            .GroupBy(x => x.Match.Groups["serial"].Value.ToUpperInvariant())
+            .Select(g => (g.Key, g.Max(x => x.File.LastWriteTimeUtc)))
+            .ToList();
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(?<serial>[A-Za-z]{4}-\d{5}) \([0-9A-Fa-f]{8}\)\.(?:\d{2}|resume)\.p2s$")]
+    private static partial System.Text.RegularExpressions.Regex StateName();
 
     /// <summary>One game's states: every slot and the resume state, not the <c>.p2s.backup</c> copies.</summary>
     public static IReadOnlyList<string> StateGlobsFor(string serial) => [$"{serial} (*.p2s"];

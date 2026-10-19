@@ -130,6 +130,24 @@ public static class Enroller
                     serverName = named;
                 }
 
+                // Phase 17: the user linked this save to a game of the same emulator that keeps other file names. It joins that
+                // game as it is, with its folders' scopes, and this machine keeps its own names for the files.
+                IReadOnlyList<FileNameDto>? ownNames = null;
+                if (link?.Choice == EnrollLinks.Rename && serverGames?.FirstOrDefault(g => g.Id == link.GameId) is { } target)
+                {
+                    ownNames = EnrollLinks.RenamePairs(target, c, out _);
+                    if (config.Games.FirstOrDefault(g => g.GameId == target.Id && g.IsEnrolledHere) is { } already)
+                    {
+                        Refuse(c.Name, $"this device already syncs '{target.Name}' from {already.SaveDirectory}; a second save here " +
+                                       "under its name would share its files.");
+                        continue;
+                    }
+                    extras = extras.Select(e => e with
+                    {
+                        IncludeGlobs = (target.ExtraPaths ?? []).FirstOrDefault(p => p.Key == e.Key)?.IncludeGlobs ?? e.IncludeGlobs,
+                    }).ToList();
+                }
+
                 Step(c.Name, "Creating it on the server");
                 GameDto game;
                 try
@@ -210,7 +228,12 @@ public static class Enroller
                     extras = [.. laid.Extras];
                     info.Add(laid.Note);
                 }
-                if ((c.IncludeGlobs is { Count: > 0 } || extras.Count > 0) && FolderMismatch(game, c, extras) is { } mismatch)
+                if (ownNames is not null && game.Id != link!.GameId)
+                {
+                    Refuse(c.Name, $"the server answered with another game than the '{game.Name}' you picked; nothing was linked.");
+                    continue;
+                }
+                if (ownNames is null && (c.IncludeGlobs is { Count: > 0 } || extras.Count > 0) && FolderMismatch(game, c, extras) is { } mismatch)
                 {
                     Refuse(c.Name, mismatch);
                     continue;
@@ -259,6 +282,7 @@ public static class Enroller
                         ManifestKey = c.ManifestKey,
                         SaveDirectory = check.Canonical!,
                         SteamAppId = c.SteamAppId,
+                        ShortcutAppIds = c.ShortcutAppIds?.ToList() ?? new(),
                         HasSteamCloud = c.HasSteamCloud,
                         InstallDir = c.InstallDir,
                         Source = GameSources.From(c),
@@ -276,6 +300,7 @@ public static class Enroller
                             Key = e.Key, Template = e.Template, Directory = e.Dir,
                             IncludeGlobs = (e.IncludeGlobs ?? Array.Empty<string>()).ToList(),
                         }).ToList(),
+                        OwnFileNames = ownNames?.ToList() ?? new(),
                     };
                     // EmuDeck's untouched preinstalled file only ever joins a game (EnrollLinks.Resolve). It is
                     // recorded as in step, so the first pull replaces it with the fleet's save instead of
@@ -313,6 +338,12 @@ public static class Enroller
                 catch (Exception ex) { AgentLogger.LogException("Enroller.SetMachinePath", ex); }
                 try { await api.SetGameSourceAsync(game.Id, GameSources.From(c)); }
                 catch (Exception ex) { AgentLogger.LogException("Enroller.SetGameSource", ex); }
+                if (ownNames is { Count: > 0 })
+                {
+                    try { await api.SetFileNamesAsync(game.Id, ownNames.ToArray()); }
+                    catch (Exception ex) { AgentLogger.LogException("Enroller.SetFileNames", ex); }
+                    info.Add($"{c.Name}: linked to '{game.Name}' under this device's own file names. Its first sync asks which save to keep.");
+                }
                 enrolled++;
             }
         }
@@ -566,8 +597,15 @@ public static class Enroller
     private static IEnumerable<TrackedGame> ByFiles(AgentConfig config, ScanCandidate c) =>
         c.IncludeGlobs is not { Count: > 0 }
             ? []
-            : config.Games.Where(g => SameScope(g.IncludeGlobs, c.IncludeGlobs) && SameEmulator(g, c) && !OtherRegion(g.Release, c))
+            : config.Games.Where(g => (SameScope(g.IncludeGlobs, c.IncludeGlobs) || SameScope(g.IncludeGlobs, ServerNames(g, c.IncludeGlobs))) &&
+                                      SameEmulator(g, c) && !OtherRegion(g.Release, c))
                 .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A save's scope under the server's names, for a game this machine keeps its own file names for (Phase 17).</summary>
+    private static IReadOnlyList<string> ServerNames(TrackedGame g, IReadOnlyList<string> scope) =>
+        FileNames.For(g.OwnFileNames, SaveRoot.PrimaryKey) is { } names
+            ? scope.Select(s => names.ToServer(s) ?? s).ToList()
+            : [];
 
     /// <summary>
     /// Which name an emulator save takes on the server. First (D1) the name of the server game that already

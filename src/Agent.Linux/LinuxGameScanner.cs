@@ -164,6 +164,29 @@ public sealed class LinuxGameScanner : IGameScanner
             catch (Exception ex) { AgentLogger.LogException($"Scan source '{name}'", ex); }
         }
 
+        // A Steam ROM Manager shortcut is the emulator's game, not a game of its own (tasks/emulator-saves Phase 20): its
+        // row goes, and the emulator row for its ROM takes its app ID. Only a shortcut row is ever dropped, so the MoonDeck
+        // flag stays with every candidate that is kept as it was.
+        try
+        {
+            var emulatorShortcuts = new List<EmulatorShortcut>();
+            foreach (var root in roots)
+            {
+                var srm = SrmShortcuts.SrmAppIds(root);
+                emulatorShortcuts.AddRange(shortcutsByRoot[root].Select(s => SrmShortcuts.Recognize(s, srm)).OfType<EmulatorShortcut>());
+            }
+            if (emulatorShortcuts.Count > 0)
+            {
+                var flags = new Dictionary<ScanCandidate, bool>(ReferenceEqualityComparer.Instance);
+                foreach (var r in results) flags.TryAdd(r.Candidate, r.ViaMoonDeck);
+                results = SrmShortcuts.Apply(results.Select(r => r.Candidate).ToList(), emulatorShortcuts, SrmShortcuts.NoSaveYet)
+                    .Select(c => (c, flags.TryGetValue(c, out var via) && via))
+                    .ToList();
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { AgentLogger.LogException("Scan source 'Steam ROM Manager shortcuts'", ex); }
+
         return results;
     }
 
