@@ -45,11 +45,11 @@ point unless explicitly instructed to.
 | 14 — Cemu | ✅ Shipped 2026-10-13 (PR #68, branch `emulator-saves-group-e`) — built 2026-10-12: `CemuSaves`: `usr/save/00050000/<low>`, scope `<low>/**`; named by Cemu's `title_list_cache.xml`, else `meta.xml`, else `Wii U <low>` (no licensed Wii U table). **Captured 2026-10-12:** Deck AppImage with the MLC on the SD card (only system-app saves), PC portable `mlc01` with EmuDeck's junction; no game save on either |
 | 15 — Azahar | ✅ Shipped 2026-10-13 (PR #68, branch `emulator-saves-group-e`) — built 2026-10-12: `AzaharSaves` + `Ncch`: `title/00040000/<low>/data`, scope `<low>/data/**` (mutation-checked), states `<program ID>.*`; named from a ROM's NCCH product code via No-Intro's 3DS sets (added to the table), else the ROM's file name, else `3DS <low>`. Citra folders are rows of it (maintainer: one game). **Captured 2026-10-12:** the Deck's three real saves, custom SD-card `sdmc`, 11 ROM headers (program IDs match the save folders); the PC's junctions |
 | 16 — Linking by hand, same files (mockup version 2) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`, with Group B) — each emulator row on Add games says which server game the save joins, with a **Change** button for that row only: automatic, *Keep it as its own game*, or another server game keeping the same files; a same-titled game with other file names is listed greyed out with the reason. `EnrollLinks` + `GET /api/candidates/links` + `EnrollRequest.Links`; `LinkByHandTests` 5, two of them mutation-checked; checked in the browser against a scratch server **Review fixes (PR #61):** *Keep it as its own game* opts this machine out of the fleet's same-files game, and the poller never maps a second game onto files another syncs here (`SaveFolderClaims`); Add games says when the server could not be asked. |
-| 17 — Each machine's own file names (linking saves with different names) | ⏳ Not started — Group G (added 2026-10-07, maintainer: "keep option 2 in another phase"); open questions below |
+| 17 — Each machine's own file names (linking saves with different names) | 🚧 In progress — built 2026-10-18 (branch `emulator-saves-group-.g-i-j`, [PR #78](https://github.com/Marwanello/SaveLocker/pull/78)), with the **server merge**. Maintainer's calls: same emulator only, a **file-by-file list** that grows by itself, linked from the agent only, a clash refuses the link, the merge built now from the console only. `FileNames` + `OwnFileNames`, migration `AddFileNamesAndMerge`. Testenv pass and the hardware pass to do. See *Group G — as built* |
 | 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4; Group E added Cemu, Azahar (the Deck has three 3DS saves) and Xenia (the PC and the Deck both have *Forza Horizon*); Group F added the Switch emulators — ✅ checked 2026-10-18 (Animal Crossing, Eden/Yuzu, PC ↔ Deck). Rows are added as later phases ship untested; see *Phase 18* |
-| 20 — Steam ROM Manager shortcuts are the emulator's game, not a game of their own | ⏳ Not started — Group G (added 2026-10-13, maintainer: the Deck lists Forza Horizon twice). Needs a captured `shortcuts.vdf` and SRM's own records from the Deck first; open questions below |
-| 19 — Games found by their save states alone (every emulator but PPSSPP) | ⏳ Not started — Group I (added 2026-10-12, maintainer: "PPSSPP now, others as a new phase"). PPSSPP's shipped with Group D; see *Phase 19* |
-| 21 — Emulator and console icons | ⏳ Not started — Group J (added 2026-10-14). Sources picked and mocked up in both UIs (`phase-21-icons-mockup.html`); see *Phase 21* |
+| 20 — Steam ROM Manager shortcuts are the emulator's game, not a game of their own | 🚧 In progress — built 2026-10-18 (same branch). **Captured read-only from the Deck 2026-10-18:** `shortcuts.vdf` (127 shortcuts) and SRM's `addedItemsV2.json`; every ROM shortcut there is recognised, no PC game is. Maintainer's calls: launcher + ROM path is enough (SRM's record stands in for an unknown launcher), a ROM with no save is listed as *No save here yet* where the save's place is known. `SrmShortcuts`. Forza Horizon listed once on the Deck still to see. See *Group G — as built* |
+| 19 — Games found by their save states alone (every emulator but PPSSPP) | 🚧 In progress — built 2026-10-18 (same branch): RetroArch, melonDS, PCSX2, DuckStation, Dolphin/PrimeHack, Azahar. `StatesOnlyTests` + `GroupISyncTests` (two machines, real server, one per save shape). See *Group I — as built* |
+| 21 — Emulator and console icons | 🚧 In progress — built 2026-10-18 (same branch): `web/scripts/build-platform-icons.mjs` → one sprite module per UI + the Deck's stroke table; placed in the console, the agent UI and Game Mode's Add games rows; `SvgPath` draws every path command. Screenshots in both themes and the Deck on hardware to do. See *Group J — as built* |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
 
@@ -830,6 +830,80 @@ Fixes from the Deck, 2026-10-18:
   user (`AlignToGameFolders`); copies follow it (`SlotFor`); one already under a user moves itself to the device save on
   the poller's tick, the server told first, both sides zipped, the old folder removed (`MoveToDeviceSaveAsync`). Ryujinx
   is left out of the move: its folders come from its index. Agent tests **656**.
+
+### Group G — as built (2026-10-18, branch `emulator-saves-group-.g-i-j`)
+
+Decided with the maintainer at the start (2026-10-18):
+- **Phase 17, same emulator only.** A save links to a game of another emulator never; two dumps of one ROM in one emulator do.
+- **A file-by-file list**, not a prefix rule: each machine keeps one pair per file (`server name` ⇄ `its own name`) per save
+  folder. **New files join it by themselves**: a file whose name starts with a listed file's name without its extension and a
+  dot (`… (Rev 1).state3`) takes the same swap and is added to the list on the next push or pull.
+- **Linked from the agent only** (Add games → **Change** → *Different file names*), undone by stopping tracking it there; the
+  console shows each machine's names, read-only.
+- **A clash refuses the link** up front: a file of the server's name already here, or the game already synced here.
+- **Merging two existing server games: built now, console only**, with a preview and the merged game's name typed.
+- **Phase 20: launcher + ROM path** is enough; SRM's `addedItemsV2.json` stands in for a launcher SaveLocker does not know. **A ROM
+  with no save** is listed as *No save here yet* when the reader can say where its save will be, else hidden.
+
+**Phase 17 — each machine's own file names.**
+- `Shared/FileNames`: `FileNameDto(Key, Server, Local)` and the swap. `ToServer` returns null for a file here that already has a
+  listed server name without being listed itself (another dump's save under the server's name: never this game's).
+  `Derive` lists the pairs a stem swap reaches; `Validate` bounds names (relative, no `..`/drive/backslash, 256 pairs).
+- `SaveRoot.Names`; `SaveArchive` swaps on the way in (`EnumerateItems`: the scope, the archive name, the hash and the manifest are
+  the server's), on a delta subset, and on the way out (restore writes local names; the delete pass reads local names back to the
+  server's before the scope test). A shadow folder keeps the server's names.
+- Agent: `TrackedGame.OwnFileNames`; `OwnFileNames.Grow` before every push and after every pull, reported to the server
+  (`PUT /api/agent/games/{id}/file-names`, stored on the primary `MachineSavePath` row, `FileNames` JSON). `EnrollLinks.RenamePairs`
+  pairs the save's scope with the game's by extension; `LinkKind.Join` + choice `rename`. `Enroller.TrackedFor` finds the linked
+  game by the save's scope under the server's names, so Add games shows it added.
+- **The first sync asks**: a pull refuses (this machine's save was never pushed), the push is a conflict; the user keeps one.
+- Console: each machine's row lists its own names; the agent game page lists this device's with how to unlink.
+- Merge (`SyncService.MergePreviewAsync` / `MergeGamesAsync`, `GET /api/games/{id}/merge-preview?into=`, `POST
+  /api/games/{id}/merge`): refused while the game is leased or has an open conflict. The merged game's versions move to the kept one,
+  **protected and read-only** (`SaveVersion.MergedFrom`; never made Latest — `SetHeadAsync` refuses), archives untouched. A machine
+  that synced only it **moves** when the two keep the same folders (same scopes and extra keys) — its path rows and source move —
+  else it **re-adds** the other from Add games. `Game.MergedGameIds` tells agents: the poller re-points its copy (GameId, name),
+  clearing a "Keep it as its own game" opt-out (`SetTracked`), or says what to do. Console: **Merge** card on the game page.
+- Migration `AddFileNamesAndMerge` (`MachineSavePaths.FileNames`, `SaveVersions.MergedFrom`, `Games.MergedGameIds`).
+- Tests: `FileNamesTests` 11; `GroupGSyncTests` 4 against a real server (link + first-sync conflict + new slot + console names;
+  restore of an old version on the renamed side; refusals; the merge and the poller's move). Mutation-checked: with the swap off in
+  `SaveArchive`, three tests fail.
+
+**Phase 20 — Steam ROM Manager shortcuts.** `SrmShortcuts`: `Recognize` reads the command from `Exe` *and* the launch options
+(SRM writes both shapes, quotes inside quotes, Xenia's `Z:` path), finds the emulator by the launcher's or Flatpak ID's name
+(never by the ROM's own name) and the ROM by a path in a `roms` folder or with a ROM extension. `Apply` drops the shortcut's row and
+puts its app ID(s) on the emulator row for its ROM (`ShortcutAppIds`, the first also `SteamAppId`): matched by Switch title ID,
+3DS program ID (NCCH), GameCube/Wii game ID (`[R3OE01]` or the disc header: `.iso` 0, `.wbfs` 0x200, `.rvz`/`.wia` 0x58), the save's
+ROM name, else the cleaned name. `NoSaveYet` makes RetroArch (not when sorting saves by core), melonDS, Azahar, Dolphin and
+PrimeHack rows. `TrackedGame.ShortcutAppIds` + `LaunchesUnder`: the launch wrapper and the launch-option rows know every shortcut of a
+game. `SrmShortcuts.Backfill` records them on a game added before. A shortcut game tracked beside its emulator game:
+`TrackedGameDto.SameGameAs` → the agent's *Same game as …* banner with **Stop tracking this copy**; `doctor` says so too.
+Captured: the Deck's whole `shortcuts.vdf` (gated test, `SAVELOCKER_SRM_CAPTURE`). Not built: other front ends (BoilR, Heroic's
+emulator entries, RetroDECK); the Decky plugin still reads one app ID per game (`TrackedGameDto.SteamAppId`).
+
+### Group I — as built (2026-10-18)
+
+Phase 19 for every reader the plan listed, on PPSSPP's rule. RetroArch and melonDS through `RomSaveRules.StateRom`
+(`<rom>.state`, `.stateN`, `.state.auto`; `<rom>.ml1`–`.ml8`), RetroArch's per-core state folders included (the save goes in the
+saves folder's same-named core folder when there is one). PCSX2: `<serial> (<CRC>).NN.p2s` / `.resume.p2s`, on the setup's first
+folder card, prefix `BA`/`BE`/`BI` + serial (`SavePrefix`); none with only a shared file card. DuckStation: `<serial>_N.sav`, the
+card declared under the bundled table's title (DuckStation names a card after its own database's title, which nothing here can
+read; when it differs, the first save is its own row and **Change** links it), else the serial. Dolphin/PrimeHack: `<ID>.sNN`,
+GameCube (`G`/`D`/`P`/`U`) in Slot A's region folder, Wii (`R`/`S`) in `Wii/title` (`DolphinSaves.ForGameId`). Azahar:
+`<program ID>.NN.cst` (and recordings) in the setup's title folder. Testenv: one states-only game per emulator.
+
+### Group J — as built (2026-10-18)
+
+`web/scripts/build-platform-icons.mjs` (`npm --prefix web run icons:build`, `icons:check`): downloads Arcticons (`icons/white`) and
+RetroArch's Monochrome glyphs at their current commits (recorded in the outputs), inlines class styles, makes every colour
+`currentColor`, namespaces ids, fits a glyph's viewBox to what it draws (rendered with resvg — MAME and several glyphs are off their
+canvas), and writes `platformIcons.generated.ts` to both UIs and `src/Agent.Linux/Ui/EmulatorIcons.g.cs` (the line icons as stroke
+paths, shapes and transforms flattened). `--check` verifies every mapped icon exists and draws. Credits: `NOTICE-icons.md`.
+Decided here (no answer needed from the maintainer): Cemu, RPCS3 and ScummVM use their console's glyph (Wii U, PS3, RetroArch's
+ScummVM) until their own logos' terms are checked; PrimeHack uses Dolphin's icon. Placed: console platform headings and emulator
+sub-headings, covers with no art, the release and source chips, each machine's row; agent Add games emulator and console chips and
+rows, covers (a console badge), the Switch emulator picker; Game Mode's Add games rows (`Icons.Emulator`). `SvgPath` now draws
+S/Q/T and elliptical, rotated arcs. Not done: the Switch eShop icon as a cover (optional in the plan).
 
 ### The other emulators — researched 2026-10-07
 

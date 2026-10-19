@@ -180,6 +180,11 @@ Set them per-process and clear them afterwards — leaving either set in a shell
 behave in ways that look like bugs.
 
 ## `tests/testenv.ps1` (throwaway test rig)
+- **Run from the Claude desktop app, writes under `%LOCALAPPDATA%` never reach WSL.** The app is a packaged (MSIX) app, so its
+  child processes' writes to `AppData\Local` are redirected into the package's own store: `testenv emu-fixture` reports the
+  WSL fixture written, Windows-side tools see it, but the WSL daemon's `/mnt/c/.../SaveLocker-test/Emulation-wsl` is missing
+  and Add games finds nothing. Copy it through WSL (`tar -C <dir> -cf - . | wsl tar -C /mnt/c/<same dir> -xf -`) or run the
+  command from a normal terminal. Found 2026-10-19.
 - **`down` ignores `-Only` and stops everything** — console container, Windows tray and WSL daemon alike, although
   `up -Only <target>` honours it. Found 2026-09-28 wanting only the WSL agent down (to leave a console command
   unclaimed for Group 8's Cancel): `down -Only linux` took the console with it. Bring back what you need with
