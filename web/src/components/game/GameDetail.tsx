@@ -20,6 +20,7 @@ import { Icon } from '../ui/Icon';
 import { RulesCard } from './RulesCard';
 import { ExcludePatternsCard } from './ExcludePatternsCard';
 import { RemoteCommandsCard } from './RemoteCommandsCard';
+import { BalancedColumns } from '../ui/BalancedColumns';
 
 interface Props {
   summary: GameSummary;
@@ -193,36 +194,45 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
 
       <GameStats summary={summary} versionCount={versions.length} machinesWithGame={withGame} onRefresh={onRefresh} />
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] gap-3 items-start">
-        <VersionsCard
-          key={game.id}
-          game={game}
-          headId={headId}
-          versions={versions}
-          conflicts={gameConflicts}
-          loading={loadingVersions}
-          reloadVersions={reloadVersions}
-          onSetLatest={setLatest}
-          onRefresh={onRefresh}
-        />
-        <div className="flex flex-col gap-3 min-w-0">
-          <SaveFoldersCard
-            game={game}
-            machines={machines}
-            paths={paths}
-            candidates={candidates}
-            pathsLoaded={pathsLoaded}
-            latestByMachine={latestByMachine}
-            reloadPaths={reloadPaths}
-            intent={intent}
-            onRefresh={onRefresh}
-            health={health}
-            head={head}
-          />
-          <RulesCard game={game} machines={machines} health={health} onRefresh={onRefresh} />
-          <ExcludePatternsCard game={game} onRefresh={onRefresh} />
-        </div>
-      </div>
+      <BalancedColumns items={[
+        {
+          key: 'versions',
+          pin: 0,
+          node: (
+            <VersionsCard
+              key={game.id}
+              game={game}
+              headId={headId}
+              versions={versions}
+              conflicts={gameConflicts}
+              loading={loadingVersions}
+              reloadVersions={reloadVersions}
+              onSetLatest={setLatest}
+              onRefresh={onRefresh}
+            />
+          ),
+        },
+        {
+          key: 'folders',
+          node: (
+            <SaveFoldersCard
+              game={game}
+              machines={machines}
+              paths={paths}
+              candidates={candidates}
+              pathsLoaded={pathsLoaded}
+              latestByMachine={latestByMachine}
+              reloadPaths={reloadPaths}
+              intent={intent}
+              onRefresh={onRefresh}
+              health={health}
+              head={head}
+            />
+          ),
+        },
+        { key: 'rules', node: <RulesCard game={game} machines={machines} health={health} onRefresh={onRefresh} /> },
+        { key: 'exclude', node: <ExcludePatternsCard game={game} onRefresh={onRefresh} /> },
+      ]} />
 
       <RemoteCommandsCard commands={gameCmds} />
     </>
