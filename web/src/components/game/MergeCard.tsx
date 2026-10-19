@@ -71,6 +71,7 @@ export function MergeCard({ game, onRefresh }: Props) {
             label="Merge into"
             variant="field"
             placeholder="Pick the game to keep"
+            searchable
             value={into}
             options={games.map(s => ({ value: s.game.id, label: s.game.name, sub: s.game.emulators?.join(', ') ?? undefined }))}
             onChange={setInto}
