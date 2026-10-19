@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PlayStation Console Icons</title>
+<title>PlayStation and Xenia Icons</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
@@ -50,7 +50,6 @@ section { display: flex; flex-direction: column; gap: 12px; }
 .mono { font-family: var(--mono); font-size: 11px; color: var(--faint); }
 
 .ps { display: block; }
-.ps text { font-family: var(--sans); font-weight: 800; }
 
 /* Sizes table */
 .sizes { display: grid; grid-template-columns: 90px repeat(5, max-content); gap: 14px 36px; align-items: center; justify-content: start; }
@@ -58,12 +57,6 @@ section { display: flex; flex-direction: column; gap: 12px; }
 .sizes .name { font-size: 12.5px; color: var(--dim); }
 .sizes .cell { color: var(--fg); display: flex; align-items: center; }
 
-/* Tiles, as in an EmulationStation theme */
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 14px; }
-.tile { aspect-ratio: 1; border-radius: 10px; display: grid; place-items: center; position: relative; overflow: hidden; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06); }
-.tile svg { width: 66%; filter: drop-shadow(2px 4px 3px rgb(0 0 0 / .45)); overflow: visible; }
-.tile figcaption { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-size: 10.5px; color: rgb(255 255 255 / .7); font-family: var(--mono); }
-figure { margin: 0; }
 
 /* In-place slices of the agent UI */
 .chiprow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -83,10 +76,10 @@ figure { margin: 0; }
 .wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
 .cover { aspect-ratio: 3 / 4; border-radius: 10px; position: relative; overflow: hidden; background: var(--tile); border: 1px solid var(--line); display: flex; flex-direction: column; justify-content: flex-end; }
 .cover .art { position: absolute; inset: 0; }
-.cover .art.ph { display: grid; place-items: center; }
-.cover .art.ph svg { width: 58%; filter: drop-shadow(2px 4px 3px rgb(0 0 0 / .4)); overflow: visible; }
-.cover .badge { position: absolute; top: 7px; left: 7px; background: rgb(0 0 0 / .62); color: #fff; border-radius: 6px; padding: 3px 5px; display: inline-flex; }
-.cover .cap { position: relative; padding: 8px 9px; font-size: 12px; font-weight: 600; color: #fff; background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
+.cover .art.ph { display: grid; place-items: center; background: var(--raise); color: var(--dim); }
+.cover .art.ph svg { width: 62%; }
+.cover .badge { position: absolute; top: 7px; left: 7px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 5px; display: inline-flex; }
+.cover .cap { position: relative; padding: 8px 9px; font-size: 12px; font-weight: 600; color: var(--fg); border-top: 1px solid var(--line); background: var(--panel); }
 
 .qs { display: flex; flex-direction: column; gap: 10px; }
 .q { border-left: 3px solid var(--watch); padding: 2px 0 2px 12px; }
@@ -102,18 +95,19 @@ figure { margin: 0; }
 <div class="wrap">
   <header class="top">
     <div>
-      <h1>PlayStation console icons</h1>
-      <p>The PlayStation logo with the generation's number beside it, as EmulationStation themes draw it, in place of
-        the controller glyph PS1–PS4, PSP and Vita use today. The logo's outline is the CC0 path from Simple Icons 16.35.0,
-        not drawn by eye.</p>
+      <h1>PlayStation and Xenia icons</h1>
+      <p>Each PlayStation console as the PlayStation logo with its own number or name beside it, as EmulationStation themes
+        draw it, in place of the controller glyph PS1–PS4, PSP and Vita use today. Every shape is real path data: the logo
+        and the digits come from Simple Icons 16.35.0 (CC0), cut out of each console's own wordmark, so the 2 is the PS2's 2.
+        One colour throughout, like every other console glyph.</p>
     </div>
     <button class="theme" type="button" id="theme">Light / dark</button>
   </header>
 
   <section>
     <h2>1 · The mark, at the sizes SaveLocker draws it</h2>
-    <p>One colour, drawn in the text colour around it, like every other console glyph. The number sits top right, as in
-      the theme. PS1 has no number, as on the original box.</p>
+    <p>The number sits top right. PSP and Vita take their own wordmarks on the baseline. PS1 has no number, as on the
+      original box.</p>
     <div class="frame"><div class="card"><div class="sizes" id="sizes"></div></div></div>
   </section>
 
@@ -138,86 +132,111 @@ figure { margin: 0; }
   </section>
 
   <section>
-    <h2>3 · Coloured tiles, for a game with no cover art</h2>
-    <p>The theme's look: each generation's colour, the logo lit and shadowed. Here they stand in for missing box art on
-      the Games wall and in the console's grid. Small places (chips, badges) keep the one-colour mark from section 1.</p>
-    <div class="frame"><div class="card"><div class="tiles" id="tiles"></div></div></div>
+    <h2>3 · A game with no cover art</h2>
+    <p>The Games wall and the console's grid, where a game has no box art: the large mark on the plain tile, and the small one
+      in the corner badge.</p>
     <div class="frame"><div class="card"><div class="wall" id="wall"></div></div></div>
   </section>
 
   <section>
-    <h2>4 · To decide</h2>
+    <h2>4 · Xenia</h2>
+    <p>The updated Xenia logo from Wikimedia Commons (CC BY-SA 4.0, Takuyakoz), in place of the Arcticons drawing. The file is a
+      picture inside an SVG, with no vector shapes, so the chip was traced from it: the grey becomes the glyph, and the blue X is
+      cut out of it.</p>
+    <div class="frame"><div class="card">
+      <div class="sizes" id="xsizes"></div>
+      <div class="compare">
+        <span>Today</span>
+        <div class="chiprow" id="xtoday"></div>
+        <span>New</span>
+        <div class="chiprow" id="xnew"></div>
+      </div>
+      <div class="row">
+        <input type="checkbox" aria-label="Add Forza Horizon">
+        <span class="t">Forza Horizon</span>
+        <span class="chip">Emulator</span>
+        <span class="chip" id="xrowEmu"></span>
+        <span class="chip" id="xrowSys"></span>
+      </div>
+    </div></div>
+  </section>
+
+  <section>
+    <h2>5 · To decide</h2>
     <div class="qs">
-      <div class="q"><b>PSP and Vita</b><p>The theme has no number for them. Shown here as the logo with a short “PSP” / “Vita”
-        beside it. The alternative is the logo alone, which would look the same as PS1.</p></div>
-      <div class="q"><b>Trademark</b><p>Simple Icons' path data is CC0, but the PlayStation logo is Sony's trademark.
-        Using it to name the console a save belongs to is the same use EmulationStation themes and RetroArch make. It would be
-        recorded in NOTICE-icons.md next to the other sources.</p></div>
-      <div class="q"><b>The number in the shipped icon</b><p>Here the number is set in Archivo. The generator would turn
-        it into outlines, so the Deck's path drawer and both UIs draw the same shape with no font.</p></div>
+      <div class="q"><b>Trademarks</b><p>Simple Icons' path data is CC0, but the PlayStation logo and wordmarks are Sony's
+        trademarks. They would be used only to name the console a save belongs to, as EmulationStation themes and RetroArch do,
+        and recorded in NOTICE-icons.md next to the other sources.</p></div>
+      <div class="q"><b>Xenia's credit</b><p>CC BY-SA 4.0, like Arcticons: credited in NOTICE-icons.md, and the traced glyph is
+        shared under the same licence.</p></div>
+      <div class="q"><b>Small sizes</b><p>At 14–16 px the number is about 6 px tall. The PS3, PS4 and Vita glyphs still read;
+        the PS2's 2 and the PSP wordmark are hairlines in the consoles' own fonts and fade at chip size. Either keep them true
+        to the fonts (the chip's text names the console anyway), or thicken just those two slightly below 24 px.</p></div>
     </div>
   </section>
 </div>
 
 <script>
-const LOGO = 'M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241l6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z'
+const D = {"logo":"M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241l6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z","glyphs":{"ps2":{"d":"M23.708 10.221V11.841H16.513V14.071H24V13.779H16.832V12.133H24V9.929H16.513V10.221Z","b":[16.513,9.929,24,14.071]},"ps3":{"d":"M23.549 11.931A0.04 0.04 0 0 1 23.549 11.875C23.849 11.625 23.999 11.248 23.999 10.813 23.999 10.035 23.525 9.433 22.553 9.433H16.496C16.476 9.433 16.46 9.451 16.46 9.471V9.946C16.46 9.966 16.48 9.986 16.5 9.986H22.2C22.68 9.986 22.915 10.336 22.915 10.816S22.685 11.646 22.203 11.646H16.503C16.483 11.646 16.467 11.666 16.467 11.686V12.166C16.467 12.186 16.483 12.199 16.504 12.199H22.204C22.834 12.206 22.914 12.819 22.914 13.129V13.189C22.914 13.674 22.684 14.022 22.204 14.022H16.504C16.484 14.022 16.468 14.037 16.468 14.056V14.533C16.468 14.553 16.483 14.57 16.504 14.57H22.554C23.527 14.57 24 13.925 24 13.19V13.133C24 12.663 23.85 12.217 23.55 11.943Z","b":[16.46,9.433,24,14.57]},"ps4":{"d":"M16.022 14.014H21.76C21.777 14.014 21.79 14.026 21.79 14.038V14.521C21.79 14.545 21.807 14.557 21.825 14.557H22.86C22.878 14.557 22.896 14.547 22.896 14.521V14.046C22.896 14.028 22.916 14.01 22.936 14.01H23.964C23.988 14.01 24 13.992 24 13.974V13.49C24 13.472 23.99 13.454 23.965 13.454H22.935C22.915 13.454 22.898 13.437 22.898 13.419V9.96C22.898 9.677 22.794 9.497 22.618 9.437H22.318A1.153 1.153 0 0 0 22.015 9.569L15.835 13.384C15.595 13.534 15.512 13.702 15.572 13.829 15.62 13.933 15.757 14.011 16.026 14.011ZM16.917 13.377L21.707 10.416C21.737 10.392 21.797 10.398 21.797 10.464V13.425C21.797 13.443 21.781 13.461 21.763 13.461H16.946C16.906 13.461 16.886 13.449 16.881 13.437 16.875 13.413 16.886 13.395 16.917 13.377Z","b":[15.512,9.437,24,14.557]},"psp":{"d":"M0 9.93V10.226H7.182V11.852H0.001V14.069H0.296V12.148H7.478V9.93ZM11.29 9.93V13.774H7.478V14.07H11.602V10.226H15.415V9.93ZM16.523 9.93V10.226H23.705V11.852H16.523V14.069H16.819V12.148H24V9.93Z","b":[0,9.93,24,14.07]},"vita":{"d":"M11.504 13.998C11.173 13.98 11.034 13.728 10.972 13.621 10.909 13.514 9.052 10.012 9.052 10.012H9.976L11.514 12.867C11.594 13.027 11.776 13.067 11.874 12.879L13.404 10.012H13.981S12.183 13.416 12.111 13.532C12.04 13.649 11.835 14.016 11.504 13.998ZM14.509 10.026H15.349V13.986H14.509ZM18.279 10.486L18.282 13.963H17.456V10.49L15.886 10.488V10.005L19.859 10 19.857 10.489ZM21.514 10.005C21.2 10.01 21.004 10.359 20.935 10.472 20.864 10.588 19.062 13.999 19.062 13.999H19.64L20.08 13.159H22.621L23.075 13.999H24S22.14 10.491 22.077 10.383C22.015 10.276 21.876 10.023 21.544 10.005H21.514ZM21.334 11.001C21.412 10.996 21.489 11.048 21.534 11.139L22.359 12.664H20.355L21.173 11.126C21.216 11.044 21.275 11.006 21.335 11.001Z","b":[9.052,10,24,14.016]}},"xenia":{"d":"M149.8 158.3C92.2 199.1 45.1 232.7 45.1 233 45.1 234.1 254.6 381.4 256 381.4 256.8 381.4 279.1 366.1 305.5 347.4 331.9 328.7 378.8 295.5 409.8 273.6 440.8 251.7 465.9 233.3 465.7 232.6 465.2 231.1 257.1 84 255.6 84.1 255 84.1 207.4 117.5 149.8 158.3M141 180.4C141 180.7 148.5 185 157.8 190.1 181.3 203.1 201.3 214.9 216.8 224.7 224.1 229.4 230.4 233 230.9 232.8 232.6 232.2 252 213.2 252 212.2 252 211.1 240 200.6 224 187.7L214.6 180 177.8 180C157.6 180 141 180.2 141 180.4M290.5 188.7C262.1 211 234.9 235.9 210.2 262.4 189.9 284.1 173 302.8 173 303.5 173 303.8 176.6 304 180.9 304L188.9 304 206.1 289.4C257.7 245.7 290.9 222.6 345.8 192 356.9 185.8 366 180.6 366 180.4 366 180.2 351.5 180 333.8 180L301.5 180.1 290.5 188.7M269.3 245.8C263.6 249.5 259 252.8 259 253.1 259 253.4 264.3 257.7 270.7 262.6 277.2 267.5 291.4 278.8 302.3 287.8L322.1 304 331 304C336 304 340 303.7 340 303.4 340 301.3 282 239 280 239 279.7 239 274.9 242 269.3 245.8M45 257.6L45.1 267.5 145.6 338.5C200.9 377.6 246.6 409.6 247.1 409.8 247.6 410 248 406.1 248 401.1L248 392.1 243.8 388.7C241.4 386.8 197.2 355.5 145.5 319 93.8 282.5 50 251.5 48.3 250.2L45 247.8 45 257.6M365.5 319.7L264.5 391.1 264.2 400.5C264.1 405.7 264.2 410 264.5 410 265.2 410 463.1 270.2 465.3 268.1 466.8 266.6 467 265 466.8 257.3L466.5 248.3 365.5 319.7M35.3 283.9C25.1 291.3 23.7 296.2 30.3 302.4 38 309.9 46.1 310.8 56.8 305.5 67.5 300.1 67.6 300.6 53.7 290.9 47 286.2 41 282 40.4 281.7 39.8 281.3 37.5 282.3 35.3 283.9M459.1 290.3L446 299.5 448.2 301.4C456.7 308.4 467.7 310.7 475.5 307.1 480.5 304.9 486 298.7 486 295.4 486 292.7 479.9 285.5 475.2 282.8L472.3 281.1 459.1 290.3M74.2 312.9C65.9 319.5 64.5 322.7 67.6 327.8 71.7 334.8 83.4 339.4 91.2 337.1 96.4 335.5 106 329.9 106 328.5 105.9 327.7 100.3 323.5 81.1 310.2 79.5 309.1 78.6 309.4 74.2 312.9M422 316.6C416.2 320.7 410.3 324.8 408.8 325.6 404.7 327.7 405.3 329.4 411.5 332.9 422.5 339.1 430.5 339.3 439 333.5 447.2 327.8 447.9 322.4 441.1 315.9 433.1 308.2 433.8 308.2 422 316.6M115 341.6C104.3 350.1 104.5 357.2 115.7 363.2 122.6 366.9 126.1 367.4 132.2 365.6 138.2 363.8 147.3 358.4 146.5 357.1 145.9 356.1 122.2 339 120.6 338.4 120 338.2 117.5 339.6 115 341.6M378.5 347.3C371.4 352.4 365.5 357 365.5 357.5 365.6 360.1 379.1 366.3 384.8 366.4 398.1 366.5 409.2 354.9 403.2 347.3 401.5 345.1 392.9 338 392 338 391.7 338 385.6 342.2 378.5 347.3M155.2 370.9C144.7 379.2 145.4 386.5 157.2 392.4 164.5 396 170.9 395.9 178.6 392 184.8 388.8 188.6 386.2 187.9 385.7 182.2 381.4 162.3 367.7 161.5 367.4 160.8 367.1 158 368.7 155.2 370.9M343 372.5C338.5 375.6 332.3 379.9 329.3 382.1L323.8 386.2 326.6 388.2C338.1 396 346.8 397.1 355.6 392.1 367 385.5 366.4 375.9 354.2 368.7L351.1 367 343 372.5M196.2 399.3C187.2 406.1 186 411 192 417 197.3 422.3 205.2 424.7 211.8 423 217.4 421.6 228.5 415.1 227.3 413.9 225.2 411.8 202.4 396 201.5 396 201 396 198.6 397.5 196.2 399.3M296.7 405.1L283.9 414.2 289 417.7C299.4 424.7 307.1 425.5 315.6 420.5 323.7 415.8 325.6 411.3 322 405.6 320.2 402.5 312.1 396 310.3 396 309.9 396 303.7 400.1 296.7 405.1","viewBox":"17.7 78.0 474.3 353.5"},"xeniaOld":{"viewBox":"0 0 48 48","body":"<defs></defs><path id=\"emu-xenia-b\" style=\"fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;\" d=\"M5.5,39.9306c12.3333-1.3704,24.6667-1.3704,37,0\"/><path id=\"emu-xenia-c\" style=\"fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;\" d=\"M5.5,8.0694c12.3333,1.3704,24.6667,1.3704,37,0M14.75,39.1597V8.8403\"/><path id=\"emu-xenia-d\" style=\"fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;\" d=\"M33.25,8.9739v30.0625\"/>","line":true,"wide":false},"x360":{"viewBox":"2.84 2.84 58.32 58.32","body":"<defs id=\"sys-xbox360-defs3988\"><clipPath clipPathUnits=\"userSpaceOnUse\" id=\"sys-xbox360-clipPath3998\"><path d=\"M 0,64 64,64 64,0 0,0 0,64 z\" id=\"sys-xbox360-path4000\" /></clipPath></defs><g id=\"sys-xbox360-g3992\" transform=\"matrix(1.25,0,0,-1.25,0,64)\"><g id=\"sys-xbox360-g3994\" transform=\"matrix(0.8,0,0,0.8,0,0.39988034)\"><g id=\"sys-xbox360-g3996\" clip-path=\"url(#sys-xbox360-clipPath3998)\"><g id=\"sys-xbox360-g4002\" transform=\"translate(35,40.5)\"><path d=\"m 0,0 c 0,-1.657 -1.343,-3 -3,-3 -1.657,0 -3,1.343 -3,3 0,1.657 1.343,3 3,3 1.657,0 3,-1.343 3,-3\" style=\"fill:currentColor;fill-opacity:1;fill-rule:nonzero;stroke:none\" id=\"sys-xbox360-path4004\" /></g><g id=\"sys-xbox360-g4006\" transform=\"translate(53,39)\"><path d=\"M 0,0 C -1.104,0 -2,0.896 -2,2 -2,3.104 -1.104,4 0,4 1.104,4 2,3.104 2,2 2,0.896 1.104,0 0,0 m -4.5,4.5 c -1.104,0 -2,0.896 -2,2 0,1.104 0.896,2 2,2 1.104,0 2,-0.896 2,-2 0,-1.104 -0.896,-2 -2,-2 m 0,-9 c -1.104,0 -2,0.896 -2,2 0,1.104 0.896,2 2,2 1.104,0 2,-0.896 2,-2 0,-1.104 -0.896,-2 -2,-2 M -9,0 c -1.104,0 -2,0.896 -2,2 0,1.104 0.896,2 2,2 1.104,0 2,-0.896 2,-2 0,-1.104 -0.896,-2 -2,-2 m -4,-12 c -2.209,0 -4,1.791 -4,4 0,2.209 1.791,4 4,4 2.209,0 4,-1.791 4,-4 0,-2.209 -1.791,-4 -4,-4 m -8,10 c -1.93,0 -3.5,1.57 -3.5,3.5 0,1.93 1.57,3.5 3.5,3.5 1.93,0 3.5,-1.57 3.5,-3.5 0,-1.93 -1.57,-3.5 -3.5,-3.5 m -5.5,-4.5 c -1.104,0 -2,0.896 -2,2 l 0,1.788 c 1.83,-0.519 3.269,-1.958 3.788,-3.788 l -1.788,0 z m -2,-6.787 0,1.787 c 0,1.104 0.896,2 2,2 l 1.788,0 c -0.519,-1.83 -1.958,-3.27 -3.788,-3.787 M -29,2 c 0,0.829 0.671,1.5 1.5,1.5 0.829,0 1.5,-0.671 1.5,-1.5 0,-0.829 -0.671,-1.5 -1.5,-1.5 -0.829,0 -1.5,0.671 -1.5,1.5 m 14.5,1.5 c 0.828,0 1.5,-0.671 1.5,-1.5 0,-0.829 -0.672,-1.5 -1.5,-1.5 -0.828,0 -1.5,0.671 -1.5,1.5 0,0.829 0.672,1.5 1.5,1.5 m -17,-8 c 0,-1.104 -0.896,-2 -2,-2 l -1.788,0 c 0.519,1.83 1.958,3.269 3.788,3.788 l 0,-1.788 z m 0,-8.787 c -1.83,0.517 -3.269,1.957 -3.788,3.787 l 1.788,0 c 1.104,0 2,-0.896 2,-2 l 0,-1.787 z M -38,-2 c -2.209,0 -4,1.791 -4,4 0,2.209 1.791,4 4,4 2.209,0 4,-1.791 4,-4 0,-2.209 -1.791,-4 -4,-4 M 2,3.969 C 1.282,5.376 0.699,6.965 0,7.897 -0.715,11.92 -6.342,10.916 -8.013,10.821 -8.268,10.807 -9,9.861 -9,9.861 c -1.511,-0.194 -2.391,-0.484 -3,-0.982 -0.826,-0.675 -1.978,-1.636 -3,-1.964 -3.317,-1.064 -6,-0.982 -6,-0.982 0,0 -2.682,-0.082 -6,0.982 -1.022,0.328 -2.174,1.289 -3,1.964 -0.609,0.498 -1.489,0.788 -3,0.982 0,0 -0.733,0.946 -0.988,0.96 -1.671,0.095 -7.297,1.099 -8.012,-2.924 -0.699,-0.932 -1.282,-2.521 -2,-3.928 -1.929,-3.78 -4,-14.081 -4,-22.587 0,0 0.396,-13.555 11,-3.929 0,0 7.321,4.547 16,4.547 8.679,0 16,-4.547 16,-4.547 10.604,-9.626 11,3.929 11,3.929 0,8.506 -2.071,18.807 -4,22.587\" style=\"fill:currentColor;fill-opacity:1;fill-rule:nonzero;stroke:none\" id=\"sys-xbox360-path4008\" /></g></g></g></g>","line":false,"wide":false}}
 
-// id, label, suffix next to the logo, tile background, logo fill (a gradient id or a colour), suffix colour
+// The logo's own bounds in its 24×24 box; the suffix is scaled to sit beside it.
+const LOGO_TOP = 2.596, LOGO_BOTTOM = 21.404, GAP = 1.2
 const SYSTEMS = [
-  { id: 'psx', label: 'PS1', suffix: '', bg: 'linear-gradient(145deg,#7c7c84,#4a4a52)', logo: 'g-ps1', num: '#fff' },
-  { id: 'ps2', label: 'PS2', suffix: '2', bg: 'linear-gradient(145deg,#2f5fd8,#1c3a9e)', logo: 'g-ps2', num: '#3d55d9' },
-  { id: 'ps3', label: 'PS3', suffix: '3', bg: 'linear-gradient(145deg,#3a8ef0,#1f63c9)', logo: '#f4f6fa', num: '#f4f6fa' },
-  { id: 'ps4', label: 'PS4', suffix: '4', bg: 'linear-gradient(145deg,#2d74de,#1a4fb0)', logo: 'g-ps4', num: '#e3c983' },
-  { id: 'psp', label: 'PSP', suffix: 'PSP', bg: 'linear-gradient(145deg,#2a2a2e,#0d0d10)', logo: '#e9e9ec', num: '#e9e9ec' },
-  { id: 'psvita', label: 'PS Vita', suffix: 'Vita', bg: 'linear-gradient(145deg,#2b3f74,#16213f)', logo: '#eef2fb', num: '#9fb6ea' },
+  { id: 'psx', label: 'PS1', glyph: null },
+  { id: 'ps2', label: 'PS2', glyph: 'ps2', kind: 'num' },
+  { id: 'ps3', label: 'PS3', glyph: 'ps3', kind: 'num' },
+  { id: 'ps4', label: 'PS4', glyph: 'ps4', kind: 'num' },
+  { id: 'psp', label: 'PSP', glyph: 'psp', kind: 'word' },
+  { id: 'psvita', label: 'PS Vita', glyph: 'vita', kind: 'word' },
 ]
 
-const DEFS = `<defs>
-  <linearGradient id="g-ps1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff4d4d"/><stop offset=".35" stop-color="#ffd43b"/><stop offset=".65" stop-color="#3bc4ff"/><stop offset="1" stop-color="#34d27a"/></linearGradient>
-  <linearGradient id="g-ps2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3ea0ff"/><stop offset="1" stop-color="#6a3fe0"/></linearGradient>
-  <linearGradient id="g-ps4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ecd796"/><stop offset="1" stop-color="#c7a85c"/></linearGradient>
-</defs>`
-
-// The mark: the 24×24 logo, then the suffix. A number is a superscript; a word sits on the baseline, smaller.
-function mark(s, { colour = 'currentColor', numColour = 'currentColor', defs = false } = {}) {
-  const word = s.suffix.length > 1
-  const w = !s.suffix ? 24 : word ? 24 + 2 + s.suffix.length * 6.2 : 32
-  const suffix = !s.suffix ? ''
-    : word ? `<text x="26" y="21" font-size="10" fill="${numColour}">${s.suffix}</text>`
-    : `<text x="24.6" y="10" font-size="11" fill="${numColour}">${s.suffix}</text>`
-  const fill = colour.startsWith('g-') ? `url(#${colour})` : colour
-  return `<svg class="ps" viewBox="0 0 ${w} 24" aria-label="${s.label}" role="img" style="overflow:visible">${defs ? DEFS : ''}<path d="${LOGO}" fill="${fill}"/>${suffix}</svg>`
+// A number: 8 units tall, top aligned with the logo's top. A wordmark: 6 units tall, on the logo's baseline.
+function mark(s) {
+  let suffix = '', w = 24
+  if (s.glyph) {
+    const g = D.glyphs[s.glyph], [x0, y0, x1, y1] = g.b
+    const h = s.kind === 'num' ? 8 : 6, k = h / (y1 - y0)
+    const top = s.kind === 'num' ? LOGO_TOP : LOGO_BOTTOM - h
+    suffix = `<path fill-rule="evenodd" transform="translate(${24 + GAP} ${top}) scale(${k}) translate(${-x0} ${-y0})" d="${g.d}"/>`
+    w = 24 + GAP + (x1 - x0) * k
+  }
+  return `<svg class="ps" viewBox="0 0 ${w.toFixed(2)} 24" fill="currentColor" aria-label="${s.label}" role="img"><path d="${D.logo}"/>${suffix}</svg>`
 }
-const sized = (s, px) => mark(s).replace('<svg ', `<svg height="${px}" `)
+const sized = (svg, px) => svg.replace('<svg ', `<svg height="${px}" `)
 
-// 1 · sizes
-const sizes = document.getElementById('sizes')
 const PX = [14, 18, 24, 48, 96]
-sizes.innerHTML = '<span></span>' + PX.map((p, i) => `<span class="hd${i > 2 ? ' xl' : ''}">${p}px</span>`).join('') +
-  SYSTEMS.map(s => `<span class="name">${s.label}</span>` + PX.map((p, i) => `<span class="cell${i > 2 ? ' xl' : ''}">${sized(s, p)}</span>`).join('')).join('')
+const head = '<span></span>' + PX.map((p, i) => `<span class="hd${i > 2 ? ' xl' : ''}">${p}px</span>`).join('')
+const line = (label, svg) => `<span class="name">${label}</span>` + PX.map((p, i) => `<span class="cell${i > 2 ? ' xl' : ''}">${sized(svg, p)}</span>`).join('')
+document.getElementById('sizes').innerHTML = head + SYSTEMS.map(s => line(s.label, mark(s))).join('')
 
-// 2 · chips, today (a controller) vs new
-const PAD = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/><path d="M17.3 5H6.7a4 4 0 0 0-3.98 3.59l-.6 6.07A2.6 2.6 0 0 0 4.7 17.6c.95 0 1.8-.5 2.27-1.33L8 14.5h8l1.03 1.77c.47.82 1.32 1.33 2.27 1.33a2.6 2.6 0 0 0 2.58-2.94l-.6-6.07A4 4 0 0 0 17.3 5z"/></svg>'
+const PAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/><path d="M17.3 5H6.7a4 4 0 0 0-3.98 3.59l-.6 6.07A2.6 2.6 0 0 0 4.7 17.6c.95 0 1.8-.5 2.27-1.33L8 14.5h8l1.03 1.77c.47.82 1.32 1.330 2.27 1.33a2.6 2.6 0 0 0 2.58-2.94l-.6-6.07A4 4 0 0 0 17.3 5z"/></svg>'
 const counts = { psx: 4, ps2: 6, ps3: 2, ps4: 1, psp: 3, psvita: 2 }
-const chip = (s, icon, on) => `<span class="fchip${on ? ' on' : ''}"><span class="ic">${icon}</span>${s.label} <b>${counts[s.id]}</b></span>`
+const fchip = (icon, label, count, on) => `<span class="fchip${on ? ' on' : ''}"><span class="ic">${icon}</span>${label}${count != null ? ` <b>${count}</b>` : ''}</span>`
 document.getElementById('today').innerHTML = '<span class="lbl">Console</span><span class="fchip">All</span>' +
-  SYSTEMS.map(s => chip(s, PAD, s.id === 'ps2')).join('')
+  SYSTEMS.map(s => fchip(sized(PAD, 17), s.label, counts[s.id], s.id === 'ps2')).join('')
 document.getElementById('new').innerHTML = '<span class="lbl">Console</span><span class="fchip">All</span>' +
-  SYSTEMS.map(s => chip(s, sized(s, 16), s.id === 'ps2')).join('')
-document.getElementById('rowEmu').innerHTML = PAD.replace('width="17" height="17"', 'width="14" height="14"') + ' PCSX2'
-document.getElementById('rowSys').innerHTML = sized(SYSTEMS[1], 13) + ' PS2'
+  SYSTEMS.map(s => fchip(sized(mark(s), 16), s.label, counts[s.id], s.id === 'ps2')).join('')
+document.getElementById('rowEmu').innerHTML = sized(PAD, 14) + ' PCSX2'
+document.getElementById('rowSys').innerHTML = sized(mark(SYSTEMS[1]), 13) + ' PS2'
 
-// 3 · tiles and the Games wall
-document.getElementById('tiles').innerHTML = SYSTEMS.map(s =>
-  `<figure class="tile" style="background:${s.bg}">${mark(s, { colour: s.logo, numColour: s.num, defs: true })}<figcaption>${s.label}</figcaption></figure>`).join('')
 const GAMES = [['Kingdom Hearts II', 1], ['Crash Bandicoot', 0], ['Demon’s Souls', 2], ['Bloodborne', 3], ['Patapon', 4], ['Persona 4 Golden', 5]]
 document.getElementById('wall').innerHTML = GAMES.map(([name, i]) => {
   const s = SYSTEMS[i]
-  return `<div class="cover"><div class="art ph" style="background:${s.bg}">${mark(s, { colour: s.logo, numColour: s.num, defs: true })}</div>
-    <span class="badge">${sized(s, 13)}</span><span class="cap">${name}</span></div>`
+  return `<div class="cover"><div class="art ph">${mark(s)}</div><span class="badge">${sized(mark(s), 12)}</span><span class="cap">${name}</span></div>`
 }).join('')
 
-// Light / dark
+// Xenia: the traced chip, today's Arcticons drawing, and the Xbox 360 glyph the row's console chip already uses.
+const XNEW = `<svg viewBox="${D.xenia.viewBox}" fill="currentColor" role="img" aria-label="Xenia"><path fill-rule="evenodd" d="${D.xenia.d}"/></svg>`
+const XOLD = `<svg viewBox="${D.xeniaOld.viewBox}" stroke-width="2.6" role="img" aria-label="Xenia today">${D.xeniaOld.body}</svg>`
+const X360 = `<svg viewBox="${D.x360.viewBox}" ${D.x360.line ? 'stroke-width="2.6"' : 'fill="currentColor"'}>${D.x360.body}</svg>`
+document.getElementById('xsizes').innerHTML = head + line('Today', XOLD) + line('New', XNEW)
+const emuRow = icon => '<span class="lbl">Emulator</span><span class="fchip">All</span>' +
+  fchip(sized(PAD, 16), 'RPCS3', 2) + fchip(sized(PAD, 16), 'shadPS4', 1) + fchip(sized(icon, 16), 'Xenia', 3, true) + fchip(sized(PAD, 16), 'Cemu', 2)
+document.getElementById('xtoday').innerHTML = emuRow(XOLD)
+document.getElementById('xnew').innerHTML = emuRow(XNEW)
+document.getElementById('xrowEmu').innerHTML = sized(XNEW, 14) + ' Xenia'
+document.getElementById('xrowSys').innerHTML = sized(X360, 14) + ' Xbox 360'
+
 document.getElementById('theme').addEventListener('click', () => {
   const r = document.documentElement
   const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
