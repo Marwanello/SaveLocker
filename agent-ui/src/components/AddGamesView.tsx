@@ -473,7 +473,7 @@ export function AddGamesView({ onEnrolled }: Props) {
           </label>
           <label className="sl-filters__toggle">
             <Switch checked={hideEmpty} onChange={setHideEmpty} aria-label="Hide empty filters" />
-            Hide empty filters
+            Hide empty filters <PadGlyph id="start" hold />
           </label>
         </div>
 

@@ -554,11 +554,11 @@ function pressL3() {
   if (currentSection() === 'Add Games') clickAction('rescan', /^Rescan$/i)
 }
 
-/** Start: the Hide enrolled switch in Add Games. */
-function pressStart() {
+/** Start: the Hide enrolled switch in Add Games; held, the Hide empty filters switch beside it. */
+function pressStart(hold: boolean) {
   if (currentSection() !== 'Add Games') return
-  const toggle = document.querySelector<HTMLButtonElement>('[aria-label="Hide enrolled games"]')
-  toggle?.click()
+  const label = hold ? 'Hide empty filters' : 'Hide enrolled games'
+  document.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)?.click()
 }
 
 function pressY() {
@@ -631,7 +631,8 @@ export function handleAction(action: PadAction) {
   else if (action === 'rt') pressRT()
   else if (action === 'l3') pressL3()
   else if (action === 'view') pressView()
-  else if (action === 'start') pressStart()
+  else if (action === 'start') pressStart(false)
+  else if (action === 'startHold') pressStart(true)
   else if (action === 'r3') pressR3()
   else if (action === 'lb') sectionStep(-1)
   else if (action === 'rb') sectionStep(1)

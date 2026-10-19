@@ -568,6 +568,7 @@ button.sl-tree__twist:focus-visible { outline: 2px solid var(--color-accent); ou
 label.pad-focused { outline-offset: 0; }
 /* A binding glyph shown on the control it acts on — only rendered while a controller is active. */
 .sl-padglyph { display: inline-flex; align-items: center; flex: none; opacity: .95; }
+.sl-padglyph__hold { margin-left: 4px; font-size: 10.5px; color: var(--color-dim); }
 /* Every sprite is scaled so its opaque content fits this box, so all glyphs read the same size
    whatever transparent padding the pack drew around them. */
 .sl-glyph-box { position: relative; display: inline-block; flex: none; }

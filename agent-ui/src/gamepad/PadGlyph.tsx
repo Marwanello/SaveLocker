@@ -7,7 +7,7 @@ import { Glyph, useGlyphPrefs, type GlyphId } from './glyphs'
  * desktop stays exactly as it was. Size follows the user's glyph-size preference (default 18 px).
  * A control that carries one of these is skipped by arrow navigation: its binding is the way in.
  */
-export function PadGlyph({ id, size }: { id: GlyphId; size?: number }) {
+export function PadGlyph({ id, size, hold = false }: { id: GlyphId; size?: number; hold?: boolean }) {
   const visible = usePadVisible()
   const pad = usePad()
   const prefs = useGlyphPrefs()
@@ -21,6 +21,7 @@ export function PadGlyph({ id, size }: { id: GlyphId; size?: number }) {
         tone={prefs.tone}
         size={size ?? prefs.px}
       />
+      {hold && <span className="sl-padglyph__hold">hold</span>}
     </span>
   )
 }
