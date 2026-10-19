@@ -14,7 +14,9 @@ namespace SaveLocker.Agent;
 /// Nothing in the save names the game, and no title table we may bundle covers the Wii U, so the name is machine-local
 /// (D1 joins the server's game by its folder whatever the name): Cemu's <c>title_list_cache.xml</c> (<c>&lt;title
 /// titleId=…&gt;&lt;name&gt;</c>, <c>TitleList.cpp</c>), else an installed game's <c>usr/title/00050000/&lt;low&gt;/meta/meta.xml</c>
-/// <c>longname_en</c>, else <c>Wii U &lt;low&gt;</c>. The region comes from the same place (Cemu's <c>CafeConsoleRegion</c>
+/// <c>longname_en</c>, else the <c>meta/meta.xml</c> of a game folder (the extracted <c>code/content/meta</c> layout) in
+/// the ROM folders — EmuDeck's <c>roms/wiiu</c> and a standalone Cemu's <c>&lt;GamePaths&gt;</c> — matched by its
+/// <c>title_id</c>, else <c>Wii U &lt;low&gt;</c>. The region comes from the same place (Cemu's <c>CafeConsoleRegion</c>
 /// bits: 1 Japan, 2 USA, 4 Europe), else none.
 /// </para>
 /// <para>
@@ -42,9 +44,11 @@ public static class CemuSaves
         foreach (var setup in folders)
         {
             var titles = TitleCache(setup.TitleCaches);
+            // Walked only once a game is left unnamed: a ROM folder can be large.
+            var roms = new Lazy<IReadOnlyDictionary<string, WiiUTitle>>(() => RomTitles(setup.RomFolders ?? []));
             foreach (var game in TitleFolders.Find(Path.Combine(setup.Saves, GameTitles), TitleIdLow))
             {
-                var known = titles.GetValueOrDefault(game.Id) ?? MetaXml(setup.Mlc, game.Id);
+                var known = titles.GetValueOrDefault(game.Id) ?? MetaXml(setup.Mlc, game.Id) ?? roms.Value.GetValueOrDefault(game.Id);
                 found.Add((new ScanCandidate(
                     Name: known?.Name ?? $"Wii U {game.Id.ToUpperInvariant()}",
                     SuggestedSaveDir: EmuDeckRoots.RealPath(Path.Combine(setup.Saves, GameTitles)),
@@ -99,16 +103,53 @@ public static class CemuSaves
 
     /// <summary>An installed game's <c>meta/meta.xml</c> under <paramref name="mlc"/>: <c>longname_en</c> (one line) and
     /// <c>region</c> (hex bits); null when the game is not installed there.</summary>
-    public static WiiUTitle? MetaXml(string? mlc, string low)
+    public static WiiUTitle? MetaXml(string? mlc, string low) =>
+        mlc is null ? null : ReadMeta(Path.Combine(mlc, "usr", "title", GameTitles, low, "meta", "meta.xml"))?.Title;
+
+    /// <summary>
+    /// Game titles in the ROM folders by title ID low half: each game folder's <c>meta/meta.xml</c> (<c>title_id</c>,
+    /// <c>longname_en</c>, <c>region</c>), the folder itself or one level down (EmuDeck's <c>roms/wiiu/roms/&lt;game&gt;</c>).
+    /// An MLC in the folder (EmuDeck keeps <c>mlc01</c> in <c>roms/wiiu</c>) is skipped, as are updates and DLC, which carry
+    /// their own high halves. A packed game (<c>.wua</c>, <c>.wud</c>, <c>.wux</c>) has no file to read and names nothing.
+    /// </summary>
+    public static IReadOnlyDictionary<string, WiiUTitle> RomTitles(IEnumerable<string> romFolders)
     {
-        if (mlc is null) return null;
-        var path = Path.Combine(mlc, "usr", "title", GameTitles, low, "meta", "meta.xml");
+        var titles = new Dictionary<string, WiiUTitle>(StringComparer.OrdinalIgnoreCase);
+        void Add(string folder)
+        {
+            var meta = ReadMeta(Path.Combine(folder, "meta", "meta.xml"));
+            if (meta is { TitleId: var id, Title: { } title } && id.Length == 16 && id.StartsWith(GameTitles, StringComparison.OrdinalIgnoreCase))
+                titles.TryAdd(id[8..].ToLowerInvariant(), title);
+        }
+        foreach (var root in romFolders)
+            foreach (var dir in SubFolders(root))
+            {
+                Add(dir);
+                foreach (var inner in SubFolders(dir)) Add(inner);
+            }
+        return titles;
+    }
+
+    private static IEnumerable<string> SubFolders(string folder)
+    {
+        string[] dirs;
+        try { dirs = Directory.Exists(folder) ? Directory.GetDirectories(folder) : []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { dirs = []; }
+        return dirs.Where(d => !Path.GetFileName(d).Equals("mlc01", StringComparison.OrdinalIgnoreCase)
+            && !Path.GetFileName(d).Equals("meta", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>A <c>meta.xml</c>'s <c>title_id</c> (16 hex digits, as written) and the game's name and region; null when
+    /// the file is missing or unreadable. <c>Title</c> is null when it names nothing.</summary>
+    private static (string TitleId, WiiUTitle? Title)? ReadMeta(string path)
+    {
         try
         {
             if (!File.Exists(path)) return null;
             var root = XDocument.Load(path).Root;
             var name = Clean((string?)root?.Element("longname_en")) ?? Clean((string?)root?.Element("shortname_en"));
-            return name is null ? null : new WiiUTitle(name, Region(ParseRegion((string?)root?.Element("region"), hex: true)));
+            var id = ((string?)root?.Element("title_id"))?.Trim() ?? "";
+            return (id, name is null ? null : new WiiUTitle(name, Region(ParseRegion((string?)root?.Element("region"), hex: true))));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or global::System.Xml.XmlException) { return null; }
     }
@@ -131,27 +172,28 @@ public static class CemuSaves
         string.IsNullOrWhiteSpace(name) ? null : string.Join(' ', name.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()));
 
     /// <summary>
-    /// Every Cemu setup's <c>usr/save</c> that exists, EmuDeck's first, with its MLC (for <c>meta.xml</c>) and the title
-    /// caches to name its games from. EmuDeck's link is the MLC's <c>usr/save</c>, so its MLC is two folders up the real path.
+    /// Every Cemu setup's <c>usr/save</c> that exists, EmuDeck's first, with its MLC (for <c>meta.xml</c>), the title
+    /// caches and the ROM folders to name its games from. EmuDeck's link is the MLC's <c>usr/save</c>, so its MLC is two
+    /// folders up the real path. Caches and ROM folders are every setup's: one Cemu's game list names the others' saves too.
     /// </summary>
     public static IReadOnlyList<CemuFolders> Folders(IEnumerable<string> emuDeckRoots, IEnumerable<CemuSetup> setups)
     {
         var setupList = setups.ToList();
+        var rootList = emuDeckRoots.ToList();
         var caches = setupList.Select(s => Path.Combine(s.UserData, "title_list_cache.xml")).ToList();
+        var settings = setupList.Select(s => (Setup: s, Root: SettingsRoot(s.SettingsXml))).ToList();
+        var romFolders = rootList.Select(r => Path.Combine(r, "roms", "wiiu"))
+            .Concat(settings.SelectMany(x => GamePaths(x.Root, Path.GetDirectoryName(x.Setup.SettingsXml)!)))
+            .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .ToList();
         var candidates = new List<CemuFolders>();
-        foreach (var root in emuDeckRoots)
-            candidates.Add(new CemuFolders(Path.Combine(root, "saves", "Cemu", "saves"), null, caches, EmuDeck: true));
-        foreach (var s in setupList)
+        foreach (var root in rootList)
+            candidates.Add(new CemuFolders(Path.Combine(root, "saves", "Cemu", "saves"), null, caches, EmuDeck: true, romFolders));
+        foreach (var (s, xml) in settings)
         {
-            string? configured = null;
-            try
-            {
-                if (File.Exists(s.SettingsXml))
-                    configured = (string?)XDocument.Load(s.SettingsXml).Root?.Element("mlc_path");
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or global::System.Xml.XmlException) { }
+            var configured = (string?)xml?.Element("mlc_path");
             var mlc = EmulatorPaths.IniFolder(configured, Path.GetDirectoryName(s.SettingsXml)!) ?? Path.Combine(s.UserData, "mlc01");
-            candidates.Add(new CemuFolders(Path.Combine(mlc, "usr", "save"), mlc, caches));
+            candidates.Add(new CemuFolders(Path.Combine(mlc, "usr", "save"), mlc, caches, RomFolders: romFolders));
         }
 
         var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
@@ -166,6 +208,19 @@ public static class CemuSaves
         }
         return found;
     }
+
+    private static XElement? SettingsRoot(string settingsXml)
+    {
+        try { return File.Exists(settingsXml) ? XDocument.Load(settingsXml).Root : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or global::System.Xml.XmlException) { return null; }
+    }
+
+    /// <summary>The game folders a Cemu lists in <c>settings.xml</c>: <c>&lt;GamePaths&gt;&lt;Entry&gt;</c>, a relative one
+    /// against the settings' own folder.</summary>
+    public static IEnumerable<string> GamePaths(XElement? settings, string settingsDir) =>
+        (settings?.Element("GamePaths")?.Elements("Entry") ?? [])
+            .Select(e => EmulatorPaths.IniFolder((string?)e, settingsDir))
+            .OfType<string>();
 
     /// <summary>Where a standalone Cemu keeps <c>settings.xml</c> and its user data (MLC default, title cache), per
     /// platform; EmuDeck for Windows' copy is the old portable layout, everything beside the exe.</summary>
@@ -191,8 +246,10 @@ public static class CemuSaves
     }
 }
 
-/// <summary>One Cemu setup: its <c>usr/save</c> folder, its MLC, and the title caches its games are named from.</summary>
-public sealed record CemuFolders(string Saves, string? Mlc, IReadOnlyList<string> TitleCaches, bool EmuDeck = false);
+/// <summary>One Cemu setup: its <c>usr/save</c> folder, its MLC, and the title caches and ROM folders its games are named
+/// from.</summary>
+public sealed record CemuFolders(string Saves, string? Mlc, IReadOnlyList<string> TitleCaches, bool EmuDeck = false,
+    IReadOnlyList<string>? RomFolders = null);
 
 /// <summary>A standalone Cemu's <c>settings.xml</c> and user-data folder.</summary>
 public sealed record CemuSetup(string SettingsXml, string UserData);

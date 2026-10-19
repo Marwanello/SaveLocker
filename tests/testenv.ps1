@@ -757,12 +757,18 @@ function New-EmuDeckFixture {
     $ps4 = Join-Path $target 'saves\shadps4\saves\1'
     Write-FixtureBytes (Join-Path $ps4 'CUSA00900\SPRJ0005\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ MAINTITLE = 'Bloodborne'; SUBTITLE = 'Hunter' }))
     Write-FixtureFile (Join-Path $ps4 'CUSA00900\SPRJ0005\userdata0000') "bloodborne save $(Get-Date -Format o)"
-    # Group E (title-ID folders). Cemu: Mario Kart 8 (named by the fixture home's title cache below) and Breath of the
-    # Wild (in no cache: "Wii U 101C9500"), and a system app's save that is no game.
+    # Group E (title-ID folders). Cemu: Mario Kart 8 (named by the fixture home's title cache below), Breath of the Wild
+    # (in no cache: named by its game folder's meta.xml in roms\wiiu), Splatoon (named by nothing: "Wii U 10176900"), and a
+    # system app's save that is no game.
     $wiiu = Join-Path $target 'saves\Cemu\saves\00050000'
     Write-FixtureFile (Join-Path $wiiu '10145d00\user\80000001\save.dat') "mario kart 8 save $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $wiiu '10145d00\user\common\db.dat') 'mario kart 8 common'
     Write-FixtureFile (Join-Path $wiiu '101c9500\user\80000001\game_data.sav') 'breath of the wild - must survive every Mario Kart pull'
+    Write-FixtureFile (Join-Path $wiiu '10176900\user\80000001\save.dat') "splatoon save $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $target 'roms\wiiu\The Legend of Zelda Breath of the Wild [00050000101C9500]\meta\meta.xml') ('<?xml version="1.0" encoding="utf-8"?>' +
+        '<menu type="complex" access="777"><title_id type="hexBinary" length="8">00050000101C9500</title_id>' +
+        '<region type="hexBinary" length="4">00000004</region>' +
+        "<longname_en type=`"string`" length=`"512`">The Legend of Zelda`nBreath of the Wild</longname_en></menu>")
     Write-FixtureFile (Join-Path $target 'saves\Cemu\saves\00050010\1004a100\user\common\db\data') 'a system app - never a game'
     # Azahar: Super Mario 3D Land with a state and its ROM; Samus Returns installed from a CIA (named from its content).
     $n3ds = Join-Path $target 'saves\azahar\saves\Nintendo 3DS\00000000000000000000000000000000\00000000000000000000000000000000\title\00040000'
