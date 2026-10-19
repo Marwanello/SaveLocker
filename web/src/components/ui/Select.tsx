@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import type { KeyboardEvent, ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
 
 export interface SelectOption {
@@ -44,16 +45,49 @@ export function Select({ value, options: all, onChange, label, placeholder = 'Ch
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<CSSProperties>({});
   const id = useId();
   const chosen = all.find(o => o.value === value) ?? null;
 
   useEffect(() => {
     if (!open) return;
-    const onPointer = (e: MouseEvent) => { if (!rootRef.current?.contains(e.target as Node)) setOpen(false); };
+    const onPointer = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (![rootRef, popRef, listRef].some(r => r.current?.contains(t))) setOpen(false);
+    };
     document.addEventListener('mousedown', onPointer);
     (searchRef.current ?? listRef.current)?.focus();
     return () => document.removeEventListener('mousedown', onPointer);
   }, [open]);
+
+  // The list is drawn on <body>, fixed beside the trigger: inside a Card (overflow hidden) it was clipped to the
+  // card's own height — a long list in the Merge card showed a row or two. Below the trigger when the whole list
+  // fits there, else on whichever side has more room, as tall as that side allows up to the cap.
+  useLayoutEffect(() => {
+    if (!open) return;
+    function update() {
+      const r = triggerRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const below = window.innerHeight - r.bottom - 12;
+      const above = r.top - 12;
+      const cap = searchable ? 420 : 320;
+      const up = below < cap && above > below;
+      setPlace({
+        ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }),
+        ...(align === 'end' ? { right: document.documentElement.clientWidth - r.right } : { left: r.left }),
+        minWidth: r.width,
+        maxHeight: Math.max(120, Math.min(cap, (up ? above : below) - 6)),
+      });
+    }
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [open, align, searchable]);
 
   useEffect(() => {
     if (open) document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: 'nearest' });
@@ -106,8 +140,7 @@ export function Select({ value, options: all, onChange, label, placeholder = 'Ch
     }
   }
 
-  const popup = `animate-drop absolute z-30 top-[calc(100%+6px)] ${align === 'end' ? 'right-0' : 'left-0'}
-            min-w-full w-max max-w-[min(340px,92vw)] bg-panel border border-line rounded-xl shadow-2xl`;
+  const popup = 'animate-drop fixed z-50 w-max max-w-[min(340px,92vw)] bg-panel border border-line rounded-xl shadow-2xl';
 
   const trigger = variant === 'pill'
     ? 'rounded-full bg-raise pl-2 pr-2.5 py-[5px] text-[12.5px]'
@@ -137,7 +170,7 @@ export function Select({ value, options: all, onChange, label, placeholder = 'Ch
           className={`text-dim transition-transform duration-150 ease-[var(--ease)] ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && !searchable && (
+      {open && !searchable && createPortal(
         <div
           ref={listRef}
           id={`${id}-list`}
@@ -146,7 +179,8 @@ export function Select({ value, options: all, onChange, label, placeholder = 'Ch
           aria-label={label}
           aria-activedescendant={`${id}-${active}`}
           onKeyDown={onListKey}
-          className={`${popup} max-h-[320px] overflow-y-auto p-1 outline-none`}
+          style={place}
+          className={`${popup} overflow-y-auto p-1 outline-none`}
         >
           {options.map((o, i) => {
             const selected = o.value === value;
@@ -171,11 +205,11 @@ export function Select({ value, options: all, onChange, label, placeholder = 'Ch
             );
           })}
         </div>
-      )}
+      , document.body)}
 
-      {open && searchable && (
-        // The filter box keeps focus while the arrows move through the list: the combobox-with-listbox pattern.
-        <div className={`${popup} min-w-[260px] flex flex-col overflow-hidden`} onKeyDown={onListKey}>
+      {/* The filter box keeps focus while the arrows move through the list: the combobox-with-listbox pattern. */}
+      {open && searchable && createPortal(
+        <div ref={popRef} style={place} className={`${popup} min-w-[260px] flex flex-col overflow-hidden`} onKeyDown={onListKey}>
           <div className="p-1.5 border-b border-line">
             <input
               ref={searchRef}
@@ -193,7 +227,7 @@ export function Select({ value, options: all, onChange, label, placeholder = 'Ch
               className="w-full bg-tile text-fg border border-line rounded-lg px-2.5 py-[5px] text-[12.5px] outline-none focus:border-accent-line"
             />
           </div>
-          <div ref={listRef} id={`${id}-list`} role="listbox" aria-label={label} className="max-h-[280px] overflow-y-auto p-1">
+          <div ref={listRef} id={`${id}-list`} role="listbox" aria-label={label} className="flex-1 min-h-0 overflow-y-auto p-1">
             {options.map((o, i) => {
               const selected = o.value === value;
               return (
@@ -219,7 +253,7 @@ export function Select({ value, options: all, onChange, label, placeholder = 'Ch
             {options.length === 0 && <p className="px-2 py-2 text-[12.5px] text-dim">Nothing matches “{query.trim()}”.</p>}
           </div>
         </div>
-      )}
+      , document.body)}
     </div>
   );
 }
