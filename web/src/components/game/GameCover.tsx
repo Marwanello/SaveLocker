@@ -46,7 +46,8 @@ export function GameCover({ game, size }: Props) {
     >
       {/* A console game with no art shows its console's glyph (tasks/emulator-saves Phase 21); anything else its initials. */}
       {consoleIcon(game.release?.console)
-        ? <PlatformIcon id={consoleIcon(game.release?.console)} size={size === 's' ? 1.6 : 1.5} />
+        ? <PlatformIcon id={consoleIcon(game.release?.console)} size={size === 's' ? 1.6 : 1.5}
+            maxWidth={size === 's' ? 2.7 : size === 'l' ? 2.9 : 4} />
         : initials(game.name)}
     </span>
   );

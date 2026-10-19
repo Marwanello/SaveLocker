@@ -20,6 +20,8 @@ interface Props {
   id: string | null
   /** In ems; a wordmark (MAME) is drawn wider. */
   size?: number
+  /** In ems: the widest it may draw. A wide mark (PSP) shrinks to fit, so a square tile never crops it. */
+  maxWidth?: number
   className?: string
 }
 
@@ -31,17 +33,19 @@ function aspect(viewBox: string): number {
 
 /** An emulator's or a console's flat icon (tasks/emulator-saves Phase 21). Decoration: the text beside it names the same
  *  thing, so it is hidden from assistive technology. Line icons take the stroke width set here, which reads at 15–20 px. */
-export function PlatformIcon({ id, size = 1, className }: Props) {
+export function PlatformIcon({ id, size = 1, maxWidth, className }: Props) {
   const icon = id ? PLATFORM_ICONS[id] : undefined
   if (!id || !icon) return null
   ensureSprite()
+  const natural = icon.wide ? size * 2.6 : size * aspect(icon.viewBox)
+  const width = maxWidth ? Math.min(natural, maxWidth) : natural
   return (
     <svg
       aria-hidden="true"
       focusable="false"
       className={className}
-      width={`${icon.wide ? size * 2.6 : size * aspect(icon.viewBox)}em`}
-      height={`${size}em`}
+      width={`${width}em`}
+      height={`${(size * width) / natural}em`}
       style={{ flex: 'none', verticalAlign: '-0.15em' }}
       strokeWidth={icon.line ? 2.6 : undefined}
     >

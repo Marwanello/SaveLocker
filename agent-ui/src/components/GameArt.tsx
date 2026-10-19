@@ -21,7 +21,7 @@ export function GameArt({ id, name, kind, w, console }: Props) {
   const glyph = consoleIcon(console)
   return (
     <span className="sl-art--fallback" aria-hidden="true">
-      {glyph ? <PlatformIcon id={glyph} size={kind === 'grid' ? 2.6 : 1.6} /> : (name.trim()[0] ?? '?').toUpperCase()}
+      {glyph ? <PlatformIcon id={glyph} size={kind === 'grid' ? 2.6 : 1.6} maxWidth={kind === 'grid' ? 5.2 : 1.9} /> : (name.trim()[0] ?? '?').toUpperCase()}
     </span>
   )
 }
