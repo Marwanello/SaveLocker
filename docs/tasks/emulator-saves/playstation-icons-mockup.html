@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PlayStation Console Icons</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* The PlayStation consoles' icons: the PlayStation logo plus the generation's number, the way EmulationStation themes
+   draw them. Drawn with SaveLocker's Checkpoint tokens, dark first, light when the OS or the toggle asks for it. */
+:root {
+  color-scheme: dark;
+  --ink: #0f0f10; --panel: #141416; --raise: #191a1c; --tile: #1b1c1f;
+  --fg: #f0eee9; --dim: #a09d97; --faint: #817e78; --line: #242427;
+  --accent: #e0533c; --watch: #d9a63f; --frame: #08080a;
+  --sans: 'Archivo', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --ink: #f5f3ef; --panel: #fffefc; --raise: #f0ede8; --tile: #ebe7e0;
+    --fg: #191719; --dim: #57534d; --faint: #79756f; --line: #e2ddd5;
+    --accent: #c0432c; --watch: #8a6212; --frame: #dcd7cf;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ink: #f5f3ef; --panel: #fffefc; --raise: #f0ede8; --tile: #ebe7e0;
+  --fg: #191719; --dim: #57534d; --faint: #79756f; --line: #e2ddd5;
+  --accent: #c0432c; --watch: #8a6212; --frame: #dcd7cf;
+}
+:root {
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, var(--panel));
+  --accent-line: color-mix(in oklab, var(--accent) 42%, var(--panel));
+  --accent-ink: color-mix(in oklab, var(--accent) 80%, var(--fg));
+  --watch-ink: color-mix(in oklab, var(--watch) 82%, var(--fg));
+}
+* { box-sizing: border-box; }
+body { background: var(--ink); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.5; margin: 0; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; display: flex; flex-direction: column; gap: 28px; }
+header.top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 16px; margin: 0 0 4px; }
+p { margin: 0; color: var(--dim); max-width: 75ch; }
+.theme { background: var(--raise); border: 1px solid var(--line); color: var(--fg); border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 12.5px; cursor: pointer; }
+section { display: flex; flex-direction: column; gap: 12px; }
+.frame { background: var(--frame); border-radius: 16px; padding: 10px; overflow-x: auto; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.mono { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+
+.ps { display: block; }
+.ps text { font-family: var(--sans); font-weight: 800; }
+
+/* Sizes table */
+.sizes { display: grid; grid-template-columns: 90px repeat(5, max-content); gap: 14px 36px; align-items: center; justify-content: start; }
+.sizes .hd { font-size: 11px; color: var(--faint); font-family: var(--mono); }
+.sizes .name { font-size: 12.5px; color: var(--dim); }
+.sizes .cell { color: var(--fg); display: flex; align-items: center; }
+
+/* Tiles, as in an EmulationStation theme */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 14px; }
+.tile { aspect-ratio: 1; border-radius: 10px; display: grid; place-items: center; position: relative; overflow: hidden; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06); }
+.tile svg { width: 66%; filter: drop-shadow(2px 4px 3px rgb(0 0 0 / .45)); overflow: visible; }
+.tile figcaption { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-size: 10.5px; color: rgb(255 255 255 / .7); font-family: var(--mono); }
+figure { margin: 0; }
+
+/* In-place slices of the agent UI */
+.chiprow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chiprow .lbl { font-size: 11px; color: var(--faint); width: 64px; flex: none; }
+.fchip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--raise); font-size: 12.5px; color: var(--fg); white-space: nowrap; }
+.fchip b { font-family: var(--mono); font-weight: 400; font-size: 11px; color: var(--faint); }
+.fchip.on { background: var(--accent-soft); border-color: var(--accent-line); }
+.fchip .ic { color: var(--dim); display: inline-flex; }
+.fchip.on .ic { color: var(--accent-ink); }
+.compare { display: grid; grid-template-columns: 70px 1fr; gap: 8px 12px; align-items: center; }
+.compare > span { font-size: 11px; color: var(--faint); }
+
+.row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.row .t { font-weight: 600; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--tile); font-size: 11.5px; color: var(--dim); }
+
+.wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+.cover { aspect-ratio: 3 / 4; border-radius: 10px; position: relative; overflow: hidden; background: var(--tile); border: 1px solid var(--line); display: flex; flex-direction: column; justify-content: flex-end; }
+.cover .art { position: absolute; inset: 0; }
+.cover .art.ph { display: grid; place-items: center; }
+.cover .art.ph svg { width: 58%; filter: drop-shadow(2px 4px 3px rgb(0 0 0 / .4)); overflow: visible; }
+.cover .badge { position: absolute; top: 7px; left: 7px; background: rgb(0 0 0 / .62); color: #fff; border-radius: 6px; padding: 3px 5px; display: inline-flex; }
+.cover .cap { position: relative; padding: 8px 9px; font-size: 12px; font-weight: 600; color: #fff; background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
+
+.qs { display: flex; flex-direction: column; gap: 10px; }
+.q { border-left: 3px solid var(--watch); padding: 2px 0 2px 12px; }
+.q b { display: block; color: var(--fg); font-size: 13px; }
+.q p { font-size: 12.5px; }
+@media (max-width: 640px) {
+  .sizes { grid-template-columns: 60px repeat(3, max-content); gap: 12px 20px; }
+  .sizes .xl { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>PlayStation console icons</h1>
+      <p>The PlayStation logo with the generation's number beside it, as EmulationStation themes draw it, in place of
+        the controller glyph PS1–PS4, PSP and Vita use today. The logo's outline is the CC0 path from Simple Icons 16.35.0,
+        not drawn by eye.</p>
+    </div>
+    <button class="theme" type="button" id="theme">Light / dark</button>
+  </header>
+
+  <section>
+    <h2>1 · The mark, at the sizes SaveLocker draws it</h2>
+    <p>One colour, drawn in the text colour around it, like every other console glyph. The number sits top right, as in
+      the theme. PS1 has no number, as on the original box.</p>
+    <div class="frame"><div class="card"><div class="sizes" id="sizes"></div></div></div>
+  </section>
+
+  <section>
+    <h2>2 · In place: Add games</h2>
+    <div class="frame"><div class="card">
+      <div class="compare">
+        <span>Today</span>
+        <div class="chiprow" id="today"></div>
+        <span>New</span>
+        <div class="chiprow" id="new"></div>
+      </div>
+      <div class="row">
+        <input type="checkbox" aria-label="Add Kingdom Hearts II">
+        <span class="t">Kingdom Hearts II</span>
+        <span class="chip">Emulator</span>
+        <span class="chip" id="rowEmu"></span>
+        <span class="chip" id="rowSys"></span>
+        <span class="chip">USA</span>
+      </div>
+    </div></div>
+  </section>
+
+  <section>
+    <h2>3 · Coloured tiles, for a game with no cover art</h2>
+    <p>The theme's look: each generation's colour, the logo lit and shadowed. Here they stand in for missing box art on
+      the Games wall and in the console's grid. Small places (chips, badges) keep the one-colour mark from section 1.</p>
+    <div class="frame"><div class="card"><div class="tiles" id="tiles"></div></div></div>
+    <div class="frame"><div class="card"><div class="wall" id="wall"></div></div></div>
+  </section>
+
+  <section>
+    <h2>4 · To decide</h2>
+    <div class="qs">
+      <div class="q"><b>PSP and Vita</b><p>The theme has no number for them. Shown here as the logo with a short “PSP” / “Vita”
+        beside it. The alternative is the logo alone, which would look the same as PS1.</p></div>
+      <div class="q"><b>Trademark</b><p>Simple Icons' path data is CC0, but the PlayStation logo is Sony's trademark.
+        Using it to name the console a save belongs to is the same use EmulationStation themes and RetroArch make. It would be
+        recorded in NOTICE-icons.md next to the other sources.</p></div>
+      <div class="q"><b>The number in the shipped icon</b><p>Here the number is set in Archivo. The generator would turn
+        it into outlines, so the Deck's path drawer and both UIs draw the same shape with no font.</p></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const LOGO = 'M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241l6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z'
+
+// id, label, suffix next to the logo, tile background, logo fill (a gradient id or a colour), suffix colour
+const SYSTEMS = [
+  { id: 'psx', label: 'PS1', suffix: '', bg: 'linear-gradient(145deg,#7c7c84,#4a4a52)', logo: 'g-ps1', num: '#fff' },
+  { id: 'ps2', label: 'PS2', suffix: '2', bg: 'linear-gradient(145deg,#2f5fd8,#1c3a9e)', logo: 'g-ps2', num: '#3d55d9' },
+  { id: 'ps3', label: 'PS3', suffix: '3', bg: 'linear-gradient(145deg,#3a8ef0,#1f63c9)', logo: '#f4f6fa', num: '#f4f6fa' },
+  { id: 'ps4', label: 'PS4', suffix: '4', bg: 'linear-gradient(145deg,#2d74de,#1a4fb0)', logo: 'g-ps4', num: '#e3c983' },
+  { id: 'psp', label: 'PSP', suffix: 'PSP', bg: 'linear-gradient(145deg,#2a2a2e,#0d0d10)', logo: '#e9e9ec', num: '#e9e9ec' },
+  { id: 'psvita', label: 'PS Vita', suffix: 'Vita', bg: 'linear-gradient(145deg,#2b3f74,#16213f)', logo: '#eef2fb', num: '#9fb6ea' },
+]
+
+const DEFS = `<defs>
+  <linearGradient id="g-ps1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff4d4d"/><stop offset=".35" stop-color="#ffd43b"/><stop offset=".65" stop-color="#3bc4ff"/><stop offset="1" stop-color="#34d27a"/></linearGradient>
+  <linearGradient id="g-ps2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3ea0ff"/><stop offset="1" stop-color="#6a3fe0"/></linearGradient>
+  <linearGradient id="g-ps4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ecd796"/><stop offset="1" stop-color="#c7a85c"/></linearGradient>
+</defs>`
+
+// The mark: the 24×24 logo, then the suffix. A number is a superscript; a word sits on the baseline, smaller.
+function mark(s, { colour = 'currentColor', numColour = 'currentColor', defs = false } = {}) {
+  const word = s.suffix.length > 1
+  const w = !s.suffix ? 24 : word ? 24 + 2 + s.suffix.length * 6.2 : 32
+  const suffix = !s.suffix ? ''
+    : word ? `<text x="26" y="21" font-size="10" fill="${numColour}">${s.suffix}</text>`
+    : `<text x="24.6" y="10" font-size="11" fill="${numColour}">${s.suffix}</text>`
+  const fill = colour.startsWith('g-') ? `url(#${colour})` : colour
+  return `<svg class="ps" viewBox="0 0 ${w} 24" aria-label="${s.label}" role="img" style="overflow:visible">${defs ? DEFS : ''}<path d="${LOGO}" fill="${fill}"/>${suffix}</svg>`
+}
+const sized = (s, px) => mark(s).replace('<svg ', `<svg height="${px}" `)
+
+// 1 · sizes
+const sizes = document.getElementById('sizes')
+const PX = [14, 18, 24, 48, 96]
+sizes.innerHTML = '<span></span>' + PX.map((p, i) => `<span class="hd${i > 2 ? ' xl' : ''}">${p}px</span>`).join('') +
+  SYSTEMS.map(s => `<span class="name">${s.label}</span>` + PX.map((p, i) => `<span class="cell${i > 2 ? ' xl' : ''}">${sized(s, p)}</span>`).join('')).join('')
+
+// 2 · chips, today (a controller) vs new
+const PAD = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/><path d="M17.3 5H6.7a4 4 0 0 0-3.98 3.59l-.6 6.07A2.6 2.6 0 0 0 4.7 17.6c.95 0 1.8-.5 2.27-1.33L8 14.5h8l1.03 1.77c.47.82 1.32 1.33 2.27 1.33a2.6 2.6 0 0 0 2.58-2.94l-.6-6.07A4 4 0 0 0 17.3 5z"/></svg>'
+const counts = { psx: 4, ps2: 6, ps3: 2, ps4: 1, psp: 3, psvita: 2 }
+const chip = (s, icon, on) => `<span class="fchip${on ? ' on' : ''}"><span class="ic">${icon}</span>${s.label} <b>${counts[s.id]}</b></span>`
+document.getElementById('today').innerHTML = '<span class="lbl">Console</span><span class="fchip">All</span>' +
+  SYSTEMS.map(s => chip(s, PAD, s.id === 'ps2')).join('')
+document.getElementById('new').innerHTML = '<span class="lbl">Console</span><span class="fchip">All</span>' +
+  SYSTEMS.map(s => chip(s, sized(s, 16), s.id === 'ps2')).join('')
+document.getElementById('rowEmu').innerHTML = PAD.replace('width="17" height="17"', 'width="14" height="14"') + ' PCSX2'
+document.getElementById('rowSys').innerHTML = sized(SYSTEMS[1], 13) + ' PS2'
+
+// 3 · tiles and the Games wall
+document.getElementById('tiles').innerHTML = SYSTEMS.map(s =>
+  `<figure class="tile" style="background:${s.bg}">${mark(s, { colour: s.logo, numColour: s.num, defs: true })}<figcaption>${s.label}</figcaption></figure>`).join('')
+const GAMES = [['Kingdom Hearts II', 1], ['Crash Bandicoot', 0], ['Demon’s Souls', 2], ['Bloodborne', 3], ['Patapon', 4], ['Persona 4 Golden', 5]]
+document.getElementById('wall').innerHTML = GAMES.map(([name, i]) => {
+  const s = SYSTEMS[i]
+  return `<div class="cover"><div class="art ph" style="background:${s.bg}">${mark(s, { colour: s.logo, numColour: s.num, defs: true })}</div>
+    <span class="badge">${sized(s, 13)}</span><span class="cap">${name}</span></div>`
+}).join('')
+
+// Light / dark
+document.getElementById('theme').addEventListener('click', () => {
+  const r = document.documentElement
+  const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
+  r.dataset.theme = dark ? 'light' : 'dark'
+})
+</script>
+</body>
+</html>
