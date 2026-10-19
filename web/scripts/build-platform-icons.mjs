@@ -6,6 +6,9 @@
 // Sources (settled with the maintainer, 2026-10-14; credits in NOTICE-icons.md beside the outputs):
 //   emulators  Arcticons line icons (CC BY-SA 4.0), github.com/Arcticons-Team/Arcticons icons/white/<name>.svg
 //   consoles   RetroArch's Monochrome theme glyphs (CC BY 4.0), github.com/libretro/retroarch-assets src/xmb/monochrome
+//   PlayStation  the PlayStation logo + each console's own number or wordmark, cut out of its Simple Icons wordmark (CC0),
+//              github.com/simple-icons/simple-icons icons/<name>.svg at a pinned release (maintainer, 2026-10-19)
+//   Xenia      its updated logo from Wikimedia Commons (CC BY-SA 4.0), traced once into scripts/icon-sources/xenia.svg
 // PCSX2 and shadPS4 take the PS2 and PS4 glyphs, Model 2 and Supermodel the MAME one (maintainer's calls). RPCS3, ScummVM
 // and Cemu have no icon of their own here: their project logos' terms were not checked, and Arcticons has no Cemu, so they
 // take their console's glyph (PS3, ScummVM's RetroArch glyph, Wii U) until one is.
@@ -14,6 +17,7 @@
 // Game Mode UI, the emulator icons' strokes as path strings (src/Agent.Linux/Ui/EmulatorIcons.g.cs) — SvgPath draws those.
 
 import { Resvg } from '@resvg/resvg-js'
+import svgpath from 'svgpath'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,6 +29,7 @@ const check = process.argv.includes('--check')
 
 const ARCTICONS = { repo: 'Arcticons-Team/Arcticons', branch: 'main', dir: 'icons/white' }
 const RETROARCH = { repo: 'libretro/retroarch-assets', branch: 'master', dir: 'src/xmb/monochrome' }
+const SIMPLE_ICONS = { repo: 'simple-icons/simple-icons', ref: '16.35.0', dir: 'icons' }
 
 // Emulator name (ScanCandidate.EmulatorName) → its icon. An Arcticons file name, or a console glyph's id.
 const EMULATORS = {
@@ -42,7 +47,7 @@ const EMULATORS = {
   Ryujinx: { arcticons: 'ryujinxandroid', id: 'emu-ryujinx' },
   melonDS: { arcticons: 'melonds' },
   Vita3K: { arcticons: 'vita3k' },
-  Xenia: { arcticons: 'xenia' },
+  Xenia: { local: 'xenia' },
   PCSX2: { system: 'ps2' },
   shadPS4: { system: 'ps4' },
   RPCS3: { system: 'ps3' },
@@ -75,6 +80,17 @@ const SYSTEM_ALIASES = {
   mame: 'arcade', fbneo: 'arcade', model2: 'arcade', model3: 'arcade',
 }
 
+// The PlayStation consoles: the PlayStation logo, then the glyphs of the console's own wordmark that start at or right of
+// `from` (its number, or the PSP / Vita lettering). A number stands top right, a wordmark on the logo's baseline.
+const PLAYSTATION = {
+  psx: null,
+  ps2: { wordmark: 'playstation2', from: 16, kind: 'number' },
+  ps3: { wordmark: 'playstation3', from: 16, kind: 'number' },
+  ps4: { wordmark: 'playstation4', from: 15, kind: 'number' },
+  psp: { wordmark: 'playstationportable', from: 0, kind: 'word' },
+  psvita: { wordmark: 'playstationvita', from: 9, kind: 'word' },
+}
+
 // A console game's release names its console (ConsoleTitles.ConsoleName, the Switch and Wii U readers) → its glyph.
 const CONSOLE_NAMES = {
   PlayStation: 'psx', 'PlayStation 2': 'ps2', 'PlayStation 3': 'ps3', 'PlayStation 4': 'ps4', 'PlayStation Portable': 'psp',
@@ -92,7 +108,7 @@ async function commitOf({ repo, branch }) {
 }
 
 async function download(src, sha, name) {
-  const url = `https://raw.githubusercontent.com/${src.repo}/${sha}/${src.dir}/${encodeURIComponent(name)}.svg`
+  const url = `https://raw.githubusercontent.com/${src.repo}/${sha ?? src.ref}/${src.dir}/${encodeURIComponent(name)}.svg`
   const r = await fetch(url)
   if (!r.ok) throw new Error(`${url}: ${r.status}`)
   return await r.text()
@@ -167,6 +183,41 @@ function fit([x, y, w, h]) {
   if (w / h > 1.6) return { viewBox: [x - pad, y - pad, w + 2 * pad, h + 2 * pad].map(round), wide: true }
   const side = Math.max(w, h) + 2 * pad
   return { viewBox: [x + w / 2 - side / 2, y + h / 2 - side / 2, side, side].map(round), wide: false }
+}
+
+// ---- the PlayStation marks ----
+
+const pathOf = svg => svg.match(/\sd="([^"]+)"/)[1]
+
+/** A path's drawn box [x0, y0, x1, y1], rendered. */
+function boundsOf(d) {
+  const b = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 200 200"><path d="${d}"/></svg>`).getBBox()
+  return [b.x, b.y, b.x + b.width, b.y + b.height]
+}
+
+/** The PlayStation logo with `suffix` beside it, both from Simple Icons' 24 x 24 grid: a number 8 units tall, its top on the
+ *  logo's top; a wordmark 6 units tall, on the logo's baseline. */
+function playstationMark(logo, suffix) {
+  const [, top, , bottom] = boundsOf(logo)
+  let body = `<path fill="currentColor" d="${logo}"/>`
+  if (suffix) {
+    const parts = svgpath(suffix.d).abs().toString().split(/(?=M)/)
+      .filter(part => boundsOf(part)[0] >= suffix.from)
+    if (parts.length === 0) throw new Error(`${suffix.wordmark}: nothing at x >= ${suffix.from}`)
+    const glyph = parts.join('')
+    const [x0, y0, , y1] = boundsOf(glyph)
+    const height = suffix.kind === 'number' ? 8 : 6
+    const k = height / (y1 - y0)
+    const placed = svgpath(glyph).translate(-x0, -y0).scale(k).translate(24 + 1.2, suffix.kind === 'number' ? top : bottom - height)
+    body += `<path fill="currentColor" fill-rule="evenodd" d="${placed.round(3).toString()}"/>`
+  }
+  return body
+}
+
+/** A PlayStation mark's viewBox: its drawn box, padded by the same 4 % as the other glyphs, as wide as it draws. */
+function fitMark([x, y, w, h]) {
+  const pad = h * 0.04
+  return [x - pad, y - pad, w + 2 * pad, h + 2 * pad].map(round)
 }
 
 // ---- the Deck: stroke paths of the line icons ----
@@ -252,7 +303,7 @@ function csString(s) { return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"'
 
 function writeOutputs(icons, emulators, systems, consoles, shas, strokesById) {
   const header = `// Generated by web/scripts/build-platform-icons.mjs — do not edit. Arcticons ${shas.arcticons.slice(0, 12)}, ` +
-    `retroarch-assets ${shas.retroarch.slice(0, 12)}. Credits: NOTICE-icons.md.\n`
+    `retroarch-assets ${shas.retroarch.slice(0, 12)}, simple-icons ${SIMPLE_ICONS.ref}. Credits: NOTICE-icons.md.\n`
   const ts = header +
     `export interface PlatformIconDef { viewBox: string; body: string; line: boolean; wide: boolean }\n\n` +
     `export const PLATFORM_ICONS: Record<string, PlatformIconDef> = ${JSON.stringify(icons, null, 2)}\n\n` +
@@ -266,7 +317,8 @@ function writeOutputs(icons, emulators, systems, consoles, shas, strokesById) {
     .map(([name, id]) => `        [${csString(name)}] = [${strokesById[id].map(csString).join(', ')}],`)
   writeFileSync(at(DECK_OUTPUT), header +
     `namespace SaveLocker.Agent.Linux.Ui;\n\n` +
-    `/// <summary>Each emulator's line icon (Arcticons, 48 x 48, CC BY-SA 4.0) as stroke paths for <see cref="SvgPath"/>.</summary>\n` +
+    `/// <summary>Each emulator's icon as stroke paths on a 48 x 48 grid for <see cref="SvgPath"/>: Arcticons' line icons as drawn,\n` +
+    `/// Xenia's filled glyph as its outline (both CC BY-SA 4.0).</summary>\n` +
     `static class EmulatorIcons\n{\n    public static readonly IReadOnlyDictionary<string, string[]> Paths = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)\n    {\n` +
     deck.join('\n') + `\n    };\n}\n`)
 }
@@ -278,7 +330,18 @@ async function build() {
   const systems = {}
   const strokesById = {}
 
+  const logo = pathOf(await download(SIMPLE_ICONS, null, 'playstation'))
+  for (const [system, mark] of Object.entries(PLAYSTATION)) {
+    const id = `sys-${system}`
+    const suffix = mark && { ...mark, d: pathOf(await download(SIMPLE_ICONS, null, mark.wordmark)) }
+    const body = playstationMark(logo, suffix)
+    const box = bbox(body, [-50, -50, 200, 200])
+    icons[id] = { viewBox: fitMark(box).join(' '), body, line: false, wide: false }
+    systems[system] = id
+  }
+
   for (const [system, file] of Object.entries(SYSTEMS)) {
+    if (PLAYSTATION[system] !== undefined) continue
     const id = `sys-${system}`
     const raw = await download(RETROARCH, shas.retroarch, file)
     const body = clean(raw, id, false)
@@ -292,6 +355,19 @@ async function build() {
 
   for (const [name, src] of Object.entries(EMULATORS)) {
     if (src.system) { emulators[name] = systems[src.system]; continue }
+    if (src.local) {
+      const id = `emu-${src.local}`
+      const raw = readFileSync(join(here, 'icon-sources', `${src.local}.svg`), 'utf8')
+      const d = pathOf(raw)
+      const body = `<path fill="currentColor" fill-rule="evenodd" d="${d}"/>`
+      const box = bbox(body, viewBoxOf(raw))
+      icons[id] = { viewBox: fit(box).viewBox.join(' '), body, line: false, wide: false }
+      // The Deck strokes, never fills: the glyph's outline, fitted to the 48 x 48 grid the line icons use.
+      const [x, y, w, h] = box, k = (48 * 0.92) / Math.max(w, h)
+      strokesById[id] = [svgpath(d).translate(-x - w / 2, -y - h / 2).scale(k).translate(24, 24).round(2).toString()]
+      emulators[name] = id
+      continue
+    }
     const id = src.id ?? `emu-${src.arcticons}`
     if (!icons[id]) {
       const raw = await download(ARCTICONS, shas.arcticons, src.arcticons)

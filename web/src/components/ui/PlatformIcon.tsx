@@ -23,6 +23,12 @@ interface Props {
   className?: string;
 }
 
+/** How much wider than tall a glyph draws: 1 for the square ones, more for a PlayStation mark with its number. */
+function aspect(viewBox: string): number {
+  const [, , w, h] = viewBox.split(' ').map(Number)
+  return Math.max(1, w / h)
+}
+
 /** An emulator's or a console's flat icon (tasks/emulator-saves Phase 21). Decoration: the text beside it names the same
  *  thing, so it is hidden from assistive technology. Line icons take the stroke width set here, which reads at 15–20 px. */
 export function PlatformIcon({ id, size = 1, className }: Props) {
@@ -34,7 +40,7 @@ export function PlatformIcon({ id, size = 1, className }: Props) {
       aria-hidden="true"
       focusable="false"
       className={className}
-      width={`${icon.wide ? size * 2.6 : size}em`}
+      width={`${icon.wide ? size * 2.6 : size * aspect(icon.viewBox)}em`}
       height={`${size}em`}
       style={{ flex: 'none', verticalAlign: '-0.15em' }}
       strokeWidth={icon.line ? 2.6 : undefined}
