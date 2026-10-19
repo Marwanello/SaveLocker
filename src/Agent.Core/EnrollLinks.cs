@@ -120,7 +120,7 @@ public static class EnrollLinks
     /// only (maintainer's call, 2026-10-18), the same region, and every file of the save's scope paired with the game's file
     /// of the same extension: <c>Chrono Trigger (USA) (Rev 1).srm</c> here is the server's <c>Chrono Trigger (USA).srm</c>.
     /// States are not listed: they take the swap of the save's name (<see cref="FileNames"/>). A file of the server's name
-    /// already here is refused — a second dump's save under that name; both would land on one file.
+    /// already here, save or state, is refused — a second dump's save under that name; both would land on one file.
     /// </summary>
     public static IReadOnlyList<FileNameDto>? RenamePairs(GameDto g, ScanCandidate c, out string? why)
     {
@@ -149,12 +149,29 @@ public static class EnrollLinks
             why = $"Keeps {Files(g)}: no file of it matches {local[0]}.";
             return null;
         }
-        if (c.SuggestedSaveDir is { } dir && pairs.FirstOrDefault(p => File.Exists(Path.Combine(dir, p.Server))) is { } clash)
+        if (ServerNamedFile(c, pairs) is { } clash)
         {
-            why = $"This device also has {clash.Server}, another save under the server's name: linking would put two saves on one file.";
+            why = $"This device also has {clash}, another save under the server's name: linking would put two saves on one file.";
             return null;
         }
         return FileNames.Validate(pairs) is null ? pairs : null;
+    }
+
+    /// <summary>A file in the save's folders that another dump keeps under the server's names — a listed name, or a state
+    /// named after its stem (<c>Chrono Trigger (USA).state1</c>, which the swap would give this save's own state) — or null.</summary>
+    private static string? ServerNamedFile(ScanCandidate c, IReadOnlyList<FileNameDto> pairs)
+    {
+        var cmp = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var stems = pairs.Select(p => Path.GetFileNameWithoutExtension(p.Server) + ".").ToList();
+        foreach (var dir in new[] { c.SuggestedSaveDir }.Concat((c.ExtraSaveDirs ?? []).Select(e => e.Dir)).OfType<string>())
+        {
+            string[] files;
+            try { files = Directory.Exists(dir) ? Directory.GetFiles(dir) : []; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+            if (files.Select(Path.GetFileName).OfType<string>().FirstOrDefault(f => stems.Any(s => f.StartsWith(s, cmp))) is { } clash)
+                return clash;
+        }
+        return null;
     }
 
     private static bool SameKey(GameDto g, ScanCandidate c) =>

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using SaveLocker.Shared;
@@ -91,8 +92,11 @@ public static class SrmShortcuts
     public static EmulatorShortcut? Recognize(SteamShortcut shortcut, IReadOnlySet<string>? srmAppIds = null)
     {
         var tokens = Tokens(shortcut.RawExe).Concat(Tokens(shortcut.LaunchOptions)).ToList();
-        // A ROM's own file name never says which emulator runs it ("Dolphin Adventure.iso").
-        var emulator = tokens.Where(t => RomPath(t) is null).Select(EmulatorOf).FirstOrDefault(e => e is not null);
+        // Only a word that is the program says which emulator runs: the executable, or what a `run` starts (Flatpak's
+        // `flatpak run org.libretro.RetroArch`). A ROM's own file name ("Dolphin Adventure.iso") or any other argument
+        // never does — a misread one would hide a PC game's shortcut from Add games.
+        var programs = tokens.Take(1).Concat(tokens.Skip(1).Where((_, i) => tokens[i].Equals("run", StringComparison.OrdinalIgnoreCase)));
+        var emulator = programs.Where(t => RomPath(t) is null).Select(EmulatorOf).FirstOrDefault(e => e is not null);
         if (emulator is null)
         {
             // An SRM shortcut whose launcher is not one of ours (a custom script): the ROM still names the game, but only a
@@ -253,6 +257,16 @@ public static class SrmShortcuts
         };
     }
 
+    /// <summary>What a shortcut's ROM file says of itself, read at most once per shortcut: <see cref="Match"/> runs for every
+    /// candidate, and the ROM is often on an SD card.</summary>
+    private sealed class RomIds(string rom)
+    {
+        public readonly Lazy<Ncch.Header?> Ncch = new(() => global::SaveLocker.Agent.Ncch.Read(rom));
+        public readonly Lazy<string?> DiscGameId = new(() => DolphinSaves.DiscGameId(rom));
+    }
+
+    private static readonly ConditionalWeakTable<EmulatorShortcut, RomIds> RomIdsOf = new();
+
     /// <summary>
     /// Is <paramref name="c"/> the emulator row for this shortcut's ROM? Only an emulator row of the same emulator (any Switch
     /// emulator for a Switch ROM: one game per title, Group F), and only by what names the ROM's save on every machine: a Switch
@@ -269,9 +283,10 @@ public static class SrmShortcuts
                    SwitchEmulators.TitleIdOfRom(s.Rom) is { } tid && c.EmulatorKey == EmulatorKeys.Switch(tid);
         if (!string.Equals(c.EmulatorName, s.Emulator, StringComparison.OrdinalIgnoreCase)) return false;
         if (string.Equals(c.EmulatorRom, romName, StringComparison.OrdinalIgnoreCase)) return true;
+        var ids = RomIdsOf.GetValue(s, x => new RomIds(x.Rom));
         if (s.Emulator == AzaharSaves.EmulatorName)
-            return Ncch.Read(s.Rom) is { } h && string.Equals(c.EmulatorRom, h.ProgramId, StringComparison.OrdinalIgnoreCase);
-        if (s.Emulator is DolphinSaves.EmulatorName or DolphinSaves.PrimeHackName && DolphinSaves.DiscGameId(s.Rom) is { } id &&
+            return ids.Ncch.Value is { } h && string.Equals(c.EmulatorRom, h.ProgramId, StringComparison.OrdinalIgnoreCase);
+        if (s.Emulator is DolphinSaves.EmulatorName or DolphinSaves.PrimeHackName && ids.DiscGameId.Value is { } id &&
             (string.Equals(c.EmulatorRom, id, StringComparison.OrdinalIgnoreCase) || string.Equals(c.EmulatorRom, id[..4], StringComparison.OrdinalIgnoreCase)))
             return true;
         var name = ManifestLoader.NormalizeName(c.Name);
@@ -373,7 +388,8 @@ public static class SrmShortcuts
 
     /// <summary>
     /// Record on each emulator game tracked here the shortcuts a scan found for it — a game added before shortcuts were read, or
-    /// a ROM SRM added since — so the launch wrapper finds it by any of them. The games changed.
+    /// a ROM SRM added since — so the launch wrapper finds it by any of them, and one removed since is dropped. A game the scan
+    /// found no shortcut for keeps the ones it had: an unreadable Steam folder says nothing about them. The games changed.
     /// </summary>
     public static IReadOnlyList<TrackedGame> Backfill(AgentConfig config, IEnumerable<ScanCandidate> candidates)
     {
@@ -382,7 +398,7 @@ public static class SrmShortcuts
         {
             if (c.ShortcutAppIds is not { Count: > 0 } ids) continue;
             if (Enroller.TrackedFor(config, c) is not { IsEnrolledHere: true } game) continue;
-            if (ids.All(id => game.ShortcutAppIds.Contains(id, StringComparer.Ordinal)) && !string.IsNullOrWhiteSpace(game.SteamAppId)) continue;
+            if (ids.ToHashSet(StringComparer.Ordinal).SetEquals(game.ShortcutAppIds) && !string.IsNullOrWhiteSpace(game.SteamAppId)) continue;
             config.SaveGameShortcuts(game.GameId, ids);
             changed.Add(game);
         }

@@ -92,6 +92,56 @@ public sealed class SrmShortcutTests : IDisposable
     }
 
     [Fact]
+    public void Only_the_program_says_which_emulator_runs()
+    {
+        // A PC game whose argument is a script named like an emulator, beside a data file with a ROM's extension.
+        var pc = Shortcut("Eden Eternal", "7", "\"/home/deck/Games/Eden Eternal/run.sh\"",
+            "\"/home/deck/Games/Eden Eternal/edenpatch.sh\" \"/home/deck/Games/Eden Eternal/data.bin\"");
+        Assert.Null(SrmShortcuts.Recognize(pc));
+        // Flatpak's emulator is what `run` starts.
+        Assert.Equal("RetroArch", SrmShortcuts.Recognize(MetalGearFlatpak)!.Emulator);
+    }
+
+    [Fact]
+    public void A_game_launches_under_its_app_id_in_either_form_and_each_shortcut_keeps_its_own_launch_options()
+    {
+        var game = new TrackedGame { SteamAppId = "-12345", ShortcutAppIds = ["2342167992"] };
+        Assert.True(game.LaunchesUnder(unchecked((uint)-12345).ToString()));
+        Assert.True(game.LaunchesUnder("-12345"));
+        Assert.True(game.LaunchesUnder("2342167992"));
+        Assert.False(game.LaunchesUnder("1"));
+
+        var at = new DateTime(2026, 10, 19, 0, 0, 0, DateTimeKind.Utc);
+        game.SetLaunchOptions(2342167992u, at, null);
+        Assert.Equal((at, (string?)null), game.LaunchOptionsFor(2342167992u));
+        Assert.Equal(((DateTime?)null, (string?)null), game.LaunchOptionsFor(unchecked((uint)-12345)));
+        game.SetLaunchOptions(unchecked((uint)-12345), null, "no permission");
+        Assert.Equal("no permission", game.LaunchOptionsError);
+        Assert.Equal(at, game.LaunchOptionsFor(2342167992u).AppliedAt);
+    }
+
+    [Fact]
+    public void A_shortcut_removed_in_steam_leaves_the_game()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sl-srm-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var config = AgentConfig.Load(Path.Combine(dir, "config.json"));
+            var id = Guid.NewGuid();
+            config.MutateGames(l => l.Add(new TrackedGame { GameId = id, Name = "Hunters", SaveDirectory = dir, SteamAppId = "3422230082",
+                ShortcutAppIds = ["3422230082", "3486406069"] }));
+            config.Games[0].SetLaunchOptions(3486406069u, DateTime.UtcNow, null);
+            config.Save();
+
+            config.SaveGameShortcuts(id, ["3486406069"]);
+            var game = AgentConfig.Load(config.ConfigPath).Games.Single();
+            Assert.Equal(["3486406069"], game.ShortcutAppIds);
+            Assert.Equal("3486406069", game.SteamAppId);
+        }
+        finally { try { Directory.Delete(dir, recursive: true); } catch (IOException) { } }
+    }
+
+    [Fact]
     public void Srms_record_stands_in_for_a_launcher_it_does_not_know()
     {
         var custom = Shortcut("Chrono Trigger", "123", "\"/home/deck/my-launcher.sh\"", $"\"{Roms}/snes/Chrono Trigger (USA).sfc\"");

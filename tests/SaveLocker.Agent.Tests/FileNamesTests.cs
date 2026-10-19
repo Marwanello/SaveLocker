@@ -58,6 +58,42 @@ public sealed class FileNamesTests : IDisposable
     }
 
     [Fact]
+    public void Another_dumps_state_under_the_swaps_server_name_is_not_this_games()
+    {
+        // The USA dump's state beside the Rev 1 dump's: both would be "… (USA).state1" on the server.
+        var states = FileNames.For(Pairs, RomSaves.StatesKey)!;
+        Assert.Equal(Server + ".state1", states.ToServer(Local + ".state1"));
+        Assert.Null(states.ToServer(Server + ".state1"));
+        Assert.Empty(FileNames.Derive(Pairs, RomSaves.StatesKey, [Server + ".state1"]));
+
+        var dir = Path.Combine(_root, "states");
+        Write($"states/{Local}.state1", "rev1-slot");
+        Write($"states/{Server}.state1", "usa-slot");
+        Write($"states/{Server}.state2", "usa-slot2");
+        Write($"saves/{Local}.srm", "rev1-save");
+        var roots = new[]
+        {
+            new SaveRoot(SaveRoot.PrimaryKey, Path.Combine(_root, "saves"), [Server + ".srm"], FileNames.For(Pairs, SaveRoot.PrimaryKey)),
+            new SaveRoot(RomSaves.StatesKey, dir, [Server + ".state*"], states),
+        };
+        var zip = Path.Combine(_root, "states.zip");
+        SaveArchive.CreateArchive(roots, zip);
+        using (var archive = ZipFile.OpenRead(zip))
+        {
+            var entry = Assert.Single(archive.Entries, e => e.Name == Server + ".state1");
+            using var reader = new StreamReader(entry.Open());
+            Assert.Equal("rev1-slot", reader.ReadToEnd());
+            Assert.DoesNotContain(archive.Entries, e => e.Name == Server + ".state2");
+        }
+
+        // A restore of that archive leaves the other dump's states alone, the slot the server lacks too.
+        SaveArchive.RestoreArchive(zip, roots, Path.Combine(_root, "staging"));
+        Assert.Equal("usa-slot", File.ReadAllText(Path.Combine(dir, Server + ".state1")));
+        Assert.Equal("usa-slot2", File.ReadAllText(Path.Combine(dir, Server + ".state2")));
+        Assert.Equal("rev1-slot", File.ReadAllText(Path.Combine(dir, Local + ".state1")));
+    }
+
+    [Fact]
     public void Derive_lists_the_files_the_swap_reaches_once()
     {
         var added = FileNames.Derive(Pairs, RomSaves.StatesKey, [Local + ".state3", Local + ".state3.png", "Zelda.state"]);

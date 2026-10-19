@@ -182,6 +182,13 @@ public sealed class GroupGSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Contains("also has", why);
         File.Delete(P("deck", $"{Saves}/{Usa}.srm"));
 
+        // So does a state of the USA dump played from states alone: the swap would give the Deck's own state its name.
+        Write("deck", $"{States}/{Usa}.state1", "deck-usa-slot");
+        found = Scan("deck").Single(c => c.EmulatorRom == Rev1);
+        Assert.Null(EnrollLinks.RenamePairs(server, found, out why));
+        Assert.Contains($"{Usa}.state1", why);
+        File.Delete(P("deck", $"{States}/{Usa}.state1"));
+
         // Linked once; a second dump here cannot link to the same game.
         found = Scan("deck").Single(c => c.EmulatorRom == Rev1);
         Assert.Equal((1, 0), await Enroller.EnrollAsync(deck, [found], [0],
@@ -231,6 +238,40 @@ public sealed class GroupGSyncTests : IClassFixture<ServerProcess>, IDisposable
         var moved = Assert.Single(AgentConfig.Load(deck.ConfigPath).Games, g => g.IsEnrolledHere);
         Assert.Equal(pcGame.GameId, moved.GameId);
         Assert.Equal(copy.SaveDirectory, moved.SaveDirectory);
+
+        // Its save differs from the kept game's Latest: the next pull refuses rather than taking the PC's save over it, and
+        // its push is a conflict that asks which to keep.
+        deck = AgentConfig.Load(deck.ConfigPath);
+        moved = deck.Games.Single(g => g.IsEnrolledHere);
+        await using (var e = new SyncEngine(deck, ApiClient.For(deck)))
+        {
+            Assert.Equal(PullOutcome.Refused, await e.PullAsync(moved));
+            Assert.Equal("deck-save", Read("deck", $"{Saves}/{Usa}.srm"));
+            Assert.Equal(UploadStatus.Conflict, (await e.PushAsync(moved))?.Status);
+        }
+        Assert.Contains(await admin.GetFromJsonAsync<ConflictDto[]>("/api/conflicts") ?? [], c => c.GameId == pcGame.GameId);
+    }
+
+    [Fact]
+    public async Task A_merge_is_refused_while_the_kept_game_has_an_open_conflict()
+    {
+        var (pc, deck, pcGame, server) = await TwoDumps();
+        // A second PC game of other files, and a conflict on the first one.
+        Write("pc", $"{Saves}/Other {_game}.srm", "other");
+        var other = Scan("pc").Single(c => c.EmulatorRom == $"Other {_game}");
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(AgentConfig.Load(pc.ConfigPath), [other], [0]));
+        var otherGame = Enroller.TrackedFor(AgentConfig.Load(pc.ConfigPath), other)!;
+
+        var found = Scan("deck").Single(c => c.EmulatorRom == Rev1);
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(deck, [found], [0],
+            links: new Dictionary<int, LinkChoice> { [0] = new(EnrollLinks.Rename, server.Id) }));
+        deck = AgentConfig.Load(deck.ConfigPath);
+        await using (var e = new SyncEngine(deck, ApiClient.For(deck)))
+            Assert.Equal(UploadStatus.Conflict, (await e.PushAsync(deck.Games.Single(g => g.GameId == server.Id)))?.Status);
+
+        using var admin = Admin();
+        var preview = await admin.GetFromJsonAsync<MergePreviewDto>($"/api/games/{otherGame.GameId}/merge-preview?into={pcGame.GameId}");
+        Assert.Contains("open conflict", preview!.Refusal);
     }
 
     /// <summary>One reconcile of <paramref name="config"/>'s game list against the server, as the poller's tick does.</summary>

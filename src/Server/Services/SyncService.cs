@@ -393,7 +393,7 @@ public sealed class SyncService
 
     /// <summary>
     /// What merging <paramref name="fromId"/> into <paramref name="intoId"/> would do; null when either game does not exist.
-    /// Refused while a machine holds the merged game's lease (it is being played) or it has an open conflict, and for a game
+    /// Refused while a machine holds either game's lease (it is being played) or either has an open conflict, and for a game
     /// merged into itself.
     /// </summary>
     public async Task<MergePreviewDto?> MergePreviewAsync(Guid fromId, Guid intoId)
@@ -404,10 +404,12 @@ public sealed class SyncService
 
         string? refusal = null;
         if (fromId == intoId) refusal = "A game cannot be merged into itself.";
-        else if (await _db.Leases.AnyAsync(l => l.GameId == fromId && l.ExpiresAt > DateTime.UtcNow))
-            refusal = $"A machine is playing {from.Name} (it holds the lease). Merge it once that session ends.";
-        else if (await _db.Conflicts.AnyAsync(c => c.GameId == fromId && c.Status == ConflictStatus.Open))
-            refusal = $"{from.Name} has an open conflict. Resolve it first, so the version that wins is the one kept.";
+        else if (await _db.Leases.Where(l => (l.GameId == fromId || l.GameId == intoId) && l.ExpiresAt > DateTime.UtcNow)
+                     .Select(l => l.GameId).FirstOrDefaultAsync() is var leased && leased != Guid.Empty)
+            refusal = $"A machine is playing {(leased == fromId ? from.Name : into.Name)} (it holds the lease). Merge them once that session ends.";
+        else if (await _db.Conflicts.Where(c => (c.GameId == fromId || c.GameId == intoId) && c.Status == ConflictStatus.Open)
+                     .Select(c => c.GameId).FirstOrDefaultAsync() is var conflicted && conflicted != Guid.Empty)
+            refusal = $"{(conflicted == fromId ? from.Name : into.Name)} has an open conflict. Resolve it first, so the version that wins is the one kept.";
 
         var sameFolders = await SameFoldersAsync(from, into);
         var machines = await MergeMachinesAsync(fromId, intoId, sameFolders);
@@ -477,8 +479,9 @@ public sealed class SyncService
             string.Join(", ", preview.Machines.Select(m => $"{m.MachineName} {m.Outcome}")));
         await _db.SaveChangesAsync();
 
-        // Every other row of the merged game (its leases, conflicts, folders, sources, commands) goes with it. Its versions
-        // are the other game's now, so none of their archives is touched.
+        // Every other row of the merged game goes with it: leases, conflicts, folders and scan candidates deleted there, its
+        // MachineGameSources by their cascading key (AppDbContext). Its versions are the other game's now, so none of their
+        // archives is touched.
         if (!await DeleteGameAsync(fromId)) { await tx.RollbackAsync(); return "not_found"; }
         await tx.CommitAsync();
         return null;

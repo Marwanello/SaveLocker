@@ -15,8 +15,9 @@ public sealed record FileNameDto(string Key, string Server, string Local);
 /// without its extension, followed by a dot, takes the same swap (<c>… (Rev 1).state3</c> → <c>… (USA).state3</c>), and
 /// <see cref="Derive"/> says which pairs to add to the list.
 /// <para>
-/// A file here that already has a server name of the list, without being listed itself, is not this game's: it is another
-/// dump's save under the name the server uses, and taking it too would put two files at one name.
+/// A file here that already has a server name of the list, or the name a listed stem's swap gives, without being listed
+/// itself, is not this game's: it is another dump's save under the name the server uses, and taking it too would put two
+/// files at one name.
 /// </para>
 /// </summary>
 public sealed class FileNames
@@ -41,13 +42,17 @@ public sealed class FileNames
         ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     /// <summary>The server's name for this machine's <paramref name="localRel"/> in this folder — itself when nothing swaps
-    /// it — or null when the file is not this game's (it has a server name of the list without being listed).</summary>
+    /// it — or null when the file is not this game's (it has a server name of the list, listed or derived, without being
+    /// listed itself).</summary>
     public string? ToServer(string localRel)
     {
         foreach (var p in _pairs)
             if (p.Key == _key && string.Equals(p.Local, localRel, Cmp)) return p.Server;
         if (_pairs.Any(p => p.Key == _key && string.Equals(p.Server, localRel, Cmp))) return null;
-        return Swap(localRel, local: true) ?? localRel;
+        if (Swap(localRel, local: true) is { } swapped) return swapped;
+        // A name this machine would give the server's file another name for (another dump's state, X (USA).state1 beside
+        // X (USA) (Rev 1).state1) is that other dump's file: taking it too would put two files at one server name.
+        return string.Equals(ToLocal(localRel), localRel, Cmp) ? localRel : null;
     }
 
     /// <summary>This machine's name for the server's <paramref name="serverRel"/> in this folder: the listed one, else the
