@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Versions Panel Fill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Three ways to stop the game page's Versions card leaving a tall empty well beside the right-hand column when a
+   game has one or two versions. Each idea is drawn twice — a 1-version game and a 14-version game — at the console's
+   real width split (minmax(0,1.45fr) / minmax(0,1fr)), with the console's own Checkpoint tokens (web/src/index.css),
+   dark first, light when the OS or the toggle asks. Every layout below is live CSS + a few lines of JS, not a picture:
+   resize the window and it reflows. */
+:root {
+  color-scheme: dark;
+  --ink: #0f0f10; --panel: #141416; --raise: #191a1c; --tile: #1b1c1f; --hover: #202124;
+  --fg: #f0eee9; --dim: #a09d97; --faint: #817e78; --line: #242427; --row: #1d1d20;
+  --safe: #7fa96a; --watch: #d9a63f; --info: #7b9fd0; --accent: #e0533c; --on-accent: #160f0e;
+  --frame: #08080a;
+  --sans: 'Archivo', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --ease: cubic-bezier(.2, .8, .25, 1);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --ink: #f5f3ef; --panel: #fffefc; --raise: #f0ede8; --tile: #ebe7e0; --hover: #e8e3dc;
+    --fg: #191719; --dim: #57534d; --faint: #79756f; --line: #e2ddd5; --row: #eeeae3;
+    --safe: #4c7b3e; --watch: #8a6212; --info: #3d6aa8; --accent: #c0432c; --on-accent: #fff8f6; --frame: #dcd7cf;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ink: #f5f3ef; --panel: #fffefc; --raise: #f0ede8; --tile: #ebe7e0; --hover: #e8e3dc;
+  --fg: #191719; --dim: #57534d; --faint: #79756f; --line: #e2ddd5; --row: #eeeae3;
+  --safe: #4c7b3e; --watch: #8a6212; --info: #3d6aa8; --accent: #c0432c; --on-accent: #fff8f6; --frame: #dcd7cf;
+}
+:root {
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, var(--panel)); --accent-line: color-mix(in oklab, var(--accent) 42%, var(--panel));
+  --accent-ink: color-mix(in oklab, var(--accent) 80%, var(--fg));
+  --safe-soft: color-mix(in oklab, var(--safe) 14%, var(--panel)); --safe-line: color-mix(in oklab, var(--safe) 40%, var(--panel));
+  --safe-ink: color-mix(in oklab, var(--safe) 82%, var(--fg));
+  --watch-soft: color-mix(in oklab, var(--watch) 14%, var(--panel)); --watch-line: color-mix(in oklab, var(--watch) 40%, var(--panel));
+  --watch-ink: color-mix(in oklab, var(--watch) 82%, var(--fg));
+  --info-soft: color-mix(in oklab, var(--info) 16%, var(--panel)); --info-line: color-mix(in oklab, var(--info) 40%, var(--panel));
+  --info-ink: color-mix(in oklab, var(--info) 82%, var(--fg));
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--ink); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 32px 16px 80px; display: flex; flex-direction: column; gap: 52px; }
+h1 { font-size: 28px; letter-spacing: -.03em; text-wrap: balance; }
+h2 { font-size: 20px; letter-spacing: -.02em; text-wrap: balance; }
+.lede { max-width: 78ch; color: var(--dim); }
+.lede b, .notes b { color: var(--fg); }
+.eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-ink); }
+.intro, .idea { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--raise); }
+.seg button { background: transparent; color: var(--dim); border: 0; font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 999px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--panel); color: var(--fg); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px 24px; list-style: none; }
+.notes li { font-size: 12.5px; color: var(--dim); padding-left: 14px; position: relative; }
+.notes li::before { content: ''; position: absolute; left: 0; top: .62em; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.pair { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.label { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .04em; margin-bottom: 6px; }
+
+/* the app frame: a slice of the console's game page */
+.frame { background: var(--frame); border-radius: 16px; padding: 10px; overflow-x: auto; }
+.win { background: var(--ink); border: 1px solid var(--line); border-radius: 11px; min-width: 1040px; overflow: hidden; }
+.bar { display: flex; align-items: center; gap: 7px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel);
+  font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--hover); display: inline-block; }
+.bar span { margin-left: 8px; }
+.page { padding: 22px 26px 26px; display: flex; flex-direction: column; gap: 12px; }
+.head { display: flex; align-items: center; gap: 14px; }
+.cover { width: 46px; height: 46px; border-radius: 10px; background: linear-gradient(135deg, var(--accent-line), var(--tile)); border: 1px solid var(--line); }
+.head h3 { font-size: 22px; letter-spacing: -.03em; }
+.head .sub { font-size: 12px; color: var(--dim); }
+.head .acts { margin-left: auto; display: flex; gap: 6px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; }
+.stat small { display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.stat b { font-size: 18px; letter-spacing: -.02em; }
+
+/* console primitives */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; min-width: 0; display: flex; flex-direction: column; }
+.card > header { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.card > header h4 { font-size: 14px; font-weight: 600; letter-spacing: -.02em; }
+.card .hr { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card .body { padding: 15px 16px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--raise); color: var(--dim); white-space: nowrap; }
+.chip.ok { background: var(--safe-soft); border-color: var(--safe-line); color: var(--safe-ink); }
+.chip.warn { background: var(--watch-soft); border-color: var(--watch-line); color: var(--watch-ink); }
+.chip.info { background: var(--info-soft); border-color: var(--info-line); color: var(--info-ink); }
+.btn { font: inherit; font-size: 12px; font-weight: 600; color: var(--fg); background: var(--raise); border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px 12px; cursor: pointer; white-space: nowrap; }
+.btn.quiet { background: transparent; border-color: transparent; color: var(--dim); font-weight: 500; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.segm { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--raise); }
+.segm span { font-size: 11.5px; padding: 3px 10px; border-radius: 999px; color: var(--dim); }
+.segm span.on { background: var(--panel); color: var(--fg); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+table { width: 100%; border-collapse: collapse; }
+th { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); font-weight: 400; text-align: left;
+  padding: 9px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 1; }
+td { font-size: 12.5px; padding: 10px 16px; border-bottom: 1px solid var(--row); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.k { font-family: var(--mono); font-weight: 500; }
+td.k::before { content: '›'; color: var(--faint); margin-right: 8px; }
+td.end { text-align: right; }
+td .chips { display: inline-flex; gap: 4px; }
+.kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px 12px; font-size: 12.5px; }
+.kv dt { color: var(--faint); font-size: 11.5px; }
+.path { font-family: var(--mono); font-size: 11.5px; background: var(--tile); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.path.safe { border-color: var(--safe-line); color: var(--safe-ink); }
+.mrow { padding: 12px 16px; border-bottom: 1px solid var(--row); display: flex; flex-direction: column; gap: 7px; }
+.mrow:last-child { border-bottom: 0; }
+.mrow .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.mrow b { font-size: 13px; }
+.mrow small { font-size: 11px; color: var(--dim); }
+.mrow .acts { display: flex; gap: 6px; }
+.eyes { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.cmd { display: flex; justify-content: space-between; font-size: 12.5px; padding: 9px 16px; border-bottom: 1px solid var(--row); }
+.cmd:last-child { border-bottom: 0; }
+.cmd span:last-child { color: var(--dim); }
+
+/* Idea A — balanced columns: every card after Versions goes to whichever column is shorter, so with one version
+   Rules and Exclude patterns drop in under it; with many they stay on the right. */
+.colsA { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.colsA > div { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.colsA .card { animation: settle .35s var(--ease); }
+@keyframes settle { from { opacity: .4; transform: translateY(6px); } }
+
+/* Idea B — Versions stretches to the right column's height. Short list: the spare height becomes a save-activity panel
+   (a per-machine timeline + retention meter) that grows to fill it. Long list: the table scrolls inside the card and
+   the activity shrinks to a one-line strip under the header. */
+.colsB { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 12px; align-items: stretch; }
+.colsB > .right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.colsB .vcard { min-height: 0; }
+.colsB .vcard .scroll { overflow-y: auto; overflow-x: hidden; min-height: 0; flex: 0 1 auto; }
+.colsB .vcard.long .scroll { flex: 1 1 0; }
+.activity { flex: 1 1 auto; display: flex; flex-direction: column; gap: 14px; padding: 16px; border-top: 1px solid var(--line);
+  background: linear-gradient(var(--panel), color-mix(in oklab, var(--raise) 60%, var(--panel))); min-height: 0; }
+.activity h5 { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); font-weight: 400; }
+.lanes { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px 12px; align-items: center; font-size: 12px; }
+.lane { position: relative; height: 22px; border-radius: 999px; background: var(--tile); border: 1px solid var(--line); }
+.lane .dot { position: absolute; top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%; background: var(--dim); box-shadow: 0 0 0 3px var(--tile); }
+.lane .dot.latest { background: var(--safe); }
+.axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--faint); grid-column: 2; }
+.meter { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--dim); }
+.meter .track { height: 6px; border-radius: 999px; background: var(--tile); border: 1px solid var(--line); overflow: hidden; }
+.meter .fill { height: 100%; background: var(--safe); border-radius: 999px; }
+.hint { font-size: 12px; color: var(--dim); display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }
+.hint b { color: var(--fg); }
+.strip { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 11.5px; color: var(--dim); }
+.strip .spark { flex: 1; height: 18px; display: flex; align-items: flex-end; gap: 2px; }
+.strip .spark i { flex: 1; background: var(--line); border-radius: 2px 2px 0 0; min-height: 2px; }
+.strip .spark i.on { background: var(--safe-line); }
+
+/* Idea C — size by content: few versions become a row of version tiles across the page, and the cards that sat in the
+   right column reflow into an auto-fit grid under them (as many columns as fit, each at least 300 px). Many versions:
+   the familiar table, capped at eight rows with a "Show all", and the same reflowing grid of cards below. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; padding: 14px 16px 16px; }
+.vtile { border: 1px solid var(--line); border-radius: 12px; background: var(--raise); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.vtile.latest { border-color: var(--safe-line); background: color-mix(in oklab, var(--safe) 6%, var(--raise)); }
+.vtile .t { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.vtile .id { font-family: var(--mono); font-weight: 500; font-size: 13px; }
+.vtile .meta { font-size: 12px; color: var(--dim); display: flex; gap: 6px; flex-wrap: wrap; }
+.vtile .meta span + span::before { content: '·'; margin-right: 6px; color: var(--faint); }
+.vtile .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 2px; }
+.vtile.ghost { border-style: dashed; background: transparent; color: var(--faint); font-size: 12px; justify-content: center; align-items: center; text-align: center; min-height: 104px; }
+.fitgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+.more { display: flex; justify-content: center; padding: 8px; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <section class="intro">
+    <span class="eyebrow">Console · game page · Versions</span>
+    <h1>Filling the space beside a short Versions list</h1>
+    <p class="lede">Today the Versions card sits alone in a <b>1.45 : 1</b> left column next to Save folders, Rules and Exclude patterns.
+      A game with one or two versions leaves a tall empty well under it. Three ways out — each drawn with a <b>1-version</b>
+      game and a <b>14-version</b> game. All three are live layouts: resize the window and they reflow.</p>
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="Theme">
+        <button type="button" data-theme-btn="" aria-pressed="true">System</button>
+        <button type="button" data-theme-btn="dark" aria-pressed="false">Dark</button>
+        <button type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="idea" id="a">
+    <span class="eyebrow">Idea A</span>
+    <h2>Balanced columns — cards flow to the shorter side</h2>
+    <ul class="notes">
+      <li><b>Versions stays first on the left</b>; every card after it is placed in whichever column is shorter at that moment.</li>
+      <li>With one version, <b>Rules and Exclude patterns slide in under Versions</b>; the right column keeps Save folders.</li>
+      <li>Re-balanced by a ResizeObserver whenever a card grows (a row expands, Save folders collapses, a version arrives).</li>
+      <li>Smallest change to the page: the same cards, the same order on narrow screens (one column).</li>
+    </ul>
+    <div class="pair">
+      <div><div class="label">1 version</div><div class="frame" data-idea="A" data-count="1"></div></div>
+      <div><div class="label">14 versions</div><div class="frame" data-idea="A" data-count="14"></div></div>
+    </div>
+  </section>
+
+  <section class="idea" id="b">
+    <span class="eyebrow">Idea B</span>
+    <h2>Versions stretches — spare height becomes save activity</h2>
+    <ul class="notes">
+      <li><b>Versions is as tall as the right column</b>, always; the two columns end on one line.</li>
+      <li>Short list: the leftover height turns into a <b>per-machine timeline</b> of saves and a <b>retention meter</b> (1 of 10 kept).</li>
+      <li>Long list: the table <b>scrolls inside the card</b> (sticky header), and the activity folds into a one-line strip.</li>
+      <li>Nothing moves between columns, so the page never jumps when a version arrives.</li>
+    </ul>
+    <div class="pair">
+      <div><div class="label">1 version</div><div class="frame" data-idea="B" data-count="1"></div></div>
+      <div><div class="label">14 versions</div><div class="frame" data-idea="B" data-count="14"></div></div>
+    </div>
+  </section>
+
+  <section class="idea" id="c">
+    <span class="eyebrow">Idea C</span>
+    <h2>Size by content — tiles when few, table when many</h2>
+    <ul class="notes">
+      <li>Up to three versions: Versions spans the page as <b>version tiles</b>, one per save, with the spare tile slots shown empty.</li>
+      <li>The other cards reflow into an <b>auto-fit grid</b> underneath — as many columns as the width allows.</li>
+      <li>Four or more: the familiar table, <b>capped at eight rows</b> with “Show all 14”, the same reflowing grid below.</li>
+      <li>Biggest change, and the most even page at every count.</li>
+    </ul>
+    <div class="pair">
+      <div><div class="label">1 version</div><div class="frame" data-idea="C" data-count="1"></div></div>
+      <div><div class="label">14 versions</div><div class="frame" data-idea="C" data-count="14"></div></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const MACHINES = ['LinuxTest', 'WinTest', 'Steam Deck'];
+const ID = n => ['df2389a5','a71c04be','3e9f12d0','c48a7710','91b2ee3f','5d0c6a19','e2741b8c','08fa3d55','b6c9e021','7713ad4e','4fe08c92','ca1d5b67','2b8e94f1','6a03c7d8'][n];
+const AGO = ['6m ago','2h ago','yesterday','2 days ago','3 days ago','5 days ago','1 week ago','1 week ago','2 weeks ago','2 weeks ago','3 weeks ago','1 month ago','1 month ago','2 months ago'];
+const versions = count => Array.from({ length: count }, (_, i) => ({
+  id: ID(i), ago: AGO[i], machine: count === 1 ? 'LinuxTest' : MACHINES[i % 3], size: ['663 B','702 B','688 B','651 B'][i % 4],
+  state: i === 0 ? '<span class="chip ok">Latest</span>' : '<span class="chip">Kept</span>',
+  changes: i === 0 ? '<span class="chip ok">2 added</span>' : `<span class="chip info">${1 + (i % 3)} changed</span>`,
+}));
+
+const vHeader = count => `
+  <header><h4>Versions</h4><div class="hr">
+    <span class="segm"><span class="on">History ${count}</span><span>Backups ${count > 1 ? 1 : 0}</span></span>
+    <span class="chip">${count + (count > 1 ? 1 : 0)} kept</span><button class="btn quiet">Collapse all</button><button class="btn">Apply retention</button>
+  </div></header>`;
+const vTable = rows => `<table><thead><tr><th>Version</th><th>When</th><th>Machine</th><th>Size</th><th>State</th><th></th></tr></thead><tbody>${
+  rows.map(v => `<tr><td class="k">${v.id}</td><td>${v.ago}</td><td>${v.machine}</td><td>${v.size}</td>
+    <td><span class="chips">${v.state}${v.changes}</span></td><td class="end"><button class="btn quiet">Download</button></td></tr>`).join('')}</tbody></table>`;
+
+const saveFolders = `<section class="card" data-k="folders"><header><h4>Save folders</h4></header>
+  <div class="mrow"><div class="top"><span class="eyes">Template · every machine</span><button class="btn quiet">Edit</button></div>
+    <div class="path safe">&lt;xdgData&gt;/Celeste/Saves</div></div>
+  ${MACHINES.map((m, i) => `<div class="mrow"><div class="top"><b>${m}</b><small>${i === 0 ? '6m ago' : 'no upload yet'}</small></div>
+    <div class="path">${i === 1 ? 'C:\\Users\\Maro\\AppData\\Local\\Celeste\\Saves' : '/home/deck/.local/share/Celeste/Saves'}</div>
+    <div class="acts"><button class="btn">Push</button><button class="btn">Pull</button><button class="btn quiet">Force…</button></div></div>`).join('')}
+</section>`;
+const rules = `<section class="card" data-k="rules"><header><h4>Rules</h4></header><div class="body"><dl class="kv">
+  <dt>Conflicts</dt><dd><span class="chip">Ask me</span></dd><dt>Keep</dt><dd>10 versions</dd><dt>Sync</dt><dd>On, every machine</dd>
+  <dt>Delete</dt><dd><button class="btn quiet">Delete game…</button></dd></dl></div></section>`;
+const exclude = `<section class="card" data-k="exclude"><header><h4>Exclude patterns</h4><button class="btn quiet">Add</button></header>
+  <div class="body" style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip">*.log</span><span class="chip">cache/**</span><span class="chip">settings.ini</span></div></section>`;
+const commands = `<section class="card" data-k="commands"><header><h4>Remote commands</h4></header>
+  <div class="cmd"><span>Pull · WinTest</span><span>done 2h ago</span></div><div class="cmd"><span>Push · LinuxTest</span><span>done 6m ago</span></div></section>`;
+
+const chrome = inner => `<div class="win"><div class="bar"><i></i><i></i><i></i><span>savelocker.local / games / celeste</span></div>
+  <div class="page">
+    <div class="head"><div class="cover"></div><div><h3>Celeste</h3><div class="sub">Steam · synced on 3 machines</div></div>
+      <div class="acts"><button class="btn">Push</button><button class="btn">Pull</button></div></div>
+    <div class="stats"><div class="stat"><small>Latest</small><b>6m ago</b></div><div class="stat"><small>Stored</small><b>9.4 KB</b></div>
+      <div class="stat"><small>Machines</small><b>3</b></div><div class="stat"><small>Lease</small><b>free</b></div></div>
+    ${inner}
+  </div></div>`;
+
+function ideaA(count) {
+  const vs = versions(count);
+  return chrome(`<div class="colsA"><div data-col="0"><section class="card" data-k="versions">${vHeader(count)}${vTable(vs)}</section></div>
+    <div data-col="1"></div></div>${commands}`);
+}
+// Masonry by measurement: the live page would run this from a ResizeObserver on every card.
+function balanceA(frame) {
+  const cols = frame.querySelectorAll('.colsA > div');
+  const tmp = document.createElement('div');
+  tmp.innerHTML = saveFolders + rules + exclude;
+  for (const card of [...tmp.children]) {
+    const h = [...cols].map(c => c.getBoundingClientRect().height);
+    cols[h[0] <= h[1] ? 0 : 1].appendChild(card);
+  }
+}
+
+function ideaB(count) {
+  const vs = versions(count);
+  const long = count > 4;
+  const lanes = MACHINES.map((m, mi) => {
+    const dots = vs.map((v, i) => ({ v, i })).filter(x => x.v.machine === m)
+      .map(x => `<span class="dot${x.i === 0 ? ' latest' : ''}" style="left:${96 - (x.i / Math.max(1, 13)) * 90}%" title="${x.v.id}"></span>`).join('');
+    return `<span>${m}</span><span class="lane">${dots}</span>`;
+  }).join('');
+  const activity = long ? '' : `<div class="activity">
+      <h5>Save activity · last 2 months</h5>
+      <div class="lanes">${lanes}<span class="axis"><span>Aug 19</span><span>Sep 19</span><span>now</span></span></div>
+      <div class="meter"><span>Retention: <b style="color:var(--fg)">${count} of 10</b> kept slots used</span><div class="track"><div class="fill" style="width:${count * 10}%"></div></div></div>
+      <div class="hint"><span>↺</span><span><b>WinTest and Steam Deck have not uploaded yet.</b> Their first push lands here as a new row; Pull brings LinuxTest’s save to them now.</span></div>
+    </div>`;
+  const strip = long ? `<div class="strip"><span>14 saves · 3 machines</span><span class="spark">${
+      Array.from({ length: 30 }, (_, i) => `<i class="${i % 4 === 0 ? 'on' : ''}" style="height:${20 + ((i * 37) % 80)}%"></i>`).join('')}</span><span>14 of 20 kept</span></div>` : '';
+  return chrome(`<div class="colsB"><section class="card vcard${long ? ' long' : ''}">${vHeader(count)}${strip}<div class="scroll">${vTable(vs)}</div>${activity}</section>
+    <div class="right">${saveFolders}${rules}${exclude}</div></div>${commands}`);
+}
+// The card's height comes from the grid row (stretch); a long table needs a cap so the row follows the right column.
+function fitB(frame) {
+  const card = frame.querySelector('.vcard.long');
+  if (!card) return;
+  card.style.height = frame.querySelector('.colsB > .right').getBoundingClientRect().height + 'px';
+}
+
+function ideaC(count) {
+  const vs = versions(count);
+  const body = count <= 3
+    ? `<div class="tiles">${vs.map((v, i) => `<div class="vtile${i === 0 ? ' latest' : ''}">
+          <div class="t"><span class="id">${v.id}</span>${v.state}</div>
+          <div class="meta"><span>${v.ago}</span><span>${v.machine}</span><span>${v.size}</span></div>
+          <div class="foot"><span class="chips">${v.changes}</span><span><button class="btn quiet">Files</button><button class="btn quiet">Download</button></span></div>
+        </div>`).join('')}${Array.from({ length: Math.max(0, 3 - count) }, (_, i) =>
+          `<div class="vtile ghost">${i === 0 ? 'The next push from any machine<br>becomes a version here' : 'Kept up to 10 · older ones are pruned'}</div>`).join('')}</div>`
+    : `${vTable(vs.slice(0, 8))}<div class="more"><button class="btn quiet">Show all ${count}</button></div>`;
+  return chrome(`<section class="card">${vHeader(count)}${body}</section>
+    <div class="fitgrid">${saveFolders}${rules}${exclude}${commands}</div>`);
+}
+
+function render() {
+  for (const f of document.querySelectorAll('.frame')) {
+    const n = +f.dataset.count;
+    f.innerHTML = f.dataset.idea === 'A' ? ideaA(n) : f.dataset.idea === 'B' ? ideaB(n) : ideaC(n);
+    if (f.dataset.idea === 'A') balanceA(f);
+    if (f.dataset.idea === 'B') fitB(f);
+  }
+}
+render();
+document.fonts?.ready.then(render);
+let t; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(render, 120); });
+
+for (const b of document.querySelectorAll('[data-theme-btn]')) {
+  b.addEventListener('click', () => {
+    const v = b.dataset.themeBtn;
+    if (v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme;
+    for (const o of document.querySelectorAll('[data-theme-btn]')) o.setAttribute('aria-pressed', String(o === b));
+  });
+}
+</script>
+</body>
+</html>
