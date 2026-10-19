@@ -32,13 +32,15 @@ interface Props {
   commands: Command[];
   /** Games a machine has an open problem about — see gameState.problemGameIds. */
   problems: Set<string>;
+  /** Shown in place of the rows when the search matches nothing. */
+  empty?: ReactNode;
 }
 
 /** plan.md Phase 10.1 + the sorting/grouping mockup (Option A): the list is for working on one game —
  *  two-line rows, the current one in the soft accent, a state dot (or the live chip of a command queued
  *  for that game) at the end. With an arrangement on, sticky group headings (count + collapse) sit
  *  above the rows; the rows themselves are untouched. */
-export function GamesSidebar({ games, groups, grouped, collapsed, onToggleGroup, controls, selectedId, onSelect, onAddGame, layout, onLayoutChange, commands, problems }: Props) {
+export function GamesSidebar({ games, groups, grouped, collapsed, onToggleGroup, controls, selectedId, onSelect, onAddGame, layout, onLayoutChange, commands, problems, empty }: Props) {
   function row(s: GameSummary) {
     const { game, head, totalStorageBytes } = s;
     const current = game.id === selectedId;
@@ -85,6 +87,7 @@ export function GamesSidebar({ games, groups, grouped, collapsed, onToggleGroup,
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto p-1.5 pb-2 flex flex-col">
+        {empty}
         {groups.map(g => {
           const count = g.subGroups.reduce((n, sg) => n + sg.entries.length, 0);
           const isCollapsed = collapsed.has(g.id);

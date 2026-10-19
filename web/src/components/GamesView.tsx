@@ -16,6 +16,7 @@ import { EmptyState } from './ui/EmptyState';
 import { Button } from './ui/Button';
 import { Seg } from './ui/Seg';
 import { Icon } from './ui/Icon';
+import { SearchField } from './ui/SearchField';
 
 const LAYOUT_KEY = 'sl_games_layout';
 const ORGANIZE_KEY = 'sl_games_organize';
@@ -70,10 +71,17 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
   // Where on the game's page a deep link asked to land, with the request's sequence number so the
   // page acts on each request exactly once (and again if the same one is made twice).
   const [intent, setIntent] = useState<{ value: GameIntent; seq: number } | null>(null);
+  // Shared by both layouts, so switching between them keeps what was typed. Not persisted: a filter
+  // left over from yesterday would read as missing games.
+  const [query, setQuery] = useState('');
   const problems = useMemo(() => problemGameIds(health), [health]);
+  const matching = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? games.filter(s => s.game.name.toLowerCase().includes(q)) : games;
+  }, [games, query]);
   const groups = useMemo(
-    () => organize(games, organizeState, { machines, problems }),
-    [games, organizeState, machines, problems]);
+    () => organize(matching, organizeState, { machines, problems }),
+    [matching, organizeState, machines, problems]);
   const grouped = organizeState.groupBy !== 'none';
 
   function changeLayout(v: Layout) {
@@ -133,6 +141,14 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
     );
   }
 
+  const search = (fill: boolean) => (
+    <SearchField value={query} onChange={setQuery} placeholder="Search games" aria-label="Search games by name"
+      fill={fill} className={fill ? 'mt-[7px]' : ''} />
+  );
+  const noMatch = matching.length === 0 && (
+    <p className="px-2 py-3 text-[12.5px] text-dim">No game matches “{query.trim()}”.</p>
+  );
+
   const page = selected && (
     <GameDetail
       key={selected.game.id}
@@ -163,11 +179,13 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
               title="Games"
               sub={`${plural(games.length, 'game')} tracked${grouped ? ` · grouped by ${groupLabel(organizeState.groupBy).toLowerCase()}` : ''} · art from SteamGridDB`}
               actions={<>
+                {search(false)}
                 <Seg size="sm" value={layout} onChange={changeLayout} aria-label="Games layout" options={LAYOUT_OPTIONS} />
                 <OrganizeControls value={organizeState} onChange={changeOrganize} stretch={false} />
                 <Button onClick={onAddGame}><Icon name="plus" size={13} strokeWidth={2.4} />Add game</Button>
               </>}
             />
+            {noMatch}
             <GamesGrid
               groups={groups}
               grouped={grouped}
@@ -190,7 +208,11 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
         grouped={grouped}
         collapsed={collapsed}
         onToggleGroup={toggleGroup}
-        controls={<OrganizeControls value={organizeState} onChange={changeOrganize} />}
+        controls={<>
+          <OrganizeControls value={organizeState} onChange={changeOrganize} />
+          {search(true)}
+        </>}
+        empty={noMatch}
         selectedId={selected?.game.id ?? null}
         onSelect={id => { setSelectedId(id); setIntent(null); }}
         onAddGame={onAddGame}

@@ -11,6 +11,8 @@ import { Button } from '../ui/Button';
 import { PathField } from '../ui/PathField';
 import { InlineConfirm } from '../ui/InlineConfirm';
 import { Chip } from '../ui/Chip';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
+import { usePersistedOpen } from '../ui/usePersistedOpen';
 import { compareVersions, isTestBuild, parseVersion } from '../../versionSkew';
 import { AddFolderForm, ExtraFolderSection, FolderFiles, IncludePatterns, MAIN_KEY } from './SaveFolderParts';
 
@@ -85,6 +87,9 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
   const [forceFor, setForceFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
+  const [pathsOpen, setPathsOpen] = usePersistedOpen('sl_game_paths_open');
+  const [machinesOpen, setMachinesOpen] = usePersistedOpen('sl_game_machines_open');
 
   // A notification's "Set folder": that machine's row opens for editing (the field focuses itself),
   // once the stored paths are in so it starts from what is stored — or from the scan's guess.
@@ -95,8 +100,17 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
     const m = intent.value.machineId;
     setDraft(paths.find(p => p.machineId === m)?.savePath ?? candidates.find(c => c.machineId === m)?.suggestedPath ?? '');
     setEditing(m);
-    rowRefs.current[m]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [intent, pathsLoaded, paths, candidates]);
+    // A "Set folder" link must land on an open row, even for a viewer who folded the machines away.
+    setMachinesOpen(true);
+    setScrollTo(m);
+  }, [intent, pathsLoaded, paths, candidates, setMachinesOpen]);
+
+  // After the render that opened Machines: a folded section has no row to scroll to until then.
+  useEffect(() => {
+    if (!scrollTo || !machinesOpen) return;
+    rowRefs.current[scrollTo]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setScrollTo(null);
+  }, [scrollTo, machinesOpen]);
 
   /** Write a path for one machine. Blank clears it. */
   async function savePath(m: Machine, value: string) {
@@ -139,7 +153,8 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
       {extraPaths.length > 0 && (
         <div className="px-4 pt-3 text-[13px] font-semibold text-fg">Main folder</div>
       )}
-      <div className="px-4 py-3 border-b border-row flex flex-col gap-2">
+      <CollapsibleSection title="Save folder paths" open={pathsOpen} onToggle={setPathsOpen}>
+      <div className="px-4 py-3 flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-2 flex-wrap">
           <span className="text-[10px] tracking-[0.1em] uppercase text-faint">{templated ? 'Template · every machine' : 'Fallback path'}</span>
           {!templateOpen && (
@@ -171,6 +186,9 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
         <IncludePatterns game={game} folderKey={MAIN_KEY} saved={game.includeGlobs ?? []} onRefresh={onRefresh} />
         {extraPaths.length > 0 && <FolderFiles folder={folderOf(MAIN_KEY)} latestAt={head?.createdAt} />}
       </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Machines" count={machines.length} open={machinesOpen} onToggle={setMachinesOpen}>
 
       {machines.length === 0 && <p className="px-4 py-4 text-[13px] text-dim">No machines registered.</p>}
 
@@ -287,6 +305,7 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
           </div>
         );
       })}
+      </CollapsibleSection>
 
       {extraPaths.map(sp => (
         <ExtraFolderSection
