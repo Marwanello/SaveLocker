@@ -51,7 +51,8 @@ export function BalancedColumns({ items }: { items: BalancedItem[] }) {
     return () => ro.disconnect();
   }, [keys]);
 
-  useEffect(() => {
+  // A layout effect too: placed after paint, every card would first show in its default column and then jump.
+  useLayoutEffect(() => {
     setCols(prev => {
       const totals = [0, 0];
       const next: Record<string, 0 | 1> = {};

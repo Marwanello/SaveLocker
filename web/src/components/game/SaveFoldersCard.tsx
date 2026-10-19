@@ -83,6 +83,7 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
   const [forceFor, setForceFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
   const [pathsOpen, setPathsOpen] = usePersistedOpen('sl_game_paths_open');
   const [machinesOpen, setMachinesOpen] = usePersistedOpen('sl_game_machines_open');
 
@@ -97,8 +98,15 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
     setEditing(m);
     // A "Set folder" link must land on an open row, even for a viewer who folded the machines away.
     setMachinesOpen(true);
-    rowRefs.current[m]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setScrollTo(m);
   }, [intent, pathsLoaded, paths, candidates, setMachinesOpen]);
+
+  // After the render that opened Machines: a folded section has no row to scroll to until then.
+  useEffect(() => {
+    if (!scrollTo || !machinesOpen) return;
+    rowRefs.current[scrollTo]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setScrollTo(null);
+  }, [scrollTo, machinesOpen]);
 
   /** Write a path for one machine. Blank clears it. */
   async function savePath(m: Machine, value: string) {
