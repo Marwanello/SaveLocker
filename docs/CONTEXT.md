@@ -2054,6 +2054,14 @@ differently, with a per-machine file-by-file name list (`FileNames`, `OwnFileNam
 console icons generated from Arcticons and RetroArch's Monochrome glyphs (`web/scripts/build-platform-icons.mjs`, `NOTICE-icons.md`)
 in all three UIs; `SvgPath` draws every path command. Agent tests **721**. Details: `tasks/emulator-saves/plan.md` → *Group G/I/J
 — as built*.
+<br>**2026-10-19: review fixes on the same PR.** A file that the name swap would give the server's name (another dump's
+`… (USA).state1` beside this machine's `… (USA) (Rev 1).state1`) is now that other dump's, never archived or deleted as this game's,
+and its presence refuses the link like a same-named `.srm` does. The archive's name map uses the platform's comparer again (it
+had made `save.dat`/`SAVE.DAT` one file on Linux, for every game). A machine moved by a merge clears its last synced hash, so a
+differing save meets the kept game's Latest as a conflict instead of being pulled over. `LaunchesUnder` compares unsigned app IDs;
+launch-options status is per shortcut (`ShortcutLaunchOptions`); a shortcut gone from Steam leaves the game's list; only the
+program word (or what `flatpak run` starts) names an emulator; merge also refuses on the kept game's lease/conflict. Agent tests
+**728** (in Release: the Debug agent output was held by a running test tray).
 <br>**Next action for this item:** the testenv pass with the Windows agent (Phase 17 Earthbound link Windows ⇄ WSL — the Windows
 test agent still maps a real `D:\Emulation` Animal Crossing save; unmap it first), the Deck pass (Forza Horizon listed once;
 launching it from Steam syncs), then merge PR #78. Group H stays open.

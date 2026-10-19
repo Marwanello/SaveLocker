@@ -196,6 +196,9 @@ public static class Doctor
                                       "           Paste this into Steam → Properties → Launch Options:\n" +
                                       $"           {LaunchOptions.Invocation(Daemon.WrapperPathOrDefault())}");
             }
+            foreach (var (shortcutAppId, state) in g.ShortcutLaunchOptions)
+                if (state.Error is { Length: > 0 } shortcutError)
+                    Problem($"'{g.Name}' launch options of its Steam shortcut {shortcutAppId} could not be set: {shortcutError}");
 
             // A non-Steam shortcut's AppID is crc32(exe + name) with the high bit set — stable across
             // launches and Desktop/Game Mode, but RECOMPUTED if the shortcut is renamed, re-pointed, or

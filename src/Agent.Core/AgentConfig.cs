@@ -846,13 +846,18 @@ public sealed class AgentConfig
     public void SaveGameSteamAppId(Guid gameId, string appId) =>
         MutateGameUnderLock(gameId, g => g.SteamAppId = appId);
 
-    /// <summary>Record the Steam shortcuts that start an emulator game (<see cref="SrmShortcuts.Backfill"/>): their app IDs,
-    /// the first one as its <see cref="TrackedGame.SteamAppId"/> when it had none.</summary>
+    /// <summary>Record the Steam shortcuts that start an emulator game (<see cref="SrmShortcuts.Backfill"/>): their app IDs as
+    /// the scan found them — a shortcut removed in Steam goes, with its launch-options status — and the first one as its
+    /// <see cref="TrackedGame.SteamAppId"/> when it had none or had a shortcut's that is gone.</summary>
     public void SaveGameShortcuts(Guid gameId, IReadOnlyList<string> appIds) =>
         MutateGameUnderLock(gameId, g =>
         {
-            g.ShortcutAppIds = g.ShortcutAppIds.Union(appIds, StringComparer.Ordinal).ToList();
-            if (string.IsNullOrWhiteSpace(g.SteamAppId)) g.SteamAppId = appIds.FirstOrDefault();
+            var gone = g.ShortcutAppIds.Except(appIds, StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+            if (string.IsNullOrWhiteSpace(g.SteamAppId) || (g.SteamAppId is { } own && gone.Contains(own)))
+                g.SteamAppId = appIds.FirstOrDefault();
+            g.ShortcutAppIds = appIds.Distinct(StringComparer.Ordinal).ToList();
+            foreach (var id in gone)
+                if (SteamShortcuts.UnsignedAppId(id) is { } unsigned) g.ShortcutLaunchOptions.Remove(unsigned.ToString());
         });
 
     /// <summary>
@@ -901,6 +906,13 @@ public sealed class AgentConfig
 
     public TrackedGame? FindGame(string name) =>
         Games.FirstOrDefault(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase));
+}
+
+/// <summary>One Steam shortcut's launch-options status (<see cref="TrackedGame.ShortcutLaunchOptions"/>).</summary>
+public sealed class LaunchOptionsState
+{
+    public DateTime? AppliedAt { get; set; }
+    public string? Error { get; set; }
 }
 
 /// <summary>A game this machine syncs, with its resolved local save location.</summary>
@@ -1145,6 +1157,27 @@ public sealed class TrackedGame
     public DateTime? LaunchOptionsAppliedAt { get; set; }
     /// <inheritdoc cref="LaunchOptionsAppliedAt"/>
     public string? LaunchOptionsError { get; set; }
+    /// <summary>The same, for each of <see cref="ShortcutAppIds"/> that is not the game's own app ID, by unsigned app ID: each
+    /// Steam ROM Manager shortcut carries launch options of its own (tasks/emulator-saves Phase 20).</summary>
+    public Dictionary<string, LaunchOptionsState> ShortcutLaunchOptions { get; set; } = new();
+
+    /// <summary>When the launch options of app ID <paramref name="appId"/> were confirmed, and what went wrong if they could
+    /// not be: the game's own fields for its own app ID, else that shortcut's.</summary>
+    public (DateTime? AppliedAt, string? Error) LaunchOptionsFor(uint appId) =>
+        SteamShortcuts.UnsignedAppId(ResolveSteamAppId()) == appId
+            ? (LaunchOptionsAppliedAt, LaunchOptionsError)
+            : ShortcutLaunchOptions.GetValueOrDefault(appId.ToString()) is { } s ? (s.AppliedAt, s.Error) : (null, null);
+
+    /// <summary>Record what <see cref="LaunchOptionsFor"/> reads.</summary>
+    public void SetLaunchOptions(uint appId, DateTime? appliedAt, string? error)
+    {
+        if (SteamShortcuts.UnsignedAppId(ResolveSteamAppId()) == appId)
+        {
+            LaunchOptionsAppliedAt = appliedAt;
+            LaunchOptionsError = error;
+        }
+        else ShortcutLaunchOptions[appId.ToString()] = new LaunchOptionsState { AppliedAt = appliedAt, Error = error };
+    }
 
     /// <summary>
     /// The AppID this game launches under: the recorded one, or — when it was never recorded — the
@@ -1164,8 +1197,11 @@ public sealed class TrackedGame
             : SteamAppId;
 
     /// <summary>Does Steam start this game under <paramref name="appId"/> — its own app ID, or one of its emulator shortcuts'?</summary>
+    /// <remarks>Compared unsigned: <c>add-game --appid</c> keeps whatever form the user typed
+    /// (<see cref="SteamShortcuts.UnsignedAppId"/>).</remarks>
     public bool LaunchesUnder(string? appId) =>
-        !string.IsNullOrEmpty(appId) && (ResolveSteamAppId() == appId || ShortcutAppIds.Contains(appId, StringComparer.Ordinal));
+        SteamShortcuts.UnsignedAppId(appId) is { } wanted &&
+        new[] { ResolveSteamAppId() }.Concat(ShortcutAppIds).Any(id => SteamShortcuts.UnsignedAppId(id) == wanted);
 }
 
 /// <summary>

@@ -250,7 +250,8 @@ public sealed class CommandPoller : IDisposable
         // enrollment: this runs on a timer thread while a UI thread enumerates the same list.
         // A game merged into another on the server (tasks/emulator-saves Phase 17) is gone from the list; when the server moved
         // this machine's folder to the game it was merged into, this device's copy becomes that game here, keeping its folders
-        // and own file names — its last synced version is that game's history now, so the next sync asks if the two differ.
+        // and own file names. Its last synced version is that game's history now and its last synced hash is cleared, so when
+        // its save differs from that game's Latest the next sync is a conflict, never a silent pull.
         var mergedInto = serverGames
             .SelectMany(g => (g.MergedGameIds ?? []).Select(id => (Id: id, Into: g)))
             .GroupBy(x => x.Id)
@@ -273,6 +274,10 @@ public sealed class CommandPoller : IDisposable
                         mergeNotes.Add($"'{local.Name}' was merged into '{into.Name}' on the server; this device syncs it as that game now.");
                         local.GameId = into.Id;
                         local.Name = into.Name;
+                        // Its last synced hash was the merged game's: kept, a pull would take the other game's Latest over
+                        // this save without asking. Cleared, the pull refuses and the push meets that Latest as a conflict.
+                        local.LastSyncedHash = null;
+                        local.ConsecutiveConflicts = 0;
                         movedInto.Add(into.Id);
                         changed = true;
                     }

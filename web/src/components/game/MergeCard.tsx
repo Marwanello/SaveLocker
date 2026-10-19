@@ -13,7 +13,7 @@ interface Props {
 
 const OUTCOME: Record<string, string> = {
   'already-syncs': 'already syncs the other game; its copy of this one stops',
-  moved: 'moves to the other game with its folder and its own file names',
+  moved: 'moves to the other game with its folder and its own file names; if its save differs from the other game’s Latest, its next sync asks which to keep',
   're-add': 'stops syncing this one; add the other game there from Add games',
 };
 

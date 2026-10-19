@@ -1174,7 +1174,8 @@ public static class SaveArchive
 
             var prefix = NamePrefix(root);
             // The scope and the archive name are the server's: this machine's own names are swapped on the way in.
-            var byServer = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            // The platform's comparer: on Linux, save.dat and SAVE.DAT are two files and both are synced.
+            var byServer = new Dictionary<string, string>(PathComparer);
             foreach (var rel in rels)
                 if (ServerRel(root, rel) is { } server) byServer.TryAdd(server, rel);
             var named = FilterIncluded(byServer.Keys, root.IncludeGlobs).Select(s => (Name: prefix + s, Rel: byServer[s])).ToList();

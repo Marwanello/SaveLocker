@@ -1056,8 +1056,9 @@ public sealed class AgentApiServer : IDisposable
             var game = _config.Games.FirstOrDefault(g => g.LaunchesUnder(body.SteamAppId.ToString()));
             if (game is null) return TypedResults.Ok(new OkResponse());
 
-            game.LaunchOptionsAppliedAt = body.Applied ? DateTime.UtcNow : null;
-            game.LaunchOptionsError = string.IsNullOrWhiteSpace(body.Error) ? null : body.Error.Trim();
+            // Per app ID: an emulator game's Steam ROM Manager shortcuts each carry their own launch options.
+            game.SetLaunchOptions(body.SteamAppId, body.Applied ? DateTime.UtcNow : null,
+                string.IsNullOrWhiteSpace(body.Error) ? null : body.Error.Trim());
             _config.Save();
             return TypedResults.Ok(new OkResponse());
         }).Produces<OkResponse>();
@@ -1970,9 +1971,8 @@ public sealed class AgentApiServer : IDisposable
             .SelectMany(g => new[] { g.ResolveSteamAppId() }.Concat(g.ShortcutAppIds)
                 .Select(SteamShortcuts.UnsignedAppId).Where(id => id is not null).Distinct()
                 .Select(appId => (game: g, appId)))
-            .Select(x => new LaunchOptionRowDto(
-                x.appId!.Value, x.game.GameId, x.game.Name, desired,
-                x.game.LaunchOptionsAppliedAt, x.game.LaunchOptionsError))
+            .Select(x => (x.game, appId: x.appId!.Value, status: x.game.LaunchOptionsFor(x.appId!.Value)))
+            .Select(x => new LaunchOptionRowDto(x.appId, x.game.GameId, x.game.Name, desired, x.status.AppliedAt, x.status.Error))
             .ToArray();
     }
 
