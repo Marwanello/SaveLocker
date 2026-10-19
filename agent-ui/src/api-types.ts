@@ -4077,6 +4077,11 @@ export interface components {
             needsChoice: boolean;
             key?: null | string;
         };
+        FileNameDto: {
+            key: string;
+            server: string;
+            local: string;
+        };
         FolderRequest: {
             path: null | string;
             /** @default false */
@@ -4127,6 +4132,7 @@ export interface components {
             release?: null | components["schemas"]["GameReleaseDto"];
             emulatorProfile?: null | string;
             emulatorKey?: null | string;
+            mergedGameIds?: null | string[];
         };
         GameFilesDto: {
             folders: components["schemas"]["GameFolderFilesDto"][];
@@ -4369,11 +4375,6 @@ export interface components {
             desired: string;
             changed: boolean;
         };
-        FileNameDto: {
-            key: string;
-            server: string;
-            local: string;
-        };
         SameGameAsDto: {
             /** Format: uuid */
             gameId: string;
@@ -4412,6 +4413,7 @@ export interface components {
             /** @default false */
             protected: boolean;
             content?: null | components["schemas"]["ContentPackageDto"][];
+            mergedFrom?: null | string;
         };
         SaveVsCloudDto: {
             state: string;
