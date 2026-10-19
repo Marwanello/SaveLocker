@@ -98,6 +98,28 @@ public sealed class TitleIdSavesTests : IDisposable
         Assert.Equal("Europe", game.Release!.Region);
     }
 
+    [Fact]
+    public void A_wii_u_game_is_named_by_the_meta_xml_in_its_own_save_before_cemus_cache()
+    {
+        // Captured on the Deck 2026-10-19: a packed .wua game Cemu had not listed yet, its save carrying the game's meta.
+        const string save = "Emulation/saves/Cemu/saves/00050000";
+        Text($"{save}/10143500/user/80000001/cking.sav", "ww");
+        Text($"{save}/10143500/meta/meta.xml",
+            RomMeta("0005000010143500", "THE LEGEND OF ZELDA\nThe Wind Waker HD"));
+        Text($"{save}/10145d00/user/80000001/save.dat", "mk8");
+        Text($"{save}/10145d00/meta/meta.xml", RomMeta("0005000010143500", "Another game's meta"));
+        Text("cemu-data/title_list_cache.xml", CemuCache);
+
+        var found = CemuSaves.Scan([new CemuFolders(P("Emulation/saves/Cemu/saves"), null, [P("cemu-data/title_list_cache.xml")],
+            EmuDeck: true)]);
+
+        var ww = found.Single(c => c.EmulatorRom == "10143500");
+        Assert.Equal("THE LEGEND OF ZELDA The Wind Waker HD", ww.Name);
+        Assert.Equal("USA", ww.Release!.Region);
+        // A meta.xml naming another title is not this game's: the cache names it.
+        Assert.Equal("Mario Kart 8", found.Single(c => c.EmulatorRom == "10145d00").Name);
+    }
+
     private static string RomMeta(string titleId, string name, string region = "00000002") => $"""
         <?xml version="1.0" encoding="utf-8"?>
         <menu type="complex" access="777">
