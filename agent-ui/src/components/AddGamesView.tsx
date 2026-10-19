@@ -100,8 +100,14 @@ const PATH_MODES: { id: PathMode; label: string; match: (c: Candidate) => boolea
 
 const HIDE_ENROLLED_KEY = 'savelocker.agent.addGames.hideEnrolled'
 
+const HIDE_EMPTY_KEY = 'savelocker.agent.addGames.hideEmptyFilters'
+
 function readHideEnrolled(): boolean {
   try { return localStorage.getItem(HIDE_ENROLLED_KEY) !== '0' } catch { return true }
+}
+
+function readHideEmpty(): boolean {
+  try { return localStorage.getItem(HIDE_EMPTY_KEY) === '1' } catch { return false }
 }
 
 const STATUS = {
@@ -181,6 +187,12 @@ export function AddGamesView({ onEnrolled }: Props) {
     setHideEnrolledState(hide)
     if (hide && pathMode === 'enrolled') setPathMode('all')
     try { localStorage.setItem(HIDE_ENROLLED_KEY, hide ? '1' : '0') } catch { /* private window / blocked storage */ }
+  }
+  // Off by default: the zero chips say which emulators SaveLocker reads, which a new user wants to see.
+  const [hideEmpty, setHideEmptyState] = useState(readHideEmpty)
+  const setHideEmpty = (hide: boolean) => {
+    setHideEmptyState(hide)
+    try { localStorage.setItem(HIDE_EMPTY_KEY, hide ? '1' : '0') } catch { /* private window / blocked storage */ }
   }
   const [query, setQuery] = useState('')
   const [scanning, setScanning] = useState(false)
@@ -369,18 +381,22 @@ export function AddGamesView({ onEnrolled }: Props) {
   const emulators = useMemo(() => {
     if (filter !== 'emulator') return []
     const emulated = pool.filter(c => c.source === 'Emulator')
-    return EMULATORS.map(e => ({ ...e, count: emulated.filter(c => c.emulatorName === e.id).length }))
-  }, [pool, filter])
+    return EMULATORS
+      .map(e => ({ ...e, count: emulated.filter(c => c.emulatorName === e.id).length }))
+      // The picked chip stays, even at zero, so a pick is never hidden while it filters the list.
+      .filter(e => !hideEmpty || e.count > 0 || e.id === emulator)
+  }, [pool, filter, hideEmpty, emulator])
 
   // Which console, under the emulator picked: built from what was found (any EmuDeck system can turn up
-  // under RetroArch), labelled by the agent ("ps2" → "PS2"), and only offered when there is a choice.
+  // under RetroArch), labelled by the agent ("ps2" → "PS2"). Shown even with one console, like the Emulator row:
+  // a row that vanished whenever an emulator with one console was picked read as missing.
   const consoles = useMemo(() => {
     if (filter !== 'emulator') return []
     return consoleChips(pool.filter(c => c.source === 'Emulator' && (!emulator || c.emulatorName === emulator)))
   }, [pool, filter, emulator])
   // The pick applies only while its chip is on screen: after a rescan that leaves one console (the row hides) or
   // none of the picked one, a filter nobody can see or clear would hide rows.
-  const activeConsole = consoles.length > 1 && consoles.some(s => s.id === consoleId) ? consoleId : null
+  const activeConsole = consoles.some(s => s.id === consoleId) ? consoleId : null
 
   const active = FILTERS.find(f => f.id === filter) ?? FILTERS[0]
   // Filtered by source (+ store) but not yet by path — the base the path row's own counts are
@@ -450,6 +466,17 @@ export function AddGamesView({ onEnrolled }: Props) {
       </div>
 
       <div className="sl-stack" style={{ gap: 9 }}>
+        <div className="sl-filters sl-filters--toggles">
+          <label className="sl-filters__toggle">
+            <Switch checked={hideEnrolled} onChange={setHideEnrolled} aria-label="Hide enrolled games" />
+            Hide enrolled <PadGlyph id="start" />
+          </label>
+          <label className="sl-filters__toggle">
+            <Switch checked={hideEmpty} onChange={setHideEmpty} aria-label="Hide empty filters" />
+            Hide empty filters
+          </label>
+        </div>
+
         <div className="sl-filters">
           <span className="sl-filters__label" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             <PadGlyph id="x" /> Filters
@@ -466,10 +493,6 @@ export function AddGamesView({ onEnrolled }: Props) {
               {f.label} <b>{f.count}</b>
             </button>
           ))}
-          <label className="sl-filters__toggle">
-            <Switch checked={hideEnrolled} onChange={setHideEnrolled} aria-label="Hide enrolled games" />
-            Hide enrolled <PadGlyph id="start" />
-          </label>
         </div>
 
         {/* Heroic storefronts — a second axis, shown only while the Heroic filter is on. */}
@@ -479,7 +502,7 @@ export function AddGamesView({ onEnrolled }: Props) {
             <button type="button" className="sl-fchip" aria-pressed={store === null} onClick={() => setStore(null)}>All</button>
             {stores.map(s => (
               <button key={s.id} type="button" className="sl-fchip" aria-pressed={store === s.id} onClick={() => setStore(s.id)}>
-                <PlatformIcon id={systemIcon(s.id)} size={1.15} /> {s.label} <b>{s.count}</b>
+                {s.label} <b>{s.count}</b>
               </button>
             ))}
           </div>
@@ -499,14 +522,14 @@ export function AddGamesView({ onEnrolled }: Props) {
           </div>
         )}
 
-        {/* Which console — under the emulator, once the games found span more than one. */}
-        {consoles.length > 1 && (
+        {/* Which console — under the emulator. */}
+        {consoles.length > 0 && (
           <div className="sl-filters">
             <span className="sl-filters__label">Console</span>
             <button type="button" className="sl-fchip" aria-pressed={activeConsole === null} onClick={() => setConsoleId(null)}>All</button>
             {consoles.map(s => (
               <button key={s.id} type="button" className="sl-fchip" aria-pressed={activeConsole === s.id} onClick={() => setConsoleId(s.id)}>
-                {s.label} <b>{s.count}</b>
+                <PlatformIcon id={systemIcon(s.id)} size={1.15} /> {s.label} <b>{s.count}</b>
               </button>
             ))}
           </div>
@@ -516,7 +539,10 @@ export function AddGamesView({ onEnrolled }: Props) {
             instead of replacing it. Always visible: unlike Store it isn't specific to one source. */}
         <div className="sl-filters">
           <span className="sl-filters__label">Save folder</span>
-          {PATH_MODES.filter(p => p.id !== 'enrolled' || !hideEnrolled).map(p => (
+          {PATH_MODES
+            .filter(p => p.id !== 'enrolled' || !hideEnrolled)
+            .filter(p => !hideEmpty || p.id === 'all' || p.id === pathMode || sourceFiltered.some(p.match))
+            .map(p => (
             <button key={p.id} type="button" className="sl-fchip" aria-pressed={pathMode === p.id} onClick={() => setPathMode(p.id)}>
               {p.id === 'enrolled' && <Check size={12} strokeWidth={2.4} className="sl-fchip__ok" aria-hidden="true" />}
               {p.label}{p.id !== 'all' && <> <b>{sourceFiltered.filter(p.match).length}</b></>}
