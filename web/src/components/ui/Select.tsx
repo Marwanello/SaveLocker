@@ -66,13 +66,19 @@ export function Select({ value, options: all, onChange, label, placeholder = 'Ch
   // fits there, else on whichever side has more room, as tall as that side allows up to the cap.
   useLayoutEffect(() => {
     if (!open) return;
-    function update() {
+    function update(e?: Event) {
+      // Scrolling the list itself moves nothing.
+      if (e?.target instanceof Node && (popRef.current ?? listRef.current)?.contains(e.target)) return;
       const r = triggerRef.current?.getBoundingClientRect();
-      if (!r) return;
+      const pop = popRef.current ?? listRef.current;
+      const list = listRef.current;
+      if (!r || !pop || !list) return;
       const below = window.innerHeight - r.bottom - 12;
       const above = r.top - 12;
       const cap = searchable ? 420 : 320;
-      const up = below < cap && above > below;
+      // The whole popup's height, list unscrolled: a short list fits below even where the cap would not.
+      const need = Math.min(cap, pop.offsetHeight - list.clientHeight + list.scrollHeight);
+      const up = below < need && above > below;
       setPlace({
         ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }),
         ...(align === 'end' ? { right: document.documentElement.clientWidth - r.right } : { left: r.left }),
@@ -126,10 +132,12 @@ export function Select({ value, options: all, onChange, label, placeholder = 'Ch
       // In the filter box Home/End move its caret, as in any text field.
       case 'Home': if (searchable) return; e.preventDefault(); setActive(0); return;
       case 'End': if (searchable) return; e.preventDefault(); setActive(last); return;
-      case 'Enter': e.preventDefault(); pick(active); return;
+      case 'Enter': e.preventDefault(); if (options.length > 0) pick(active); return;
       case ' ': if (searchable) return; e.preventDefault(); pick(active); return;
       case 'Escape': e.preventDefault(); close(true); return;
-      case 'Tab': close(false); return;
+      // Back on the trigger before the browser moves focus: the list sits at the end of <body>, so Tab from it
+      // would leave the page instead of reaching the control after this one.
+      case 'Tab': close(true); return;
     }
     if (!searchable && e.key.length === 1 && /\S/.test(e.key)) {
       const ch = e.key.toLowerCase();
