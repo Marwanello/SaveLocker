@@ -481,18 +481,19 @@ public sealed class CommandPoller : IDisposable
         var include = (sg.IncludeGlobs ?? Array.Empty<string>()).ToList();
         if (!include.SequenceEqual(local.IncludeGlobs))
         {
-            // Another machine took in a DuckStation card the scope had missed, and pushes it. This machine's own copy
-            // of that card was never synced, so it is not an edit to push over it: the pull brings the fleet's.
-            var cardRepair = DuckStationSaves.IsCardRepair(local.IncludeGlobs, include) &&
-                             local.LastSyncedHash is not null && local.LocalHash(_config.StateDir) == local.LastSyncedHash;
             local.IncludeGlobs = include;
-            if (cardRepair)
-            {
-                local.LastSyncedHash = local.LocalHash(_config.StateDir);
-                _config.SaveGameSyncState(local);
-                AgentLogger.Log($"[{local.Name}] its scope now takes DuckStation's region-named card; the fleet's copy will be pulled.");
-            }
+            _cardChecked.Remove(local.GameId);
             changed = true;
+        }
+
+        // Another machine took in a DuckStation card the scope had missed, and pushes it. This machine's own copy of that
+        // card was never synced, so it is not an edit to push over it: the pull brings the fleet's. Checked once per scope.
+        if (!_cardPushes.Contains(local.GameId) && _cardChecked.Add(local.GameId) &&
+            DuckStationSaves.SyncedHashWithCard(local, _config.StateDir) is { } synced)
+        {
+            local.LastSyncedHash = synced;
+            _config.SaveGameSyncState(local);
+            AgentLogger.Log($"[{local.Name}] its scope now takes DuckStation's region-named card; the fleet's copy will be pulled.");
         }
 
         var serverPaths = sg.ExtraPaths ?? Array.Empty<SavePathDto>();
@@ -845,6 +846,9 @@ public sealed class CommandPoller : IDisposable
     /// region DuckStation puts in it, so the card never synced. The first machine that finds that card adds the wider
     /// patterns on the server and pushes its card; the others take it from there (<see cref="ReconcileFoldersAsync"/>).
     /// </summary>
+    private readonly HashSet<Guid> _cardPushes = [];
+    private readonly HashSet<Guid> _cardChecked = [];
+
     private async Task RepairDuckStationCardsAsync()
     {
         foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && EmulatorProcesses.EmulatorsOf(g).Contains("DuckStation")).ToList())
@@ -855,6 +859,7 @@ public sealed class CommandPoller : IDisposable
                 var added = await _api().AddIncludeGlobsAsync(game.GameId, missing);
                 if (added.Length == 0) continue;
                 game.IncludeGlobs = [.. game.IncludeGlobs, .. added];
+                _cardPushes.Add(game.GameId);
                 _config.Save();
                 AgentLogger.Log($"[{game.Name}] its scope now takes DuckStation's region-named card ({string.Join(", ", added)}); pushing it.");
                 await _engine().PushAsync(game);

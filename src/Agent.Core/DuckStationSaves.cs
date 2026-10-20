@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
@@ -184,10 +185,22 @@ public static partial class DuckStationSaves
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
-    /// <summary>Did a scope go from a title's exact cards to <see cref="StatesOnlyCardGlobsFor"/> — the repair
-    /// <see cref="MissingCardGlobs"/> asks for, made by another machine?</summary>
-    public static bool IsCardRepair(IReadOnlyList<string> before, IReadOnlyList<string> after) =>
-        OldCardTitle(before) is { } title && after.SequenceEqual(StatesOnlyCardGlobsFor(title), StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// The hash to count as synced when another machine took in the region-named card (<see cref="MissingCardGlobs"/>):
+    /// everything but that card is as it was last synced, so this machine's own copy of the card — never synced — is no
+    /// edit to push over the fleet's, and the pull brings the fleet's. Null when the scope is not that repair, nothing
+    /// changed, or anything else changed too.
+    /// </summary>
+    public static string? SyncedHashWithCard(TrackedGame game, string stateDir)
+    {
+        if (game.LastSyncedHash is null || game.IncludeGlobs.Count != 4 || OldCardTitle(game.IncludeGlobs.Take(2).ToList()) is not { } title ||
+            !game.IncludeGlobs.SequenceEqual(StatesOnlyCardGlobsFor(title), StringComparer.OrdinalIgnoreCase)) return null;
+        var roots = game.Roots(stateDir);
+        var full = SaveArchive.HashDirectory(roots, game.ExcludeGlobs);
+        if (full == game.LastSyncedHash) return null;
+        var withoutCard = roots.Select(r => r.IsPrimary ? r with { IncludeGlobs = SaveGlobsFor(title) } : r).ToList();
+        return SaveArchive.HashDirectory(withoutCard, game.ExcludeGlobs) == game.LastSyncedHash ? full : null;
+    }
 
     private static string? OldCardTitle(IReadOnlyList<string> globs) =>
         globs.Count == 2 && globs[0].EndsWith("_1.mcd", StringComparison.OrdinalIgnoreCase) && globs[0][..^6] is { Length: > 0 } title &&

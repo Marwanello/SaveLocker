@@ -247,7 +247,6 @@ public sealed class StatesOnlyTests : IDisposable
         var old = DuckStationSaves.SaveGlobsFor(t);
         Touch($"cards/{t} (Europe, Australia)_1.mcd");
         Assert.Equal([$"{t} (*)_1.mcd", $"{t} (*)_2.mcd"], DuckStationSaves.MissingCardGlobs(old, P("cards")));
-        Assert.True(DuckStationSaves.IsCardRepair(old, DuckStationSaves.StatesOnlyCardGlobsFor(t)));
 
         // Nothing is missing once the scope has them, or when the card is named exactly.
         Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.StatesOnlyCardGlobsFor(t), P("cards")));
@@ -263,6 +262,26 @@ public sealed class StatesOnlyTests : IDisposable
         Assert.Null(DuckStationSaves.MissingCardGlobs(["*.mcd"], P("cards")));
         Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.SaveGlobsFor("Tomb Raider II (USA)"), P("cards")));
         Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.SaveGlobsFor("Tomb Raider II"), P("missing")));
-        Assert.False(DuckStationSaves.IsCardRepair(DuckStationSaves.SaveGlobsFor("Tomb Raider"), ["*.mcd"]));
+    }
+
+    [Fact]
+    public void A_card_taken_in_elsewhere_is_no_edit_here_but_another_change_still_is()
+    {
+        const string t = "Tomb Raider - The Last Revelation";
+        Touch("cards/SLES-02238_1.sav", "state");
+        // Synced before the card was in the scope: only the state counted.
+        var game = new TrackedGame { GameId = Guid.NewGuid(), Name = t, SaveDirectory = P("cards"), IncludeGlobs = [.. DuckStationSaves.SaveGlobsFor(t)] };
+        game.ExtraPaths = [new TrackedSavePath { Key = RomSaves.StatesKey, Directory = P("cards"), IncludeGlobs = ["SLES-02238_*.sav"] }];
+        game.LastSyncedHash = game.LocalHash(_root);
+        Touch($"cards/{t} (Europe, Australia)_1.mcd", "card");
+
+        Assert.Null(DuckStationSaves.SyncedHashWithCard(game, _root));   // the old scope: nothing to do
+        game.IncludeGlobs = [.. DuckStationSaves.StatesOnlyCardGlobsFor(t)];
+        var synced = DuckStationSaves.SyncedHashWithCard(game, _root);
+        Assert.Equal(game.LocalHash(_root), synced);
+
+        // A state played here since is an edit, so it is still pushed or refused, never written off.
+        Touch("cards/SLES-02238_1.sav", "played");
+        Assert.Null(DuckStationSaves.SyncedHashWithCard(game, _root));
     }
 }
