@@ -12,6 +12,7 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 
 | Phase | Status |
 |---|---|
+| 0 — Deck test rig: stop hiding `~/.local/share` from the emulator readers | ⏳ Not started — blocks the Deck half of Group H |
 | 1 — Capture PCSX2's formatted superblock | ⏳ Not started |
 | 2 — Pull into an unformatted folder card | ⏳ Not started — Q1, Q2 decided 2026-10-19 |
 | 3 — No pull while the game's emulator is open | ⏳ Not started — Q3 decided 2026-10-19 |
@@ -39,6 +40,26 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 - **States:** the Deck has no PCSX2 states (its states folder is empty), so none were missing. The Windows
   `SLES-52822 (105CC366).01.p2s` saved at 17:56 was deleted by that force-pull, which is expected because
   force-pull discards local changes. PCSX2's own `.01.p2s.backup` survived.
+
+## Phase 0 — Deck test rig: stop hiding `~/.local/share` from the emulator readers
+
+**What happened (2026-10-20).** The Deck test daemon (`~/savelocker-test/savelocker daemon --port 5177`) runs with
+`XDG_DATA_HOME=/home/deck/savelocker-test-state`, which `testenv-deck.sh` exports to keep the test agent's state apart
+from a real install. Nine readers use `EmulatorPaths.XdgData` (Azahar, Cemu, Dolphin, DuckStation, shadPS4, the Switch
+emulators, Vita3K, Xenia), so the test daemon never looks in the real `~/.local/share`. A rescan through its local
+API returned 265 rows and no shadPS4 game, though `~/.local/share/shadPS4/home/1000/savedata/CUSA08495` holds the
+save.
+
+**What it means for Group H so far.** Deck results are valid for saves found through EmuDeck's `Emulation/saves`
+links, which is how those that passed were found. Anything kept only under `~/.local/share` was never seen on the
+Deck rig: shadPS4's new layout (this failure), **Azahar's states** (`~/.local/share/azahar-emu/states`), Cemu's
+title cache (why the Wii U row showed its ID), and a standalone DuckStation/Dolphin/Xenia. Re-check Azahar's states
+on the Deck after this fix.
+
+**Fix.** The agent already has `SAVELOCKER_STATE_ROOT` (`AgentConfig.StateRoot`, test-only, any OS). `testenv-deck.sh`
+exports it instead of `XDG_DATA_HOME`: the daemon line, the desktop entry's `Exec`, the `run`/state checks (line 83),
+and `cmd_conflict`'s folder. `Program.cs`'s `dev-shortcut-add` accepts either variable. Then `build -Only deck` and
+`up -Only deck`, and a rescan lists *Dark Souls: Remastered*.
 
 ## Phase 1 — Capture PCSX2's formatted superblock
 
@@ -162,13 +183,18 @@ already had a save of its own.
 - Every result still goes through `Safe()` (`SavePathGuard`, folder claims).
 - **A game adopted before its first save here** (found 2026-10-20, shadPS4 *Dark Souls: Remastered*). The Deck took the
   server game at 11:34 with no folder, because it had no save yet and the PC's template
-  (`<winAppData>/…/home/1004/savedata`) means nothing on Linux. The save it then made at 11:37 in
-  `~/.local/share/shadPS4/home/1000/savedata/CUSA08495` is found by the scan, but for a tracked, unmapped game the
-  scan only *suggests* a folder to the console (`UpdatePathCandidatesAsync` → `PathCandidateFor`), and only for a
-  row with **the same name**. So nothing maps it, and Add games doesn't offer it either. Fix: for an unmapped
-  emulator game, a scan row from the same emulator with the same files (`Enroller.SameFiles`, D1) maps the game's
-  folders automatically, the same way enrolling that row would join it. This match goes by files, not name, so it
-  survives a renamed game (Phase 7). The name-only match stays for non-emulator games.
+  (`<winAppData>/…/home/1004/savedata`) means nothing on Linux. For a tracked, unmapped game the scan only *suggests*
+  a folder to the console (`UpdatePathCandidatesAsync` → `PathCandidateFor`), and only for a row with **the same
+  name**. Nothing maps it automatically, though Add games still lists the row (an adopted game isn't
+  `IsEnrolledHere`), and adding it joins by files. Fix: for an unmapped emulator game, a scan row from the same
+  emulator with the same files (`Enroller.SameFiles`, D1) maps the game's folders automatically, the same way
+  enrolling that row would join it. This match goes by files, not name, so it survives a renamed game (Phase 7). The
+  name-only match stays for non-emulator games.
+  - **Correction, same day:** this was not why the Deck showed no shadPS4 save at all. The Deck **test rig** runs
+    the daemon with `XDG_DATA_HOME=~/savelocker-test-state` (`testenv-deck.sh`, to keep its state apart), and
+    `EmulatorPaths.XdgData` reads `XDG_DATA_HOME` as the base of `~/.local/share`. So the test daemon looked for
+    shadPS4 in `~/savelocker-test-state/shadPS4` and found nothing. A real install, with no such variable, is not
+    affected. See *Phase 0*.
 
 **Q4 — decided 2026-10-20: set it up automatically only where the emulator is installed and the game's ROM is
 present.** The alternatives were every machine with the emulator installed, or listing the game in Add games for the
