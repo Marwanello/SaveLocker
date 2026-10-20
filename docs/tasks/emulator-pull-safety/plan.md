@@ -12,7 +12,7 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 
 | Phase | Status |
 |---|---|
-| 0 — Deck test rig: stop hiding `~/.local/share` from the emulator readers | ⏳ Not started — blocks the Deck half of Group H |
+| 0 — Deck test rig: stop hiding `~/.local/share` from the emulator readers | ✅ Shipped 2026-10-20 — redeployed to the Deck; a rescan lists shadPS4's *Dark Souls: Remastered* and *Career*, and Azahar's states at `~/.local/share/azahar-emu/states` |
 | 1 — Capture PCSX2's formatted superblock | ⏳ Not started |
 | 2 — Pull into an unformatted folder card | ⏳ Not started — Q1, Q2 decided 2026-10-19 |
 | 3 — No pull while the game's emulator is open | ⏳ Not started — Q3 decided 2026-10-19 |
