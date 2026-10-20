@@ -1,8 +1,12 @@
-# Emulator pulls PCSX2 can't see, and pulls under a running emulator
+# Emulator pulls: unformatted PCSX2 cards, a running emulator, and games never played here
 
 Found 2026-10-19 during the Group H check of PCSX2 (`tasks/emulator-saves/plan.md` → *Phase 18*): *Prince of Persia:
 Warrior Within* (`SLES-52822`) was synced from the Deck to Windows. The save's four files arrived byte-for-byte, but
 PCSX2 on Windows showed no save. Two separate faults are behind it, and each gets its own fix below.
+
+Found 2026-10-20 in the DuckStation and PPSSPP checks: *Tomb Raider: The Last Revelation* (DuckStation) and *God of
+War: Chains of Olympus* (PPSSPP), saved and state-saved on Windows, never reached the Deck. That is a third fault,
+Phase 5, plus a DuckStation naming gap, Phase 6.
 
 ## Status
 
@@ -12,6 +16,8 @@ PCSX2 on Windows showed no save. Two separate faults are behind it, and each get
 | 2 — Pull into an unformatted folder card | ⏳ Not started — Q1, Q2 decided 2026-10-19 |
 | 3 — No pull while the game's emulator is open | ⏳ Not started — Q3 decided 2026-10-19 |
 | 4 — Help, testenv, Group H re-check | ⏳ Not started |
+| 5 — Set up a server emulator game on a machine that has no save for it yet | ⏳ Not started — Q4 first |
+| 6 — DuckStation: a states-only game's card under DuckStation's own title | ⏳ Not started |
 
 ## What happened (evidence)
 
@@ -112,3 +118,59 @@ their current behaviour after the fold-in.
   superblock is formatted.
 - Group H: re-run *Warrior Within* Deck → Windows with PCSX2 closed. Expect the save in PCSX2's memory-card
   manager and in game. Then open PCSX2 and confirm a pull is refused with the new message.
+
+## Phase 5 — Set up a server emulator game on a machine that has no save for it yet
+
+**What happened (2026-10-20).** Windows enrolled and pushed both games. The Deck has both ROMs (`roms/psx/Tomb Raider -
+The Last Revelation.chd`, `roms/psp/God Of War - Chains Of Olympus.iso`) and both emulators, but logged *"… was added
+on the server — set its save folder in Settings"* and has never pulled either game. Its DuckStation `saves`/`states` and
+PPSSPP `SAVEDATA`/`PPSSPP_STATE` are empty.
+
+**Why.** `CommandPoller` adopts a server game it doesn't track yet with the folder from `ResolveSaveDirAsync`: this
+machine's stored path, else the server's `suggestedSaveDir` (a template or a literal path that exists here), else
+Ludusavi detection. For an emulator game all three are empty. The server reports `suggestedSaveDir: null` and
+`saveTemplates: null`, because an EmuDeck path (`D:\Emulation\…`, `/run/media/deck/SDCard/Emulation/…`) has no token
+to describe it, and the manifest has no emulator games. The scan can't help either: it lists a game only once this
+machine has its save (or a state, Phase 19). So a game played on one machine only never reaches the others. This
+affects every emulator, not just these two. The Deck → Windows checks so far passed only because the receiving machine
+already had a save of its own.
+
+**Fix.** In `ResolveSaveDirAsync`, before detection: when the server game names exactly one emulator
+(`GameDto.Emulators`) and that emulator's reader finds a setup on this machine, the game's folders are that setup's.
+- `EmulatorSaves.PlaceFor(emulator, release, includeGlobs)` → the primary folder and the extra folders (`states`, and
+  any other key the reader declares), real paths, EmuDeck's setup first. Each reader answers from the same `Folders(…)`
+  it scans with. Shape 1 (a file named after the ROM) and shape 2 (title-ID folders) are the emulator's shared folder.
+  The scope (`includeGlobs`) already comes from the server and picks out the game's files.
+- Readers whose place depends on more than the emulator: PCSX2 (this machine's first folder card; with only a file
+  card, leave it unmapped and report the convert-to-folder fix), Switch (the existing title key and device/user
+  alignment), Xenia (the profile slice), Vita3K and shadPS4 (user `00` / `1000`). Each uses the rule its *No save here
+  yet* row already uses where one exists.
+- Then the normal path takes over: the first pull writes the fleet's save into the emulator's folder (Decisions.md:
+  a fresh machine takes the fleet's save without playing first). `ReconcileFoldersAsync` maps the `states` folder
+  the same way.
+- Every result still goes through `Safe()` (`SavePathGuard`, folder claims).
+
+**Q4 (maintainer).** Set these games up automatically on every machine where the emulator is installed (proposed:
+the same as any other server game whose folder resolves), or only where the ROM is present too, or list them in Add
+games as *On the server — not played here* for the user to add?
+
+Tests: a server DuckStation/PPSSPP/PCSX2/Cemu game is adopted with the right folders and scope on a machine with no save;
+it stays unmapped when the emulator isn't installed or the game names two emulators; PCSX2 with only a file card stays
+unmapped with the fix message; a folder claimed by another game here stays unmapped.
+
+## Phase 6 — DuckStation: a states-only game's card under DuckStation's own title
+
+**What happened.** Windows enrolled *Tomb Raider* from its states alone (its card had no save yet), so the card was
+declared under the bundled table's title, scope `Tomb Raider - The Last Revelation_{1,2}.mcd`. DuckStation names the card
+after its own game database's title, which here includes the region: `Tomb Raider - The Last Revelation (Europe,
+Australia)_1.mcd`. When the game is saved in-game, that card stays outside the scope and never syncs. This is the case
+`StatesOnlyCandidate`'s comment already expects (*"When DuckStation picks another name… Change links it"*), but it
+happens silently.
+
+**Fix.** Two parts:
+- A states-only DuckStation game also scopes `<title> (*)_1.mcd` / `_2.mcd`, since DuckStation's database titles add the
+  region in parentheses. `<title> (` keeps *Tomb Raider II* out of *Tomb Raider*'s scope.
+- On a later scan, when a card in the setup carries one of the game's codes but falls outside its scope, rescope the
+  enrolled game to that card's real name, the same as a first in-game save of any other states-only game.
+
+Two machines naming the same card differently is Phase 17's case (each machine's own file names, PR #78).
