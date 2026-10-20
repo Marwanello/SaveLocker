@@ -18,6 +18,7 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 | 4 — Help, testenv, Group H re-check | ⏳ Not started |
 | 5 — Set up a server emulator game on a machine that has no save for it yet | ⏳ Not started — Q4 decided 2026-10-20 |
 | 6 — DuckStation: a states-only game's card under DuckStation's own title | ⏳ Not started |
+| 7 — shadPS4: name a game by its installed title, not the save's own label | ⏳ Not started |
 
 ## What happened (evidence)
 
@@ -159,6 +160,15 @@ already had a save of its own.
   a fresh machine takes the fleet's save without playing first). `ReconcileFoldersAsync` maps the `states` folder
   the same way.
 - Every result still goes through `Safe()` (`SavePathGuard`, folder claims).
+- **A game adopted before its first save here** (found 2026-10-20, shadPS4 *Dark Souls: Remastered*). The Deck took the
+  server game at 11:34 with no folder, because it had no save yet and the PC's template
+  (`<winAppData>/…/home/1004/savedata`) means nothing on Linux. The save it then made at 11:37 in
+  `~/.local/share/shadPS4/home/1000/savedata/CUSA08495` is found by the scan, but for a tracked, unmapped game the
+  scan only *suggests* a folder to the console (`UpdatePathCandidatesAsync` → `PathCandidateFor`), and only for a
+  row with **the same name**. So nothing maps it, and Add games doesn't offer it either. Fix: for an unmapped
+  emulator game, a scan row from the same emulator with the same files (`Enroller.SameFiles`, D1) maps the game's
+  folders automatically, the same way enrolling that row would join it. This match goes by files, not name, so it
+  survives a renamed game (Phase 7). The name-only match stays for non-emulator games.
 
 **Q4 — decided 2026-10-20: set it up automatically only where the emulator is installed and the game's ROM is
 present.** The alternatives were every machine with the emulator installed, or listing the game in Add games for the
@@ -186,3 +196,21 @@ happens silently.
   enrolled game to that card's real name, the same as a first in-game save of any other states-only game.
 
 Two machines naming the same card differently is Phase 17's case (each machine's own file names, PR #78).
+
+## Phase 7 — shadPS4: name a game by its installed title, not the save's own label
+
+**What happened (2026-10-20).** *Dark Souls: Remastered* (`CUSA08495`) is listed as **"DARK SOULS: REMASTERED Savedata
+(EU)"**. That's the save's `sce_sys/param.sfo` `MAINTITLE`, which the game writes itself; a PS4 game is free to put
+anything there. The installed game's own `param.sfo` (`D:/Emulation/storage/shadps4/games/CUSA08495/sce_sys/param.sfo`)
+has `TITLE` = "DARK SOULS™: REMASTERED".
+
+**Fix.**
+1. Name order: the installed game's `TITLE` first, then the save's `MAINTITLE` with a trailing save label and region
+   tag removed (`Savedata`, `Save Data`, `SAVE DATA`, `(EU)`, `(US)`, `(JP)`, `(ASIA)`), then the title ID.
+   Installed games are found in shadPS4's `config.toml` `[GUI] installDirs` and EmuDeck's
+   `Emulation/storage/shadps4/games`, at `<dir>/<CUSA…>/sce_sys/param.sfo` (a `CUSA…-patch` folder is an update, not a
+   name).
+2. The server game keeps the name it was created with. Rename it in the console if wanted; the Deck joins it by files.
+
+Tests: the installed title wins; the save label and region tag are stripped when no install is found; a patch folder
+names nothing; the existing `MAINTITLE` fixture still reads.
