@@ -125,7 +125,7 @@ public static partial class DuckStationSaves
             EmulatorSystem: System,
             EmulatorRom: card,
             ViaEmuDeck: setup.EmuDeck,
-            IncludeGlobs: SaveGlobsFor(card),
+            IncludeGlobs: known is null ? SaveGlobsFor(card) : StatesOnlyCardGlobsFor(card),
             ExtraSaveDirs: [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(setup.States!), StateGlobsFor([serial]))],
             Release: ConsoleTitles.Release(System, [serial]),
             StatesOnly: true);
@@ -157,6 +157,15 @@ public static partial class DuckStationSaves
     /// <summary>A game's cards in both slots, each named exactly: <c>Crash_*.mcd</c> would take
     /// <c>Crash_Team_1.mcd</c>.</summary>
     public static IReadOnlyList<string> SaveGlobsFor(string title) => [$"{title}_1.mcd", $"{title}_2.mcd"];
+
+    /// <summary>
+    /// A states-only game's card under the bundled table's title, and under that title with what DuckStation's own game
+    /// database adds in brackets — its region, mostly: <c>Tomb Raider - The Last Revelation (Europe, Australia)_1.mcd</c>
+    /// (tasks/emulator-pull-safety Phase 6). The bracket keeps the next game of a series out: <c>Tomb Raider II_1.mcd</c>
+    /// is not <c>Tomb Raider (…)_1.mcd</c>.
+    /// </summary>
+    public static IReadOnlyList<string> StatesOnlyCardGlobsFor(string title) =>
+        [.. SaveGlobsFor(title), $"{title} (*)_1.mcd", $"{title} (*)_2.mcd"];
 
     /// <summary>Every slot and the resume state of each of the game's product codes.</summary>
     public static IReadOnlyList<string> StateGlobsFor(IEnumerable<string> codes) => codes.Select(c => $"{c}_*.sav").ToList();

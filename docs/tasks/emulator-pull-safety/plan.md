@@ -18,7 +18,7 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 | 3 — No pull while the game's emulator is open | ✅ Shipped 2026-10-20 — `EmulatorProcesses` (every emulator, both OSes, Xenia and Switch folded in); `GameActivity.IsActive` waits while a game's emulator runs; `TrackedGame.Emulators` from the server |
 | 4 — Help, testenv, Group H re-check | ⏳ Not started |
 | 5 — Set up a server emulator game on a machine that has no save for it yet | ✅ Shipped 2026-10-20 — `EmulatorPlaces.CandidateFor` (PCSX2, DuckStation, PPSSPP, melonDS, Supermodel; ROM by title, or the exact ROM for ROM-named saves) and a same-files scan row, enrolled by the poller once a minute (`SetUpEmulatorGamesAsync`). Not built: the other emulators' places, ROM identity reads (title IDs, product codes), Model 2 |
-| 6 — DuckStation: a states-only game's card under DuckStation's own title | ⏳ Not started |
+| 6 — DuckStation: a states-only game's card under DuckStation's own title | ✅ Shipped 2026-10-20 — a states-only game under a known title also scopes `<title> (*)_1.mcd`/`_2.mcd`. Not built: rescoping a game already on the server (its scope is fixed once made; the PC's *Tomb Raider* keeps its old scope until it is re-added or its patterns are edited in the console) |
 | 7 — shadPS4: name a game by its installed title, not the save's own label | ⏳ Not started — source decided 2026-10-20 |
 | 8 — Another dump of a ROM: join a revision, name an edition | ⏳ Not started — A and B decided 2026-10-20 |
 

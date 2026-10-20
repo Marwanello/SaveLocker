@@ -1,3 +1,4 @@
+using SaveLocker.Shared;
 using Xunit;
 using F = SaveLocker.Agent.Tests.ConsoleSaveFixtures;
 
@@ -157,6 +158,21 @@ public sealed class StatesOnlyTests : IDisposable
         Assert.Equal(code, game.EmulatorRom);
         Assert.Equal([$"{code}_1.mcd", $"{code}_2.mcd"], game.IncludeGlobs);
         Assert.Equal([$"{code}_*.sav"], game.ExtraSaveDirs![0].IncludeGlobs);
+    }
+
+    [Fact]
+    public void DuckStation_a_known_title_also_takes_the_card_duckstation_names_with_its_region()
+    {
+        Directory.CreateDirectory(P("ds/memcards"));
+        Touch("ds/savestates/SCUS-94163_1.sav");
+
+        var game = Assert.Single(DuckStationSaves.Scan([new RomSaveFolders(P("ds/memcards"), P("ds/savestates"))]));
+
+        Assert.Equal(["Final Fantasy VII_1.mcd", "Final Fantasy VII_2.mcd", "Final Fantasy VII (*)_1.mcd", "Final Fantasy VII (*)_2.mcd"],
+            game.IncludeGlobs);
+        Touch("ds/memcards/Final Fantasy VII (USA)_1.mcd");
+        Touch("ds/memcards/Final Fantasy VIII_1.mcd");
+        Assert.Equal(["Final Fantasy VII (USA)_1.mcd"], SaveArchive.ListFiles(P("ds/memcards"), includeGlobs: game.IncludeGlobs!.ToArray()));
     }
 
     [Fact]
