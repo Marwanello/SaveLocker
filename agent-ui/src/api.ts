@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, SaveVsCloud, SwitchCopy, SwitchUserAction, SwitchUserSharing, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, EmptiedHold, SaveVsCloud, SwitchCopy, SwitchUserAction, SwitchUserSharing, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -179,6 +179,10 @@ export const api = {
   gameDlc: (id: string) => req<DlcCheck>(`/api/games/${id}/dlc`),
   dlcPullAnyway: (id: string) => post<{ message: string }>(`/api/games/${id}/dlc/pull-anyway`, {}),
   dlcHolds: () => req<DlcHold[]>('/api/dlc/holds'),
+  // Games held because every save file vanished here (tasks/empty-save-hold), and the two answers. A local read.
+  emptiedHolds: () => req<EmptiedHold[]>('/api/holds/emptied'),
+  answerEmptiedHold: (id: string, action: 'restore-here' | 'delete-everywhere') =>
+    post<{ message: string }>(`/api/games/${id}/emptied-hold`, { action }),
   dlcHandover: (id: string) => post<ContentTransfer>(`/api/games/${id}/dlc/handover`, {}),
   dlcHandovers: () => req<ContentTransfer[]>('/api/dlc/handovers'),
   dlcHandoverAnswer: (id: string, approve: boolean) => post<ContentTransfer>(`/api/dlc/handovers/${id}/answer`, { approve }),

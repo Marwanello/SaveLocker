@@ -53,7 +53,10 @@ public enum PullOutcome
     Unreachable,
     /// <summary>The latest save was made with DLC or a title update this machine lacks; nothing was pulled, and the
     /// hold is recorded (tasks/emulator-saves Phase 5c, the DLC check). Appended last so stored values keep.</summary>
-    HeldForDlc
+    HeldForDlc,
+    /// <summary>Every save file is gone from a folder that had them; nothing was pulled, and the game is held until
+    /// someone chooses Delete everywhere or Restore here (tasks/empty-save-hold).</summary>
+    HeldEmptied
 }
 
 /// <summary>Which copy wins when a save folder is mapped onto a folder that already holds different
@@ -220,6 +223,33 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     {
         _health?.MarkSynced(gameId);
         _notices?.ClearGame(gameId);
+        EmptyFolderHoldStore.For(_config).Clear(gameId);
+    }
+
+    /// <summary>
+    /// True when the game is held because every save file vanished from this machine (tasks/empty-save-hold), having
+    /// recorded and reported the hold the first time. Only a folder that had files when it last synced is held: a game
+    /// never synced here, or one whose deletion every machine already took, has nothing to protect. A hold lifts by
+    /// itself as soon as a file is back. Called by every unforced push and pull, so the game sits out every automatic
+    /// sync; a forced push (Delete everywhere) or a forced pull (Restore here) is the answer, and lifts it.
+    /// </summary>
+    private bool HoldIfEmptied(TrackedGame game, bool empty, Func<string> currentHash)
+    {
+        var holds = EmptyFolderHoldStore.For(_config);
+        if (!empty)
+        {
+            if (holds.Clear(game.GameId)) _log($"[{game.Name}] save files are back; the hold on it is lifted.");
+            return false;
+        }
+        if (holds.For(game.GameId) is not null) return true;
+        if (game.LastSyncedHash is null || game.LastSyncedHash == currentHash()) return false;
+
+        holds.Hold(game.GameId, game.LastKnownVersionId);
+        Alert($"[{game.Name}] WARNING: every save file is gone from {game.SaveDirectory}, which had them when it last " +
+              "synced. Nothing is pushed or pulled for it here until you choose: Delete everywhere (the other machines " +
+              "delete theirs too), or Restore here (the latest save comes back).",
+            AgentEventCodes.SaveFolderEmptied, AgentEventSeverity.Warning, game.GameId);
+        return true;
     }
 
     /// <summary>A condition worth reporting that was never worth a toast (it is not a user action).</summary>
@@ -385,6 +415,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 AgentEventCodes.UnsafeSavePath, AgentEventSeverity.Error, game.GameId);
             return null;
         }
+        if (!force && HoldIfEmptied(game, manifest.Count == 0, () => hash)) return null;
         if (!force && hash == game.LastSyncedHash)
         {
             _log($"[{game.Name}] no local changes since last sync.");
@@ -742,6 +773,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         _config.RefreshGameSyncState(game);
         try
         {
+            if (!force && HoldIfEmptied(game, IsEmptied(game),
+                    () => SaveArchive.HashDirectory(game.Roots(_config.StateDir), game.ExcludeGlobs)))
+                return PullOutcome.HeldEmptied;
             if (!force && !skipDlcCheck && await HoldForDlcAsync(game, ct)) return PullOutcome.HeldForDlc;
 
             var head = await _api.DownloadHeadAsync(game.GameId, archive, ct);
@@ -877,7 +911,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // only raise a "save directory missing" warning and inflate the "N of M" count.
         var games = allGames.Where(g => g.IsEnrolledHere).ToList();
         var skipped = new List<string>();
-        int done = 0, uploaded = 0, pulled = 0, current = 0, conflicts = 0, queued = 0, unreachable = 0, failed = 0, held = 0;
+        int done = 0, uploaded = 0, pulled = 0, current = 0, conflicts = 0, queued = 0, unreachable = 0, failed = 0, held = 0,
+            emptied = 0;
         long bytes = 0;
         var cancelled = false;
 
@@ -902,6 +937,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     case UploadStatus.NoChange when pull is PullOutcome.Restored: pulled++; break;
                     case UploadStatus.NoChange when pull is PullOutcome.Unreachable: unreachable++; break;
                     case UploadStatus.NoChange when pull is PullOutcome.HeldForDlc: held++; break;
+                    case null when EmptyFolderHoldStore.For(_config).For(g.GameId) is not null: emptied++; break;
                     case UploadStatus.NoChange: current++; break;
                     case UploadStatus.Conflict: conflicts++; break;
                     case null when _offlineQueue?.Contains(g.GameId) == true: queued++; break;
@@ -913,7 +949,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         {
             _activity?.EndRun(new SyncRunSummary(
                 DateTime.UtcNow, done, uploaded, current, conflicts, failed, bytes, cancelled,
-                pulled, queued, unreachable, held));
+                pulled, queued, unreachable, held, emptied));
         }
 
         if (cancelled)
@@ -979,6 +1015,33 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             return Task.FromResult(true);
         }, TimeSpan.FromSeconds(2), ct);
         if (!ran) return (false, $"A sync of {game.Name} is running. Try again when it is done.");
+        var outcome = await PullAsync(game, force: true, ct: ct);
+        return (outcome is PullOutcome.Restored or PullOutcome.UpToDate, DescribePull(game, outcome));
+    }
+
+    /// <summary>
+    /// A person's answer to an emptied-folder hold (tasks/empty-save-hold). <paramref name="deleteEverywhere"/> pushes
+    /// the empty folder, forced, so every other machine deletes its saves at its next pull; otherwise the latest save is
+    /// pulled back here, forced (the folder is empty, so nothing is overwritten). Either lifts the hold. Nothing is lost
+    /// for good: the version with the files stays on the server, so Set as Latest brings it back.
+    /// </summary>
+    public async Task<(bool Ok, string Message)> AnswerEmptiedAsync(TrackedGame game, bool deleteEverywhere, CancellationToken ct = default)
+    {
+        var holds = EmptyFolderHoldStore.For(_config);
+        if (holds.For(game.GameId) is null) return (false, $"{game.Name} is not held.");
+        if (!IsEmptied(game))
+        {
+            holds.Clear(game.GameId);
+            return (false, $"The save files of {game.Name} are back, so it syncs as usual again.");
+        }
+        if (deleteEverywhere)
+        {
+            var push = await PushAsync(game, force: true, ct: ct);
+            return push?.Status is UploadStatus.Created or UploadStatus.NoChange
+                ? (true, $"Deleted the save of {game.Name} everywhere. The other machines remove theirs at their next pull.")
+                : (false, DescribePush(game, push));
+        }
+        if (GameActivity.IsActive(game)) return (false, $"{game.Name} is running, so its save was not restored.");
         var outcome = await PullAsync(game, force: true, ct: ct);
         return (outcome is PullOutcome.Restored or PullOutcome.UpToDate, DescribePull(game, outcome));
     }
@@ -1078,6 +1141,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     public static string DescribePull(TrackedGame game, PullOutcome outcome) => outcome switch
     {
         PullOutcome.HeldForDlc => $"Not pulled: the latest save of {game.Name} was made with DLC this machine doesn't have. Open the game to choose.",
+        PullOutcome.HeldEmptied => $"Not synced: every save file of {game.Name} is gone from this machine. Open the game to delete it everywhere or restore it here.",
         PullOutcome.Restored => $"Pulled the latest save of {game.Name}.",
         PullOutcome.UpToDate => $"{game.Name} is already up to date.",
         PullOutcome.NothingOnServer => $"The server has no save of {game.Name} yet.",
@@ -1093,6 +1157,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         UploadStatus.NoChange => $"No local changes to push for {game.Name}.",
         null when _offlineQueue?.Contains(game.GameId) == true =>
             $"The server is unreachable. {game.Name} is queued and will upload when it is back.",
+        null when EmptyFolderHoldStore.For(_config).For(game.GameId) is not null =>
+            $"Not synced: every save file of {game.Name} is gone from this machine. Open the game to delete it everywhere or restore it here.",
         null => $"Nothing was pushed for {game.Name}. The activity log says why.",
         _ => $"{game.Name} was synced.",
     };
@@ -1195,6 +1261,12 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     }
 
     private static bool HasLocalData(IReadOnlyList<SaveRoot> roots) => SaveArchive.ListSaveFiles(roots).Count > 0;
+
+    /// <summary>The save folder is here and holds none of the files a push would carry. A folder that is not here at
+    /// all is <see cref="AgentEventCodes.SaveDirMissing"/>, and a pull may create it.</summary>
+    private bool IsEmptied(TrackedGame game) =>
+        Directory.Exists(game.SaveDirectory)
+        && SaveArchive.ListSaveFiles(game.Roots(_config.StateDir), game.ExcludeGlobs).Count == 0;
 
     /// <summary>
     /// Point one of a game's extra save folders (<paramref name="key"/>) at <paramref name="directory"/>
@@ -1489,7 +1561,13 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // A pull held for missing DLC leaves this machine's older save in place, so the player is told the launch did not
         // take the newer one (clients show the reason, as for a lease held elsewhere), and the profile check switches
         // without asking: one question at a time.
-        if (EffectivePullBeforeLaunch(game) && await PullAsync(game, force: false, ct) == PullOutcome.HeldForDlc)
+        var pull = EffectivePullBeforeLaunch(game) ? await PullAsync(game, force: false, ct) : (PullOutcome?)null;
+        // An emptied folder is held, never refilled behind the player's back: they may have cleared it to start over.
+        if (pull == PullOutcome.HeldEmptied)
+            return new LaunchGateResult(LaunchDecision.ProceedSyncPaused,
+                "every save file is gone from this device, so nothing was pulled — launching without a save. " +
+                "Open the game in SaveLocker to restore it here or delete it everywhere.");
+        if (pull == PullOutcome.HeldForDlc)
         {
             CheckXeniaProfile(game, canAsk: false);
             return new LaunchGateResult(LaunchDecision.ProceedSyncPaused,

@@ -60,6 +60,7 @@ public static class Doctor
         Console.WriteLine();
         Section("Conflicts");
         await ReportConflictsAsync(config);
+        ReportEmptiedHolds(config);
 
         Console.WriteLine();
         Section("Steam");
@@ -467,6 +468,25 @@ public static class Doctor
         Console.WriteLine($"  → resolve at {url}, with `savelocker conflicts` / " +
             "`savelocker resolve-conflict --keep local|cloud`, or in the dashboard.");
         AgentLogger.Log($"[doctor] {conflicts.Count} open conflict(s) — resolve at {url}");
+    }
+
+    /// <summary>
+    /// One line per game held because every save file vanished from its folder (tasks/empty-save-hold). Read from the
+    /// state dir, so it answers with the server down. Never a Problem, like a conflict: the hold is the safe state, and
+    /// it waits for a person's choice, not a fix.
+    /// </summary>
+    private static void ReportEmptiedHolds(AgentConfig config)
+    {
+        var holds = EmptyFolderHoldStore.For(config).Read();
+        foreach (var h in holds)
+        {
+            var game = config.Games.FirstOrDefault(g => g.GameId == h.GameId);
+            Console.WriteLine($"  ! {game?.Name ?? h.GameId.ToString()} — every save file is gone from " +
+                              $"{game?.SaveDirectory ?? "its folder"} (held since {h.HeldAt:u}); nothing syncs for it here.");
+        }
+        if (holds.Count == 0) return;
+        var url = $"http://127.0.0.1:{config.DaemonApiPort ?? 5178}/#conflicts";
+        Console.WriteLine($"  → choose at {url}, or with `savelocker emptied-hold <game> --delete-everywhere | --restore-here`.");
     }
 
     /// <summary>

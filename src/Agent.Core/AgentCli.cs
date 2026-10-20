@@ -15,7 +15,7 @@ public static class AgentCli
     public static bool Handles(string command) => command is
         "register" or "enroll" or "trust" or "set-server" or "whoami" or "search" or "scan" or
         "resolve" or "add-game" or "remove-game" or "list" or "status" or "push" or "pull" or
-        "conflicts" or "resolve-conflict" or "add-path" or "remove-path" or
+        "conflicts" or "resolve-conflict" or "emptied-hold" or "add-path" or "remove-path" or
         "refresh-manifest" or "log" or "hash" or "check-update" or "dlc";
 
     /// <summary>Run one command. Returns the process exit code.</summary>
@@ -418,6 +418,39 @@ public static class AgentCli
                                            (c.Escalated ? "  — escalated" : ""));
                         Console.WriteLine($"    resolve-conflict \"{name}\" --keep local|cloud [--keep-both]");
                     }
+                    break;
+                }
+
+                case "emptied-hold":
+                {
+                    // A game held because every save file vanished here (tasks/empty-save-hold): list them, or answer one.
+                    var holds = EmptyFolderHoldStore.For(config);
+                    var name = opts.GetValueOrDefault("game") ?? positionals.FirstOrDefault();
+                    var delete = opts.ContainsKey("delete-everywhere");
+                    var restore = opts.ContainsKey("restore-here");
+                    if (name is null)
+                    {
+                        var held = holds.Read();
+                        if (held.Count == 0) Console.WriteLine("No game is held for an emptied save folder.");
+                        foreach (var h in held)
+                            Console.WriteLine($"  {config.Games.FirstOrDefault(g => g.GameId == h.GameId)?.Name ?? h.GameId.ToString()}" +
+                                              $" — held since {h.HeldAt:u}");
+                        if (held.Count > 0)
+                            Console.WriteLine("  Answer one: emptied-hold <game> --delete-everywhere | --restore-here");
+                        break;
+                    }
+                    var game = config.FindGame(name)
+                               ?? throw new InvalidOperationException($"'{name}' is not tracked here.");
+                    if (delete == restore)
+                        throw new ArgumentException("Pass exactly one of --delete-everywhere or --restore-here.");
+                    var (ok, message) = await Engine().AnswerEmptiedAsync(game, delete);
+                    await health.SendAsync(Api(), config, null, Log);
+                    if (!ok)
+                    {
+                        Console.Error.WriteLine(message);
+                        return 1;
+                    }
+                    Console.WriteLine(message);
                     break;
                 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { View, AgentState, AgentAppearance, Conflict, FolderSuggestion, TrackedGame } from './types'
+import type { View, AgentState, AgentAppearance, Conflict, EmptiedHold, FolderSuggestion, TrackedGame } from './types'
 import { api } from './api'
 import { Sidebar } from './components/Sidebar'
 import { StatusHeader } from './components/StatusHeader'
@@ -47,6 +47,8 @@ export default function App() {
   const [state, setState] = useState<AgentState | null>(null)
   const [appearance, setAppearance] = useState<AgentAppearance | null>(null)
   const [conflicts, setConflicts] = useState<Conflict[]>([])
+  // Games held here because their save folder was emptied: answered beside conflicts, counted with them.
+  const [emptied, setEmptied] = useState<EmptiedHold[]>([])
   const [games, setGames] = useState<TrackedGame[]>([])
   // Non-null only while the sync-time pop-up is up (a Sync all surfaced at least one conflict).
   // Deliberately separate from `conflicts`: the passive 15s poll below must never open this on its
@@ -92,9 +94,10 @@ export default function App() {
   const refreshConflicts = useCallback(async (): Promise<Conflict[]> => {
     // Separate requests, not Promise.all: the game list is this machine's own config, but conflicts come
     // from the server. With the server down the pair used to fail together and the list never loaded.
-    const [cs, gs] = await Promise.allSettled([api.conflicts(), api.games()])
+    const [cs, gs, eh] = await Promise.allSettled([api.conflicts(), api.games(), api.emptiedHolds()])
     if (gs.status === 'fulfilled') setGames(gs.value)
     else console.error(gs.reason)
+    if (eh.status === 'fulfilled') setEmptied(eh.value)
     if (cs.status === 'fulfilled') {
       setConflicts(cs.value)
       return cs.value
@@ -220,7 +223,7 @@ export default function App() {
             counts={{
               games: state?.gamesTracked,
               addGames: suggested ?? 0,
-              conflicts: conflicts.length,
+              conflicts: conflicts.length + emptied.length,
               // Being on the page is what clears it; leaving starts the count again from now.
               activity: view === 'activity' ? 0 : unseenWarnings(recent),
             }}
@@ -247,6 +250,7 @@ export default function App() {
                     key={open.id}
                     game={open}
                     conflicts={conflicts}
+                    emptiedHold={emptied.find(h => h.gameId === open.id) ?? null}
                     machineName={state?.machineName ?? ''}
                     platform={state?.platform}
                     onBack={() => setOpenGameId(null)}
@@ -262,6 +266,7 @@ export default function App() {
             {view === 'conflicts' && (
               <ConflictsView
                 conflicts={conflicts}
+                emptied={emptied}
                 games={games}
                 machineName={state?.machineName ?? ''}
                 onRefresh={refreshConflicts}

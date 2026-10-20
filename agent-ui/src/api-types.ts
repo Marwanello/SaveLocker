@@ -2782,6 +2782,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/holds/emptied": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptiedHoldDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/emptied-hold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EmptiedHoldAnswerRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SyncNowResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/state": {
         parameters: {
             query?: never;
@@ -4031,6 +4132,19 @@ export interface components {
             name: string;
             tracked: boolean;
         };
+        EmptiedHoldAnswerRequest: {
+            action: string;
+        };
+        EmptiedHoldDto: {
+            /** Format: uuid */
+            gameId: string;
+            gameName: string;
+            saveDirectory: string;
+            /** Format: uuid */
+            lastVersionId: null | string;
+            /** Format: date-time */
+            heldAt: string;
+        };
         EnrollFolderChoice: {
             /** Format: int32 */
             id: number;
@@ -4539,6 +4653,11 @@ export interface components {
              * @default 0
              */
             heldForDlc: number;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            heldEmptied: number;
         };
         SyncStatusDto: {
             inSync: boolean;

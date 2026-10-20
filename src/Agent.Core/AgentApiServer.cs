@@ -89,6 +89,8 @@ public sealed class AgentApiServer : IDisposable
     // Null on a host with no engine, where the route only tells the server.
     private readonly Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? _resolveConflict;
     private readonly Func<TrackedGame, bool, CancellationToken, Task<(bool Ok, string Message)>> _takeSide;
+    // POST /api/games/{id}/emptied-hold — SyncEngine.AnswerEmptiedAsync (true: delete everywhere) in whichever engine is current.
+    private readonly Func<TrackedGame, bool, CancellationToken, Task<(bool Ok, string Message)>> _answerEmptied;
     // "Also found" for tracked games (tasks/multiple-save-paths plan §8). Reads the manifest and a few
     // folders per game, so it is computed on request, never on a timer.
     private readonly FolderSuggestions _suggestions;
@@ -155,10 +157,12 @@ public sealed class AgentApiServer : IDisposable
         Func<string, string?>? prefixForAppId = null,
         Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? resolveConflict = null,
         Func<TrackedGame, Func<Task<string?>>, Task<(bool Ran, string? Result)>>? withGameLock = null,
-        Func<TrackedGame, bool, CancellationToken, Task<(bool Ok, string Message)>>? takeSide = null)
+        Func<TrackedGame, bool, CancellationToken, Task<(bool Ok, string Message)>>? takeSide = null,
+        Func<TrackedGame, bool, CancellationToken, Task<(bool Ok, string Message)>>? answerEmptied = null)
     {
         _resolveConflict = resolveConflict;
         _takeSide = takeSide ?? ((_, _, _) => Task.FromResult((false, "Not available.")));
+        _answerEmptied = answerEmptied ?? ((_, _, _) => Task.FromResult((false, "Not available.")));
         _withGameLock = withGameLock ?? (async (_, work) => (true, await work()));
         _forgetFolder = forgetFolder ?? ((_, _) => Task.FromResult(false));
         _suggestions = new FolderSuggestions(config, detection, prefixForAppId);
@@ -1080,7 +1084,8 @@ public sealed class AgentApiServer : IDisposable
                 recent,
                 run is null ? null : new SyncRunDto(
                     run.FinishedAtUtc, run.Games, run.Uploaded, run.AlreadyCurrent, run.Conflicts,
-                    run.Failed, run.BytesSent, run.Cancelled, run.Pulled, run.Queued, run.Unreachable, run.HeldForDlc));
+                    run.Failed, run.BytesSent, run.Cancelled, run.Pulled, run.Queued, run.Unreachable, run.HeldForDlc,
+                    run.HeldEmptied));
         }).Produces<ActivityDto>();
 
         // Stops a running Sync all after the game it is on. Cooperative on purpose — see
@@ -1489,6 +1494,41 @@ public sealed class AgentApiServer : IDisposable
             .Select(h => new DlcHoldDto(h.GameId, _config.Games.FirstOrDefault(g => g.GameId == h.GameId)?.Name ?? "",
                 h.Missing.Count, h.Missing.Sum(p => p.Size), DlcCheck.Summary(h.Missing), h.HeldAt))
             .Where(h => h.GameName.Length > 0).ToArray())).Produces<DlcHoldDto[]>();
+
+        // Every game held here because its save folder was emptied (tasks/empty-save-hold): the Conflicts page, the
+        // game page and the Decky plugin list them with their two choices.
+        app.MapGet("/api/holds/emptied", () => TypedResults.Ok(EmptyFolderHoldStore.For(_config).Read()
+            .Select(h => _config.Games.FirstOrDefault(g => g.GameId == h.GameId) is { } g
+                ? new EmptiedHoldDto(h.GameId, g.Name, g.SaveDirectory, h.LastVersionId, h.HeldAt) : null)
+            .OfType<EmptiedHoldDto>().ToArray())).Produces<EmptiedHoldDto[]>();
+
+        // Answer one: delete-everywhere (a forced push of the empty folder) or restore-here (a forced pull). Not tied to
+        // the request's lifetime, like /api/games/{id}/sync: a closed page must not abort a restore halfway.
+        app.MapPost("/api/games/{id:guid}/emptied-hold",
+            async Task<Results<Ok<SyncNowResponse>, Conflict<ErrorResponse>, BadRequest<ErrorResponse>, NotFound>>
+                (Guid id, EmptiedHoldAnswerRequest body) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+            if (body.Action is not (EmptiedHoldActions.DeleteEverywhere or EmptiedHoldActions.RestoreHere))
+                return TypedResults.BadRequest(new ErrorResponse(
+                    $"action must be {EmptiedHoldActions.DeleteEverywhere} or {EmptiedHoldActions.RestoreHere}."));
+
+            var gate = _gameSyncGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+            if (!await gate.WaitAsync(0))
+                return TypedResults.Conflict(new ErrorResponse("A sync of this game is already running. Try again when it is done."));
+            try
+            {
+                var (ok, message) = await _answerEmptied(game, body.Action == EmptiedHoldActions.DeleteEverywhere, CancellationToken.None);
+                return ok ? TypedResults.Ok(new SyncNowResponse(message)) : TypedResults.BadRequest(new ErrorResponse(message));
+            }
+            catch (Exception ex)
+            {
+                AgentLogger.LogException("AgentApiServer.emptied-hold", ex);
+                return TypedResults.BadRequest(new ErrorResponse(ex.Message));
+            }
+            finally { gate.Release(); }
+        }).Produces<SyncNowResponse>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
         // What the server holds for one game: head version (machine, time, size), open conflict, lease.
         // One small request and no disk work, so the game page can load it on open — unlike
@@ -2632,6 +2672,19 @@ public sealed record GameProfileAtLaunchRequest(ProfileAtLaunch? ProfileAtLaunch
 
 public sealed record Xbox360SettingsDto(ProfileAtLaunch ProfileAtLaunch, DlcSendPolicy DlcSend);
 
+/// <summary>A game held because every save file vanished from its folder here (tasks/empty-save-hold).</summary>
+/// <param name="LastVersionId">The last version this machine synced, which still has the files.</param>
+public sealed record EmptiedHoldDto(Guid GameId, string GameName, string SaveDirectory, Guid? LastVersionId, DateTimeOffset HeldAt);
+
+/// <param name="Action"><see cref="EmptiedHoldActions.DeleteEverywhere"/> or <see cref="EmptiedHoldActions.RestoreHere"/>.</param>
+public sealed record EmptiedHoldAnswerRequest(string Action);
+
+public static class EmptiedHoldActions
+{
+    public const string DeleteEverywhere = "delete-everywhere";
+    public const string RestoreHere = "restore-here";
+}
+
 /// <summary>A pull the DLC check holds (tasks/emulator-saves Phase 5c).</summary>
 public sealed record DlcHoldDto(Guid GameId, string GameName, int MissingCount, long MissingSize, string Summary, DateTimeOffset HeldAt);
 
@@ -2664,9 +2717,11 @@ public sealed record ActivityDto(
 /// <param name="Failed">Pushes that were refused or could not run. A save waiting in the offline queue
 /// is <paramref name="Queued"/>, and a game the server could not be asked about is <paramref name="Unreachable"/>.</param>
 /// <param name="HeldForDlc">Games whose newer save was not pulled because it needs DLC this machine lacks.</param>
+/// <param name="HeldEmptied">Games not synced because every save file is gone from this machine.</param>
 public sealed record SyncRunDto(
     DateTime FinishedAtUtc, int Games, int Uploaded, int AlreadyCurrent, int Conflicts, int Failed,
-    long BytesSent, bool Cancelled, int Pulled = 0, int Queued = 0, int Unreachable = 0, int HeldForDlc = 0);
+    long BytesSent, bool Cancelled, int Pulled = 0, int Queued = 0, int Unreachable = 0, int HeldForDlc = 0,
+    int HeldEmptied = 0);
 public sealed record SyncNowResponse(string Message);
 /// <param name="Requested">False when no Sync all was running, so there was nothing to cancel.</param>
 public sealed record CancelSyncResponse(bool Requested);

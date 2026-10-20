@@ -191,6 +191,10 @@ public static class NoticeCatalog
                 $"{code}:{gameId:D}", gameId, $"{gameName} needs DLC", body,
                 AgentEventSeverity.Warning, NoticeAction.Game(gameId), "Open game", "Later"),
 
+            AgentEventCodes.SaveFolderEmptied => new AgentNotice(
+                $"{code}:{gameId:D}", gameId, $"{gameName}: save files are gone", body,
+                AgentEventSeverity.Warning, NoticeAction.Game(gameId), "Choose", "Later"),
+
             AgentEventCodes.LeaseHeldElsewhere => new AgentNotice(
                 $"{code}:{gameId:D}", gameId, $"{gameName} is checked out elsewhere", body,
                 AgentEventSeverity.Warning, NoticeAction.Game(gameId), "Open game", "Dismiss"),
