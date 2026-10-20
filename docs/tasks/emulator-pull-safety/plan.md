@@ -18,7 +18,7 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 | 4 — Help, testenv, Group H re-check | ⏳ Not started |
 | 5 — Set up a server emulator game on a machine that has no save for it yet | ⏳ Not started — Q4 decided 2026-10-20 |
 | 6 — DuckStation: a states-only game's card under DuckStation's own title | ⏳ Not started |
-| 7 — shadPS4: name a game by its installed title, not the save's own label | ⏳ Not started |
+| 7 — shadPS4: name a game by its installed title, not the save's own label | ⏳ Not started — source decided 2026-10-20 |
 
 ## What happened (evidence)
 
@@ -203,6 +203,14 @@ Two machines naming the same card differently is Phase 17's case (each machine's
 (EU)"**. That's the save's `sce_sys/param.sfo` `MAINTITLE`, which the game writes itself; a PS4 game is free to put
 anything there. The installed game's own `param.sfo` (`D:/Emulation/storage/shadps4/games/CUSA08495/sce_sys/param.sfo`)
 has `TITLE` = "DARK SOULS™: REMASTERED".
+
+**Source — decided 2026-10-20 (maintainer): the installed game's `param.sfo` `TITLE`, then the cleaned save label.**
+A bundled title list like PS1/PS2's was looked for first. None we may ship exists: Redump and No-Intro have no PS4
+set (libretro-database's `no-intro` folder has PSP and Vita only); Apollo Save Tool's game list is GPL-3.0, ruled out
+by the same rule as PCSX2's `GameIndex.yaml` (Decisions.md, `ConsoleTitles`); psdevwiki's *Game Titles* table is a
+wiki page whose licence couldn't be confirmed. The installed game's `TITLE` is Sony's own name for the game (what the
+PS4 menu shows), and a save is only made on a machine where the game is installed, so the first machine to enrol a
+game always has it.
 
 **Fix.**
 1. Name order: the installed game's `TITLE` first, then the save's `MAINTITLE` with a trailing save label and region
