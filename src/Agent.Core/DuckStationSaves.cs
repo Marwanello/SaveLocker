@@ -167,6 +167,33 @@ public static partial class DuckStationSaves
     public static IReadOnlyList<string> StatesOnlyCardGlobsFor(string title) =>
         [.. SaveGlobsFor(title), $"{title} (*)_1.mcd", $"{title} (*)_2.mcd"];
 
+    /// <summary>
+    /// The card patterns a DuckStation game enrolled states-only before Phase 6 still lacks: its scope names the title's
+    /// two cards exactly, neither is in <paramref name="saveDir"/>, and a card of that title with a bracket is. Null when
+    /// nothing is missing — a game whose card is named exactly, or one that was never states-only.
+    /// </summary>
+    public static IReadOnlyList<string>? MissingCardGlobs(IReadOnlyList<string> includeGlobs, string? saveDir)
+    {
+        if (OldCardTitle(includeGlobs) is not { } title || string.IsNullOrWhiteSpace(saveDir)) return null;
+        try
+        {
+            if (!Directory.Exists(saveDir) || includeGlobs.Any(g => File.Exists(Path.Combine(saveDir, g)))) return null;
+            var wider = StatesOnlyCardGlobsFor(title).Skip(2).ToList();
+            return wider.Any(g => Directory.EnumerateFiles(saveDir, g).Any()) ? wider : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>Did a scope go from a title's exact cards to <see cref="StatesOnlyCardGlobsFor"/> — the repair
+    /// <see cref="MissingCardGlobs"/> asks for, made by another machine?</summary>
+    public static bool IsCardRepair(IReadOnlyList<string> before, IReadOnlyList<string> after) =>
+        OldCardTitle(before) is { } title && after.SequenceEqual(StatesOnlyCardGlobsFor(title), StringComparer.OrdinalIgnoreCase);
+
+    private static string? OldCardTitle(IReadOnlyList<string> globs) =>
+        globs.Count == 2 && globs[0].EndsWith("_1.mcd", StringComparison.OrdinalIgnoreCase) && globs[0][..^6] is { Length: > 0 } title &&
+        !title.Contains('*') && !title.Contains('(') && globs.SequenceEqual(SaveGlobsFor(title), StringComparer.OrdinalIgnoreCase)
+            ? title : null;
+
     /// <summary>Every slot and the resume state of each of the game's product codes.</summary>
     public static IReadOnlyList<string> StateGlobsFor(IEnumerable<string> codes) => codes.Select(c => $"{c}_*.sav").ToList();
 

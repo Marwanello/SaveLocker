@@ -239,4 +239,30 @@ public sealed class StatesOnlyTests : IDisposable
         Assert.Equal(["000ab000/data/**"], game.IncludeGlobs);
         Assert.Equal(AzaharSaves.StateGlobsFor("00040000000AB000"), game.ExtraSaveDirs![0].IncludeGlobs);
     }
+
+    [Fact]
+    public void A_game_enrolled_before_its_region_card_was_taken_asks_for_it()
+    {
+        const string t = "Tomb Raider - The Last Revelation";
+        var old = DuckStationSaves.SaveGlobsFor(t);
+        Touch($"cards/{t} (Europe, Australia)_1.mcd");
+        Assert.Equal([$"{t} (*)_1.mcd", $"{t} (*)_2.mcd"], DuckStationSaves.MissingCardGlobs(old, P("cards")));
+        Assert.True(DuckStationSaves.IsCardRepair(old, DuckStationSaves.StatesOnlyCardGlobsFor(t)));
+
+        // Nothing is missing once the scope has them, or when the card is named exactly.
+        Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.StatesOnlyCardGlobsFor(t), P("cards")));
+        Touch($"cards/{t}_1.mcd");
+        Assert.Null(DuckStationSaves.MissingCardGlobs(old, P("cards")));
+    }
+
+    [Fact]
+    public void Only_a_title_scope_with_a_bracketed_card_beside_it_is_repaired()
+    {
+        Touch("cards/Tomb Raider II (USA)_1.mcd");
+        Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.SaveGlobsFor("Tomb Raider"), P("cards")));
+        Assert.Null(DuckStationSaves.MissingCardGlobs(["*.mcd"], P("cards")));
+        Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.SaveGlobsFor("Tomb Raider II (USA)"), P("cards")));
+        Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.SaveGlobsFor("Tomb Raider II"), P("missing")));
+        Assert.False(DuckStationSaves.IsCardRepair(DuckStationSaves.SaveGlobsFor("Tomb Raider"), ["*.mcd"]));
+    }
 }

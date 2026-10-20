@@ -185,6 +185,10 @@ public sealed class ApiClient
     public async Task SetFileNamesAsync(Guid gameId, FileNameDto[] names, CancellationToken ct = default) =>
         (await _http.PutAsJsonAsync($"/api/agent/games/{gameId}/file-names", names, ct)).EnsureSuccessStatusCode();
 
+    /// <summary>Adds patterns to a game's primary include scope; the ones that were new come back.</summary>
+    public async Task<string[]> AddIncludeGlobsAsync(Guid gameId, IReadOnlyList<string> patterns, CancellationToken ct = default) =>
+        await Read<string[]>(await _http.PostAsJsonAsync($"/api/agent/games/{gameId}/include-globs", patterns, ct), ct);
+
     public async Task ReportLaunchProfileAsync(Guid gameId, LaunchProfileReport report, CancellationToken ct = default) =>
         (await _http.PutAsJsonAsync($"/api/agent/games/{gameId}/launch-profile", report, ct)).EnsureSuccessStatusCode();
 

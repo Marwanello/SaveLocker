@@ -95,6 +95,7 @@ public sealed class CommandPoller : IDisposable
             await AnnounceFolderSuggestionsAsync();
             await UpdatePathCandidatesAsync();
             await SetUpEmulatorGamesAsync();
+            await RepairDuckStationCardsAsync();
             // Independent of each other — RunCommandsAsync executes dashboard commands,
             // CheckConflictsAsync only reads _config.Games and hits its own endpoint — so run them
             // concurrently rather than paying their two round-trips back to back.
@@ -480,7 +481,17 @@ public sealed class CommandPoller : IDisposable
         var include = (sg.IncludeGlobs ?? Array.Empty<string>()).ToList();
         if (!include.SequenceEqual(local.IncludeGlobs))
         {
+            // Another machine took in a DuckStation card the scope had missed, and pushes it. This machine's own copy
+            // of that card was never synced, so it is not an edit to push over it: the pull brings the fleet's.
+            var cardRepair = DuckStationSaves.IsCardRepair(local.IncludeGlobs, include) &&
+                             local.LastSyncedHash is not null && local.LocalHash(_config.StateDir) == local.LastSyncedHash;
             local.IncludeGlobs = include;
+            if (cardRepair)
+            {
+                local.LastSyncedHash = local.LocalHash(_config.StateDir);
+                _config.SaveGameSyncState(local);
+                AgentLogger.Log($"[{local.Name}] its scope now takes DuckStation's region-named card; the fleet's copy will be pulled.");
+            }
             changed = true;
         }
 
@@ -826,6 +837,32 @@ public sealed class CommandPoller : IDisposable
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
             AgentLogger.LogException("CommandPoller.SetUpEmulatorGames", ex);
+        }
+    }
+
+    /// <summary>
+    /// A DuckStation game enrolled states-only before tasks/emulator-pull-safety Phase 6 names its card without the
+    /// region DuckStation puts in it, so the card never synced. The first machine that finds that card adds the wider
+    /// patterns on the server and pushes its card; the others take it from there (<see cref="ReconcileFoldersAsync"/>).
+    /// </summary>
+    private async Task RepairDuckStationCardsAsync()
+    {
+        foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && EmulatorProcesses.EmulatorsOf(g).Contains("DuckStation")).ToList())
+        {
+            if (DuckStationSaves.MissingCardGlobs(game.IncludeGlobs, game.SaveDirectory) is not { } missing) continue;
+            try
+            {
+                var added = await _api().AddIncludeGlobsAsync(game.GameId, missing);
+                if (added.Length == 0) continue;
+                game.IncludeGlobs = [.. game.IncludeGlobs, .. added];
+                _config.Save();
+                AgentLogger.Log($"[{game.Name}] its scope now takes DuckStation's region-named card ({string.Join(", ", added)}); pushing it.");
+                await _engine().PushAsync(game);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+            {
+                AgentLogger.LogException($"CommandPoller.RepairDuckStationCards '{game.Name}'", ex);
+            }
         }
     }
 
