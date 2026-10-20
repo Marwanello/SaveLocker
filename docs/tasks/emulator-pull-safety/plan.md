@@ -14,7 +14,7 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 |---|---|
 | 0 — Deck test rig: stop hiding `~/.local/share` from the emulator readers | ✅ Shipped 2026-10-20 — redeployed to the Deck; a rescan lists shadPS4's *Dark Souls: Remastered* and *Career*, and Azahar's states at `~/.local/share/azahar-emu/states` |
 | 1 — Capture PCSX2's formatted superblock | ✅ Shipped 2026-10-20 — `Ps2Superblock.Formatted8Mb()` built field by field, byte-equal to the superblock a game wrote on the Deck's `PS2MC-1_converted.ps2` (8 MB, the test fixture) |
-| 2 — Pull into an unformatted folder card | ⏳ Not started — Q1, Q2 decided 2026-10-19 |
+| 2 — Pull into an unformatted folder card | ✅ Shipped 2026-10-20 — formatted after a pull, on the next scan and at the start of a sync; skipped while PCSX2 runs. Not built: a warning on the Add games row and in `doctor` (the scan fixes the card instead) |
 | 3 — No pull while the game's emulator is open | ✅ Shipped 2026-10-20 — `EmulatorProcesses` (every emulator, both OSes, Xenia and Switch folded in); `GameActivity.IsActive` waits while a game's emulator runs; `TrackedGame.Emulators` from the server |
 | 4 — Help, testenv, Group H re-check | ⏳ Not started |
 | 5 — Set up a server emulator game on a machine that has no save for it yet | ⏳ Not started — Q4 decided 2026-10-20 |

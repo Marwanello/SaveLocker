@@ -34,8 +34,85 @@ public static partial class Pcsx2Saves
     public const string EmulatorName = "PCSX2";
     public const string System = "ps2";
 
-    public static IReadOnlyList<ScanCandidate> Scan() =>
-        Scan(Folders(EmuDeckRoots.Find(), EmulatorPaths.Standalone ? DataRoots() : Array.Empty<string>()));
+    public static IReadOnlyList<ScanCandidate> Scan()
+    {
+        var folders = Folders(EmuDeckRoots.Find(), EmulatorPaths.Standalone ? DataRoots() : Array.Empty<string>());
+        FormatCardsWithSaves(folders, () => EmulatorProcesses.Running([EmulatorName], EmulatorProcesses.Snapshot()) is not null,
+            AgentLogger.Log);
+        return Scan(folders);
+    }
+
+    // ---------------------------------------------------------------- unformatted folder cards (pull-safety Phase 2)
+
+    /// <summary>
+    /// Every folder card in <paramref name="folders"/> that holds a game's save but isn't formatted gets formatted
+    /// (tasks/emulator-pull-safety Q2: on the next scan, no button) — a card a save was pulled onto before SaveLocker
+    /// did this itself. Skipped while PCSX2 runs: it holds the card and writes its own superblock back.
+    /// </summary>
+    public static void FormatCardsWithSaves(IEnumerable<RomSaveFolders> folders, Func<bool> pcsx2Running, Action<string> log)
+    {
+        bool? running = null;
+        foreach (var setup in folders)
+            foreach (var card in SafeEntries(setup.Saves).OfType<DirectoryInfo>())
+            {
+                if (card.LinkTarget is not null || !MemoryCards.IsFolderCard(card.FullName) || MemoryCards.FolderCardFormatted(card.FullName))
+                    continue;
+                if (!HoldsSaves(card)) continue;
+                running ??= pcsx2Running();
+                FormatCard(card.FullName, running.Value, log);
+            }
+    }
+
+    /// <summary>
+    /// After a pull, and at the start of a sync: when <paramref name="game"/> is PCSX2's and its folder is an unformatted
+    /// folder card, format it, so PCSX2 sees the saves on it (Q1). Never a formatted card, never a file card, never
+    /// another emulator's game. True when it wrote the superblock.
+    /// </summary>
+    public static bool FormatCardOf(TrackedGame game, Action<string> log, Func<bool>? pcsx2Running = null)
+    {
+        if (!EmulatorProcesses.EmulatorsOf(game).Contains(EmulatorName, StringComparer.OrdinalIgnoreCase)) return false;
+        var dir = game.SaveDirectory;
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return false;
+        if (!MemoryCards.IsFolderCard(dir) && !Path.TrimEndingDirectorySeparator(dir).EndsWith(".ps2", StringComparison.OrdinalIgnoreCase)) return false;
+        if (MemoryCards.FolderCardFormatted(dir)) return false;
+        pcsx2Running ??= () => EmulatorProcesses.Running([EmulatorName], EmulatorProcesses.Snapshot()) is not null;
+        return FormatCard(dir, pcsx2Running(), log, game.Name);
+    }
+
+    /// <summary>Writes a formatted superblock into the folder card <paramref name="cardDir"/>: to a temporary file first,
+    /// then over the old one, so PCSX2 never reads half of one.</summary>
+    private static bool FormatCard(string cardDir, bool pcsx2Running, Action<string> log, string? game = null)
+    {
+        var card = Path.GetFileName(Path.TrimEndingDirectorySeparator(cardDir));
+        var who = game is null ? "" : $"[{game}] ";
+        if (pcsx2Running)
+        {
+            log($"{who}PCSX2 can't see the saves on its card \"{card}\" until it's formatted; SaveLocker formats it once PCSX2 is closed.");
+            return false;
+        }
+        var target = Path.Combine(cardDir, MemoryCards.FolderCardSuperblock);
+        var temp = target + ".savelocker-tmp";
+        try
+        {
+            File.WriteAllBytes(temp, Ps2Superblock.Formatted8Mb());
+            File.Move(temp, target, overwrite: true);
+            log($"{who}formatted PCSX2 card \"{card}\" so it shows the saves on it.");
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            try { File.Delete(temp); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { }
+            log($"{who}could not format PCSX2 card \"{card}\": {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>A card holds a game's save: a folder named for a game (<c>BASLUS-21050…</c>) with a file in it.</summary>
+    private static bool HoldsSaves(DirectoryInfo card)
+    {
+        try { return card.GetDirectories().Any(d => d.LinkTarget is null && MemoryCards.ConsoleSaveName().IsMatch(d.Name) && HasFiles(d)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+    }
 
     public static IReadOnlyList<ScanCandidate> Scan(IEnumerable<RomSaveFolders> folders)
     {

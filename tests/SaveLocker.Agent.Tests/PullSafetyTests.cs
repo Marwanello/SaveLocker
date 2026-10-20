@@ -72,6 +72,84 @@ public sealed class PullSafetyTests : IDisposable
         Assert.False(Ps2Superblock.IsFormatted(marked));
     }
 
+    // ---- Phase 2 ----
+
+    [Theory]
+    [InlineData(0)]     // a card PCSX2 just made: an empty superblock
+    [InlineData(-1)]    // none at all
+    [InlineData(0xFF)]  // erased
+    public void A_pulled_save_on_an_unformatted_card_gets_the_card_formatted(int superblock)
+    {
+        var card = Card(superblock switch { 0 => [], -1 => null, _ => Enumerable.Repeat((byte)0xFF, 8192).ToArray() });
+
+        Assert.True(Pcsx2Saves.FormatCardOf(Game("PCSX2", card), _log.Add, () => false));
+
+        Assert.Equal(Ps2Superblock.Formatted8Mb(), Superblock(card));
+        Assert.True(MemoryCards.FolderCardFormatted(card));
+        Assert.DoesNotContain(Directory.GetFiles(card), f => f.EndsWith(".savelocker-tmp", StringComparison.Ordinal));
+        Assert.Contains(_log, l => l.Contains("formatted PCSX2 card \"mc1.ps2\""));
+    }
+
+    [Fact]
+    public void A_formatted_card_is_never_formatted_again()
+    {
+        var own = Ps2Superblock.Formatted8Mb();
+        own[0x170] = 0x12; // another card's own bytes
+        var card = Card(own);
+
+        Assert.False(Pcsx2Saves.FormatCardOf(Game("PCSX2", card), _log.Add, () => false));
+
+        Assert.Equal(own, Superblock(card));
+    }
+
+    [Fact]
+    public void Only_a_pcsx2_folder_card_is_touched()
+    {
+        var card = Card([]);
+        Assert.False(Pcsx2Saves.FormatCardOf(Game("DuckStation", card), _log.Add, () => false));
+        Assert.Empty(Superblock(card));
+
+        // A game on a file card: its folder is the memory cards folder, not a card.
+        var memcards = Path.Combine(_root, "memcards");
+        Directory.CreateDirectory(memcards);
+        File.WriteAllBytes(Path.Combine(memcards, "Mcd001.ps2"), Ps2Superblock.Formatted8Mb());
+        Assert.False(Pcsx2Saves.FormatCardOf(Game("PCSX2", memcards), _log.Add, () => false));
+        Assert.Equal(Ps2Superblock.Formatted8Mb(), File.ReadAllBytes(Path.Combine(memcards, "Mcd001.ps2")));
+        Assert.Single(Directory.GetFileSystemEntries(memcards));
+    }
+
+    [Fact]
+    public void A_card_is_left_alone_while_pcsx2_is_open_and_said_so()
+    {
+        var card = Card([]);
+
+        Assert.False(Pcsx2Saves.FormatCardOf(Game("PCSX2", card), _log.Add, () => true));
+
+        Assert.Empty(Superblock(card));
+        Assert.Contains(_log, l => l.Contains("can't see the saves") && l.Contains("once PCSX2 is closed"));
+    }
+
+    [Fact]
+    public void A_scan_formats_an_unformatted_card_holding_saves_and_nothing_else()
+    {
+        var saves = Path.Combine(_root, "saves");
+        var card = Card([]);
+        var empty = Path.Combine(saves, "mc2.ps2");
+        Directory.CreateDirectory(empty);
+        File.WriteAllBytes(Path.Combine(empty, MemoryCards.FolderCardSuperblock), []);
+        var folders = new[] { new RomSaveFolders(saves, null) };
+
+        Pcsx2Saves.FormatCardsWithSaves(folders, () => true, _log.Add);
+        Assert.Empty(Superblock(card));
+
+        Pcsx2Saves.FormatCardsWithSaves(folders, () => false, _log.Add);
+        Assert.Equal(Ps2Superblock.Formatted8Mb(), Superblock(card));
+        Assert.Empty(File.ReadAllBytes(Path.Combine(empty, MemoryCards.FolderCardSuperblock)));
+
+        // Its games are still found after it is formatted.
+        Assert.Contains(Pcsx2Saves.Scan(folders), c => c.EmulatorRom == "BESLES-52822");
+    }
+
     // ---- Phase 3 ----
 
     [Theory]

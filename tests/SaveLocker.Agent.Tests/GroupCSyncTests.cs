@@ -65,7 +65,7 @@ public sealed class GroupCSyncTests : IClassFixture<ServerProcess>, IDisposable
         var serial = $"SLUS-{_id}";
         var save = $"BA{serial}";
         // Windows (EmuDeck's card name there): the game's two save folders, another game, and a state with its backup copy.
-        Write("win", "pcsx2/memcards/MC1.ps2/_pcsx2_superblock", "win-superblock");
+        Write("win", "pcsx2/memcards/MC1.ps2/_pcsx2_superblock", "Sony PS2 Memory Card Format (win)");
         F.Write(P("win", $"pcsx2/memcards/MC1.ps2/{save}SYS/icon.sys"), F.IconSys($"Game {_id}"));
         Write("win", $"pcsx2/memcards/MC1.ps2/{save}SYS/_pcsx2_index", "win-index");
         Write("win", $"pcsx2/memcards/MC1.ps2/{save}S01/data", "win-slot1");
@@ -73,7 +73,7 @@ public sealed class GroupCSyncTests : IClassFixture<ServerProcess>, IDisposable
         Write("win", $"pcsx2/sstates/{serial} (ABCD1234).01.p2s", "win-state");
         Write("win", $"pcsx2/sstates/{serial} (ABCD1234).01.p2s.backup", "win-backup");
         // Deck: an older save of the same game on a card named otherwise, its own card superblock and another game.
-        Write("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/_pcsx2_superblock", "deck-superblock");
+        Write("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/_pcsx2_superblock", "Sony PS2 Memory Card Format (deck)");
         F.Write(P("deck", $"Emulation/saves/pcsx2/saves/Mcd001.ps2/{save}SYS/icon.sys"), F.IconSys($"Game {_id}"));
         Write("deck", $"Emulation/saves/pcsx2/saves/Mcd001.ps2/{save}SYS/_pcsx2_index", "deck-old");
         Write("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/BASLUS-20000OTHER/save", "deck-other");
@@ -96,7 +96,7 @@ public sealed class GroupCSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal("win-state", Read("deck", $"Emulation/saves/pcsx2/states/{serial} (ABCD1234).01.p2s"));
         Assert.False(File.Exists(P("deck", $"Emulation/saves/pcsx2/states/{serial} (ABCD1234).01.p2s.backup")));
         // The rest of the Deck's card is its own.
-        Assert.Equal("deck-superblock", Read("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/_pcsx2_superblock"));
+        Assert.Equal("Sony PS2 Memory Card Format (deck)", Read("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/_pcsx2_superblock"));
         Assert.Equal("deck-other", Read("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/BASLUS-20000OTHER/save"));
         Assert.False(Directory.Exists(P("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/BESLES-50330GTA3")));
     }

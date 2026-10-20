@@ -810,6 +810,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                          $"({string.Join(", ", restored.SkippedKeys)}); left out.");
                 XeniaProfileSlice.AfterPull(game, _log, stateDir: _config.StateDir);
                 SwitchCopies.AfterPull(game, _log);
+                Pcsx2Saves.FormatCardOf(game, _log);
                 if (OwnFileNames.Grow(_config, game)) _ = OwnFileNames.ReportAsync(_api, game, _log);
             }
             catch (SaveArchive.UnsafeArchiveException ex)
@@ -943,6 +944,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// </summary>
     public async Task<string> SyncGameAsync(TrackedGame game, GameSyncMode mode, CancellationToken ct = default)
     {
+        // A PCSX2 card a save was pulled onto before SaveLocker formatted cards itself, which the scan could not fix
+        // (PCSX2 was open, or the write failed): fixed now (tasks/emulator-pull-safety Q2).
+        Pcsx2Saves.FormatCardOf(game, _log);
         switch (mode)
         {
             case GameSyncMode.Pull:
