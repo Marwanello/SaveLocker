@@ -7,18 +7,20 @@ is the same for Dolphin and PrimeHack. This plan makes such a game **one entry i
 
 **Mockup:** [`mockup.html`](mockup.html). Open it in a browser. It is clickable and shows three variations
 (A Emulator tabs, B Side-by-side trees, C Nested in the list), with Metroid Prime - Hunters and Metroid Prime Trilogy
-as the grouped examples.
+as the grouped examples. **Variation A (Emulator tabs) was picked on 2026-10-20**; B and C stay as
+design history.
 
 ## Status
 
 | Phase | Status |
 |---|---|
-| 0 — Pick a variation (mockup) | 🚧 In progress — mockup drawn 2026-10-20, waiting for the maintainer's pick |
+| 0 — Pick a variation (mockup) | ✅ Shipped 2026-10-20 — maintainer picked **A, Emulator tabs** |
 | 1 — Server: titles that group games | ⏳ Not started |
-| 2 — Console list: one entry per title | ⏳ Not started |
-| 3 — Console game page: a tree per emulator | ⏳ Not started |
+| 2 — Console list: one row per title | ⏳ Not started |
+| 3 — Console game page: emulator tabs | ⏳ Not started |
 | 4 — Group and split by hand | ⏳ Not started |
-| 5 — Later: agent UI, and copying a save to another emulator | ⏳ Not started |
+| 5 — Help, testenv check, docs | ⏳ Not started |
+| 6 — Later: agent UI, and copying a save to another emulator | ⏳ Not started |
 
 ## Why the saves stay apart
 
@@ -57,48 +59,126 @@ The Switch exception stays as it is: a Switch title is already one game across e
 | Good at | Closest to today's page; fewest new parts | Comparing emulators at a glance, e.g. which one has the newer save | Keeps today's page untouched; the list itself shows the trees |
 | Costs | A tree's state is hidden until its tab is opened (the tab shows a status dot) | Wide; three or more emulators need a scroll; other cards still need a tree picker | Two levels to click through; the list grows when expanded |
 
+## Defaults taken (confirm before Phase 1)
+
+These were open questions. The plan uses the recommended answer unless the maintainer says otherwise.
+1. **Existing pairs are grouped automatically**: once by a backfill, then on every new enrolment.
+2. **A title takes its name and art from its first game** (the oldest). It has no rename of its own yet, since the
+   console has no game rename either. If the first game is split out, the next oldest takes over.
+3. **Two trees from one emulator can share a title.** This happens with another dump that stays its own game
+   (pull-safety Phase 8). The tab says which tree is which: *RetroArch · Rev 0*.
+
 ## Phases
+
+Branch `multi-emulator-games`, cut from `main` after `emulator-saves-group-h` is merged. One commit per phase.
 
 ### 1 — Server: titles that group games
 
-- New table `GameTitles` (`Id`, `Name`, `Region`, `ReleaseJson`, art URLs) and a nullable `Games.TitleId`. A game with
-  no title is shown alone, as today. Migration plus backfill.
-- **Grouping is automatic** when a game is enrolled, or found by the backfill. The rule: another game with the same
-  platform and release (the same `ReleaseJson` game IDs, else the same `Name` without the emulator suffix and the same
-  `Region`), found through a **different** emulator. The same emulator never groups; that is Phase 17's merge.
-- `GameDto` and the overview add `titleId`. A new `GET /api/titles` (or the overview grouped by title) gives the title
-  rows with their games. Regenerate `openapi.json` and `web/src/api-types.ts`.
-- **Verify:** `run-console-security-tests.ps1` covers the new route's auth. A backfill test checks that the
-  Hunters (melonDS + RetroArch) and Trilogy (Dolphin + PrimeHack) pairs group, and that two regions or two Switch
-  emulators do not.
+**Data.**
+- `Data/Entities.cs`:
+  - New `GameTitle` (`Id`, `CreatedAt`, `PlatformKey`, `BaseName`, `RegionKey`).
+  - `Game.TitleId` (`Guid?`, FK, `SetNull` on delete), indexed.
+  - `Game.TitleLocked` (`bool`): set when a game is split out by hand, so automatic grouping never takes it back.
+  - A title holds no name or art of its own (default 2). The console reads them from its first game.
+- Migration `AddGameTitles`. The backfill (`TitleGrouping.BackfillAsync`) runs at startup and is idempotent, like the
+  other one-time fills.
 
-### 2 — Console list: one entry per title
+**Grouping rule** (`Services/TitleGrouping.cs`; pure and unit-tested):
+- **Base name.** Remove a trailing `(<emulator>…)` group from the game's name, where `<emulator>` is one its sources
+  report (`MachineGameSources`, kind `emulator`). Then remove a region tag that equals the game's region, or any
+  region tag when no region is recorded. Examples:
+  - `Metroid Prime - Hunters (RetroArch)` → `Metroid Prime - Hunters`
+  - `Metroid Prime - Hunters (RetroArch, Rev 0)` → `Metroid Prime - Hunters`
+  - `Metroid Prime - Hunters (USA) (RetroArch)` → `Metroid Prime - Hunters`
+- **Platform.** The source's console tag (`DS`, `Wii`, …, as the agent reports it in `tags`), else `ReleaseJson`'s
+  console.
+- **Two games group when** the platform, the base name (ignoring case) and the region are equal, **and** they come
+  from different emulators or are different dumps (default 3).
+- **Never grouped:**
+  - a game with no emulator source (a PC game);
+  - a Switch-keyed game, which is already one game across the Switch emulators (D2);
+  - a game with `TitleLocked`;
+  - two games of different regions.
+- **When it runs:** when a game is created, when a game gets its first emulator source (the enrol path in
+  `SyncService` and `RecordSourceAsync`), and in the backfill. It only ever sets `TitleId`. It never renames
+  anything, moves versions or touches sync.
 
-- `GamesSidebar`, `GamesGrid`, `organize.ts`: rows are titles. Status, last synced and size come from their trees, as
-  above. Search matches the title and its emulators.
-- **Verify:** extend `run-organize-tests.ps1`; check the console on the test server through testenv.
+**API.**
+- `GameDto` gains `TitleId` (trailing, nullable). `GameStateDto` gains two fields:
+  - `Emulator`: the emulator its sources name, null for a PC game.
+  - `Edition`: the tags that set it apart inside its title (for example `Rev 0`), else null.
+- `GET /api/overview` keeps its shape, one `GameStateDto` per game. The console groups the games by `titleId`, so
+  agents and older consoles see no change.
+- New admin routes for Phase 4: `POST /api/games/{id}/title/split` and `POST /api/games/{id}/title/join?into={id}`.
+- Regenerate `openapi.json` and `web/src/api-types.ts`.
 
-### 3 — Console game page: a tree per emulator
+**Verify.**
+- Tests for the grouping rule:
+  - Hunters (melonDS + RetroArch) groups. Trilogy (Dolphin + PrimeHack) groups.
+  - Two regions don't group. A Switch game doesn't. A PC game of the same name doesn't. A locked game stays out.
+  - The backfill is idempotent.
+- Add route auth checks to `run-console-security-tests.ps1`.
+- Start the server on a copy of the test server's database and check that the three Hunters games (melonDS, RetroArch,
+  and the Deck's `(USA) (RetroArch)`) form one title, and the Trilogy pair forms another.
 
-- `GameDetail` takes a title and the picked tree (in the URL, `?emulator=retroarch`, so a link opens the right tree).
-  The chosen variation's switcher drives which `Game` the existing cards get. The cards are unchanged.
-- Confirm texts name the emulator.
-- **Verify:** testenv; restore a RetroArch version and check that the melonDS tree is untouched.
+### 2 — Console list: one row per title
+
+- `web/src/components/game/titles.ts` (new, pure): `groupTitles(GameStateDto[]) → TitleSummary[]`. A `TitleSummary`
+  has:
+  - `id`: the title ID, or the game ID for a game with no title;
+  - `name` and art from the first game;
+  - `trees`: its `GameStateDto`s, ordered by emulator name, then edition;
+  - `status`: the worst tree's (`standingKey`, conflict first);
+  - `lastSynced`: the newest head;
+  - `size`: the sum of the trees;
+  - `machineIds` and `sources`: the union of the trees'.
+- `GamesView`, `GamesSidebar`, `GamesGrid`: render `TitleSummary` rows, and select by the title's `id`. The row's
+  second line shows the emulator badges and *2 emulators · Today 09:15* (mockup A).
+- `organize.ts`: group and sort `TitleSummary` rows.
+  - Platform grouping lists a title under each of its emulators' sub-headings, the way a game on two machines is
+    listed under both devices.
+  - Search matches the title's name and its emulators.
+- `run-organize-tests.ps1` and `organize-fixtures.cjs`: add the Hunters and Trilogy titles.
+
+### 3 — Console game page: emulator tabs
+
+- `GameDetail` takes a `TitleSummary` and the picked tree. A one-tree title renders exactly as today, with no tabs.
+- `game/EmulatorTabs.tsx` (new): one tab per tree. Each tab shows:
+  - the emulator's icon (`platformIcon.ts`);
+  - its name and edition;
+  - *N versions · last synced*;
+  - the tree's status dot.
+
+  Arrow keys move between tabs.
+- **The picked tab is kept in the URL hash** (`#emulator=retroarch`), so a link or a refresh opens the right tab. A
+  link with an old game ID opens its title on that game's tab.
+- **What follows the tab:** everything under the tabs gets the picked tree's `GameStateDto`, unchanged: stats,
+  Versions, Save folders, Rules, Exclude patterns, DLC, Launch profile, Merge and Remote commands. The head (cover,
+  name, platform, region) is the title's.
+- **Confirm texts name the emulator:** Restore, Delete version, Delete game and Merge. For example: *Restore this
+  RetroArch version to WinTest?* Delete game deletes the tree, not the title.
+- **A conflict in a closed tab** shows on that tab (red dot), and in the head's status chip as *Conflict in PrimeHack*.
 
 ### 4 — Group and split by hand
 
-- **Split out** a tree into its own entry, and **Group with…** another game of the same platform. These only change
-  `TitleId`. No versions move, so they can be undone and need no typed confirm (unlike Merge, Phase 17).
-- A game split by hand is never grouped again automatically.
+- **＋ Group with…** at the end of the tab strip (mockup A) lists same-platform games that aren't in a title, with
+  their emulators. Picking one calls `title/join`. No versions move, so it needs no typed confirm (unlike Merge).
+- **Split out**, in each tab's ⋯ menu, calls `title/split`. It sets `TitleLocked`, and the game becomes its own row
+  again.
+- Both actions are recorded in the audit log.
 
-### 5 — Later
+### 5 — Help, testenv check, docs
+
+- **Help:** a KB article in `web/src/help/` on games saved with several emulators.
+- **Decisions.md:** "A game saved with several emulators is one console entry, with one tree per emulator. Sync still
+  keeps the trees apart." This changes how the 2026-10-07 decision is displayed, not its sync rule.
+- **testenv check:**
+  - Hunters and Trilogy each show as one row, with a tab per emulator.
+  - Restore a RetroArch version and check that the melonDS folder is unchanged.
+  - Split Trilogy out, then group it back.
+
+### 6 — Later
 
 - The agent UI (Deck and tray) shows titles the same way.
-- **Copy this save to another emulator**, where the formats match (DS `.sav` ⇄ RetroArch `.srm`, Dolphin ⇄ PrimeHack).
-  This is a separate plan, with its own decision.
-
-## Open questions
-
-1. Which variation: A, B or C?
-2. Group the existing pairs automatically (recommended), or only when the user groups them by hand?
-3. Does the title take its name and art from the first tree, or can it be renamed on its own?
+- **Copy this save to another emulator**, where the formats match (DS `.sav` ⇄ RetroArch `.srm`, Dolphin ⇄
+  PrimeHack). This needs its own plan and its own decision.
