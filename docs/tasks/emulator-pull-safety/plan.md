@@ -233,8 +233,9 @@ has `TITLE` = "DARK SOULS™: REMASTERED".
 **Source — decided 2026-10-20 (maintainer): the installed game's `param.sfo` `TITLE`, then the cleaned save label.**
 A bundled title list like PS1/PS2's was looked for first. None we may ship exists: Redump and No-Intro have no PS4
 set (libretro-database's `no-intro` folder has PSP and Vita only); Apollo Save Tool's game list is GPL-3.0, ruled out
-by the same rule as PCSX2's `GameIndex.yaml` (Decisions.md, `ConsoleTitles`); psdevwiki's *Game Titles* table is a
-wiki page whose licence couldn't be confirmed. The installed game's `TITLE` is Sony's own name for the game (what the
+by the same rule as PCSX2's `GameIndex.yaml` (Decisions.md, `ConsoleTitles`); psdevwiki's *Game Titles* table
+(checked offline 2026-10-20) is GNU FDL 1.2 and far too thin: about 420 rows with only ~360 `CUSA` IDs (PS4 has
+thousands, several per game by region), and *Dark Souls Remastered*'s row has no ID at all. The installed game's `TITLE` is Sony's own name for the game (what the
 PS4 menu shows), and a save is only made on a machine where the game is installed, so the first machine to enrol a
 game always has it.
 
