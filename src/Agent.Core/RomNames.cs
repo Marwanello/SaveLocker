@@ -32,6 +32,59 @@ public static partial class RomNames
         : gamelists.ArcadeTitle(system, fileBaseName) is { Length: > 0 } listed ? CleanTitle(listed)
         : CleanTitle(fileBaseName);
 
+    /// <summary>
+    /// The tags that tell one dump of a ROM from another (tasks/emulator-pull-safety Phase 8): the region
+    /// (<c>USA</c>, <c>Europe, Australia</c>), the revision or version (<c>Rev 1</c>, <c>v1.1</c>) and a pre-release
+    /// (<c>Beta</c>, <c>Proto 2</c>, <c>Demo</c>, <c>Sample</c>), in the file's order. Language lists (<c>En,Fr,De</c>) and
+    /// dump marks (<c>[!]</c>, <c>[b]</c>) are not editions and are left out.
+    /// </summary>
+    public static IReadOnlyList<string> EditionTags(string romBase) =>
+        Paren().Matches(romBase).Select(m => m.Groups[1].Value.Trim())
+            .Where(t => IsRegion(t) || Revision().IsMatch(t) || PreRelease().IsMatch(t))
+            .ToList();
+
+    /// <summary>Is <paramref name="tag"/> a revision or version (<c>Rev 1</c>, <c>Rev A</c>, <c>v1.02</c>)?</summary>
+    public static bool IsRevision(string tag) => Revision().IsMatch(tag);
+
+    /// <summary>
+    /// Are two ROM names the same release once revision, version and dump marks are taken off — another revision of
+    /// one game (<c>Metroid Prime - Hunters (USA)</c> and <c>… (USA) (Rev 1)</c>)? The region and everything else must
+    /// match, ignoring case.
+    /// </summary>
+    public static bool SameRelease(string a, string b) =>
+        string.Equals(ReleaseKey(a), ReleaseKey(b), StringComparison.OrdinalIgnoreCase);
+
+    private static string ReleaseKey(string romBase)
+    {
+        var text = Brackets().Replace(romBase, " ");
+        text = Paren().Replace(text, m => Revision().IsMatch(m.Groups[1].Value.Trim()) ? " " : m.Value);
+        return Whitespace().Replace(text, " ").Trim();
+    }
+
+    private static bool IsRegion(string tag) =>
+        tag.Split(',').Select(p => p.Trim()).All(p => p.Length > 0 && Regions.Contains(p));
+
+    /// <summary>No-Intro's and Redump's region names.</summary>
+    private static readonly HashSet<string> Regions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "World", "USA", "Europe", "Japan", "Asia", "Australia", "Brazil", "Canada", "China", "France", "Germany", "Greece",
+        "Hong Kong", "India", "Italy", "Korea", "Latin America", "Mexico", "Netherlands", "New Zealand", "Norway", "Poland",
+        "Portugal", "Russia", "Scandinavia", "Spain", "Sweden", "Taiwan", "UK", "Austria", "Belgium", "Denmark", "Finland",
+        "Switzerland", "Ireland", "Israel", "South Africa", "Turkey", "United Kingdom",
+    };
+
+    [GeneratedRegex(@"\(([^)]*)\)")]
+    private static partial Regex Paren();
+
+    [GeneratedRegex(@"\[[^\]]*\]")]
+    private static partial Regex Brackets();
+
+    [GeneratedRegex(@"^(?:Rev\s*[\w.]+|v\d[\w.]*)$", RegexOptions.IgnoreCase)]
+    private static partial Regex Revision();
+
+    [GeneratedRegex(@"^(?:Beta|Proto|Demo|Sample|Prototype)(?:\s*\d+)?$", RegexOptions.IgnoreCase)]
+    private static partial Regex PreRelease();
+
     [GeneratedRegex(@"\([^)]*\)|\[[^\]]*\]")]
     private static partial Regex Tags();
 
