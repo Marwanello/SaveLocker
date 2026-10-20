@@ -604,6 +604,13 @@ session can judge an edge case, not to reopen the choice.
   hash, which the local hash (excludes applied) no longer equals, so the next push sends a version without the file —
   that convergence is intended. `RestoreArchive` takes the game's effective exclude globs and matches them with
   `FilterExcluded`'s own matcher, so push and pull cannot disagree about what is excluded.
+- **A save folder that lost every file is held — no push, no pull — until a person chooses** (2026-10-20, maintainer's
+  choice, `logs/2026-10-20_empty-save-hold/`). Pushing it made a zero-file head that deleted every other machine's
+  saves. Holding the push alone was rejected: an ordinary Sync then pulls first and silently refills a folder the user
+  may have emptied on purpose. So the held game sits out Sync all, the watcher, the exit push and the pre-launch pull;
+  only **Delete everywhere** (forced push), **Restore here** (forced pull) or a file coming back lifts it. Only a
+  folder that had files at its last sync qualifies, and only when *every* file is gone — tidying a few is ordinary.
+  The server also refuses an unforced empty archive over a head with files (409), for agents that predate the hold.
 - **LAN-only over plain HTTP. No tunnel, no TLS termination, no reverse proxy** (2026-07-27). The
   payload is save files, not credentials or PII, and the earlier Cloudflare Tunnel plan is dropped.
   So `X-Forwarded-*` is never read **by default** and there is nothing in front to trust.

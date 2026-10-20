@@ -31,12 +31,12 @@ rewritten in C#.
   reading the code; neither has been reproduced yet. Each task starts with a test that should fail today.
   - An emptied save folder is pushed as an ordinary new version (`SyncEngine.PushCoreAsync` only checks
     `Directory.Exists`), and every other machine's pull then deletes its copy. OpenSave holds such a game
-    back and asks (`internal/p2p/syncengine/hold.go`). → [[tasks/empty-save-hold/summary|empty-save-hold]]
+    back and asks (`internal/p2p/syncengine/hold.go`). → [[logs/2026-10-20_empty-save-hold/summary|empty-save-hold]]
   - A pull deletes local files that match the game's exclude patterns: they are never in the archive, and the
     restore's delete pass (`SaveArchive.cs`, the loop under "This is the most dangerous loop in the codebase")
     removes everything in scope that the archive lacks. The default excludes include `*.bak`, which is what
     many games call their own backup saves. OpenSave sets excluded files aside and puts them back
-    (`internal/snapshot/keep.go`). → [[tasks/keep-excluded-files-on-pull/summary|keep-excluded-files-on-pull]]
+    (`internal/snapshot/keep.go`). → [[logs/2026-10-20_keep-excluded-files-on-pull/summary|keep-excluded-files-on-pull]]
 - **Registry saves need no archive changes.** OpenSave writes the registry keys into a `registry.json` file
   inside an extra save folder that it owns, so hashing, conflicts and delta upload work on it unchanged
   (`internal/winreg/materialize.go`). SaveLocker already has extra save folders. Nobody restores a Windows
@@ -89,8 +89,8 @@ OpenSave.
 
 | # | Priority | Task | New or amended |
 |---|---|---|---|
-| 1 | High | [[tasks/empty-save-hold/summary\|Hold back a save folder that was emptied]] | New |
-| 2 | High | [[tasks/keep-excluded-files-on-pull/summary\|A pull keeps this machine's excluded files]] | New |
+| 1 | High | [[logs/2026-10-20_empty-save-hold/summary\|Hold back a save folder that was emptied]] | New |
+| 2 | High | [[logs/2026-10-20_keep-excluded-files-on-pull/summary\|A pull keeps this machine's excluded files]] | New |
 | 3 | High | [[tasks/registry-saves/summary\|Registry-based saves]] | Amended |
 | 4 | High | [[tasks/emulator-saves/plan\|Emulator saves: Switch (Group F)]] | Amended |
 | 5 | High | [[tasks/file-level-saves/summary\|File-level saves]] | Amended |
