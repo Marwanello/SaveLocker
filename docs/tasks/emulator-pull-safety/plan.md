@@ -17,7 +17,7 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 | 2 — Pull into an unformatted folder card | ✅ Shipped 2026-10-20 — formatted after a pull, on the next scan and at the start of a sync; skipped while PCSX2 runs. Not built: a warning on the Add games row and in `doctor` (the scan fixes the card instead) |
 | 3 — No pull while the game's emulator is open | ✅ Shipped 2026-10-20 — `EmulatorProcesses` (every emulator, both OSes, Xenia and Switch folded in); `GameActivity.IsActive` waits while a game's emulator runs; `TrackedGame.Emulators` from the server |
 | 4 — Help, testenv, Group H re-check | ⏳ Not started |
-| 5 — Set up a server emulator game on a machine that has no save for it yet | ⏳ Not started — Q4 decided 2026-10-20 |
+| 5 — Set up a server emulator game on a machine that has no save for it yet | ✅ Shipped 2026-10-20 — `EmulatorPlaces.CandidateFor` (PCSX2, DuckStation, PPSSPP, melonDS, Supermodel; ROM by title, or the exact ROM for ROM-named saves) and a same-files scan row, enrolled by the poller once a minute (`SetUpEmulatorGamesAsync`). Not built: the other emulators' places, ROM identity reads (title IDs, product codes), Model 2 |
 | 6 — DuckStation: a states-only game's card under DuckStation's own title | ⏳ Not started |
 | 7 — shadPS4: name a game by its installed title, not the save's own label | ⏳ Not started — source decided 2026-10-20 |
 | 8 — Another dump of a ROM: join a revision, name an edition | ⏳ Not started — A and B decided 2026-10-20 |

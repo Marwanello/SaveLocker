@@ -33,13 +33,16 @@ public static class Enroller
     /// missing from it adds none.</param>
     /// <param name="links">Per candidate id, which server game an emulator save joins when the user chose by
     /// hand (<see cref="EnrollLinks"/>). A candidate missing from it is linked automatically.</param>
+    /// <param name="showProgress">False for the poller setting up a game this machine never saved (pull-safety Phase 5):
+    /// Add games' progress belongs to the batch the person started.</param>
     public static async Task<(int enrolled, int skipped)> EnrollAsync(
         AgentConfig config,
         IReadOnlyList<ScanCandidate> candidates,
         int[] ids,
         CancellationToken ct = default,
         IReadOnlyDictionary<int, string[]>? alsoSync = null,
-        IReadOnlyDictionary<int, LinkChoice>? links = null)
+        IReadOnlyDictionary<int, LinkChoice>? links = null,
+        bool showProgress = true)
     {
         if (string.IsNullOrEmpty(config.ApiKey))
             throw new InvalidOperationException("Not registered yet. Open Settings and click Register first.");
@@ -54,8 +57,10 @@ public static class Enroller
         // The fleet's games, read once for the batch and kept current as it creates more: an emulator
         // game's name is decided against it (ServerNameFor).
         List<GameDto>? serverGames = null;
-        void Step(string? game, string step) =>
-            Report(new EnrollProgress(true, index, total, game, step, enrolled, skipped, notes.ToArray(), info.ToArray()));
+        void Step(string? game, string step)
+        {
+            if (showProgress) Report(new EnrollProgress(true, index, total, game, step, enrolled, skipped, notes.ToArray(), info.ToArray()));
+        }
         void Refuse(string game, string why)
         {
             AgentLogger.Log($"Enrollment skipped '{game}': {why}");
@@ -349,7 +354,7 @@ public static class Enroller
         }
         finally
         {
-            Report(new EnrollProgress(false, index, total, null, "Done", enrolled, skipped, notes.ToArray(), info.ToArray()));
+            if (showProgress) Report(new EnrollProgress(false, index, total, null, "Done", enrolled, skipped, notes.ToArray(), info.ToArray()));
         }
 
         return (enrolled, skipped);

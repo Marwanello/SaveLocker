@@ -222,7 +222,7 @@ public static partial class Pcsx2Saves
     }
 
     /// <summary>The first folder card in a memory cards folder (by name), or null when it has none.</summary>
-    private static DirectoryInfo? FirstFolderCard(string savesDir) =>
+    internal static DirectoryInfo? FirstFolderCard(string savesDir) =>
         SafeEntries(savesDir).OfType<DirectoryInfo>()
             .Where(d => d.LinkTarget is null && MemoryCards.IsFolderCard(d.FullName))
             .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)

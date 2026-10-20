@@ -94,6 +94,7 @@ public sealed class CommandPoller : IDisposable
             _notices?.ObserveServer(true);
             await AnnounceFolderSuggestionsAsync();
             await UpdatePathCandidatesAsync();
+            await SetUpEmulatorGamesAsync();
             // Independent of each other — RunCommandsAsync executes dashboard commands,
             // CheckConflictsAsync only reads _config.Games and hits its own endpoint — so run them
             // concurrently rather than paying their two round-trips back to back.
@@ -774,6 +775,7 @@ public sealed class CommandPoller : IDisposable
             AgentLogger.LogException("CommandPoller.UpdatePathCandidates", ex);
             return;
         }
+        _lastScan = found;
 
         var reports = new List<ScanPathCandidate>();
         foreach (var game in unmapped)
@@ -787,6 +789,56 @@ public sealed class CommandPoller : IDisposable
 
         _health.SetPathCandidates(reports);
     }
+
+    /// <summary>The last scan <see cref="UpdatePathCandidatesAsync"/> made, for <see cref="SetUpEmulatorGamesAsync"/>.</summary>
+    private IReadOnlyList<ScanCandidate>? _lastScan;
+    private DateTime _lastEmulatorSetUp = DateTime.MinValue;
+    private static readonly TimeSpan EmulatorSetUpInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Sets up the emulator games this machine tracks without a folder (tasks/emulator-pull-safety Phase 5): ones taken
+    /// from the server before their first save here, and ones never played here at all. Each is enrolled from the row
+    /// <see cref="SetUpRowFor"/> finds, the way Add games would, so it joins the server game by its files. At most once a
+    /// minute: a ROM copied in is picked up on the next pass.
+    /// </summary>
+    private async Task SetUpEmulatorGamesAsync()
+    {
+        var waiting = _config.Games.Where(g => !g.IsEnrolledHere && g.Emulators.Count > 0).ToList();
+        if (waiting.Count == 0 || DateTime.UtcNow - _lastEmulatorSetUp < EmulatorSetUpInterval) return;
+        _lastEmulatorSetUp = DateTime.UtcNow;
+
+        var pairs = new List<(Guid GameId, ScanCandidate Row)>();
+        foreach (var game in waiting)
+            if (_serverGames.GetValueOrDefault(game.GameId) is { } sg && SetUpRowFor(sg, _lastScan, g => EmulatorPlaces.CandidateFor(g)) is { } row)
+                pairs.Add((game.GameId, row));
+        if (pairs.Count == 0) return;
+        var rows = pairs.Select(p => p.Row).ToList();
+        try
+        {
+            var (enrolled, _) = await Enroller.EnrollAsync(_config, rows, Enumerable.Range(0, rows.Count).ToArray(), showProgress: false);
+            if (enrolled == 0) return;
+            foreach (var (_, row) in pairs.Where(p => _config.Games.Any(g => g.GameId == p.GameId && g.IsEnrolledHere)))
+                _notify(row.NoSaveYet
+                    ? $"Set up '{row.Name}' here: its ROM is on this machine, so its save will be pulled into {row.SuggestedSaveDir}."
+                    : $"Mapped '{row.Name}' to {row.SuggestedSaveDir}, where this machine saved it.");
+            _onGamesChanged();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            AgentLogger.LogException("CommandPoller.SetUpEmulatorGames", ex);
+        }
+    }
+
+    /// <summary>
+    /// The row that sets up <paramref name="sg"/> here: first a scan row of a save this machine has — the same files
+    /// from the same emulator (<see cref="Enroller.SameFiles"/>, D1), whatever it is named — else the emulator's place for a
+    /// game whose ROM is here (<paramref name="place"/>, <see cref="EmulatorPlaces.CandidateFor"/>). Null leaves it unmapped.
+    /// </summary>
+    internal static ScanCandidate? SetUpRowFor(GameDto sg, IEnumerable<ScanCandidate>? found, Func<GameDto, ScanCandidate?> place) =>
+        (found ?? []).FirstOrDefault(c => c.Source == ScanSource.Emulator && !c.UntouchedSeed && c.NotSyncable is null &&
+                                         !string.IsNullOrWhiteSpace(c.SuggestedSaveDir) && Enroller.SameFiles(sg, c) &&
+                                         sg.Emulators is { Length: > 0 })
+        ?? place(sg);
 
     /// <summary>
     /// Once per start, after the first reconcile: if any tracked game has folders the manifest knows
