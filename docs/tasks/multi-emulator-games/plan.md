@@ -59,9 +59,9 @@ The Switch exception stays as it is: a Switch title is already one game across e
 | Good at | Closest to today's page; fewest new parts | Comparing emulators at a glance, e.g. which one has the newer save | Keeps today's page untouched; the list itself shows the trees |
 | Costs | A tree's state is hidden until its tab is opened (the tab shows a status dot) | Wide; three or more emulators need a scroll; other cards still need a tree picker | Two levels to click through; the list grows when expanded |
 
-## Defaults taken (confirm before Phase 1)
+## Decisions (maintainer, 2026-10-20)
 
-These were open questions. The plan uses the recommended answer unless the maintainer says otherwise.
+All three were confirmed by the maintainer on 2026-10-20.
 1. **Existing pairs are grouped automatically**: once by a backfill, then on every new enrolment.
 2. **A title takes its name and art from its first game** (the oldest). It has no rename of its own yet, since the
    console has no game rename either. If the first game is split out, the next oldest takes over.
@@ -79,7 +79,7 @@ Branch `multi-emulator-games`, cut from `main` after `emulator-saves-group-h` is
   - New `GameTitle` (`Id`, `CreatedAt`, `PlatformKey`, `BaseName`, `RegionKey`).
   - `Game.TitleId` (`Guid?`, FK, `SetNull` on delete), indexed.
   - `Game.TitleLocked` (`bool`): set when a game is split out by hand, so automatic grouping never takes it back.
-  - A title holds no name or art of its own (default 2). The console reads them from its first game.
+  - A title holds no name or art of its own (decision 2). The console reads them from its first game.
 - Migration `AddGameTitles`. The backfill (`TitleGrouping.BackfillAsync`) runs at startup and is idempotent, like the
   other one-time fills.
 
@@ -93,7 +93,7 @@ Branch `multi-emulator-games`, cut from `main` after `emulator-saves-group-h` is
 - **Platform.** The source's console tag (`DS`, `Wii`, …, as the agent reports it in `tags`), else `ReleaseJson`'s
   console.
 - **Two games group when** the platform, the base name (ignoring case) and the region are equal, **and** they come
-  from different emulators or are different dumps (default 3).
+  from different emulators or are different dumps (decision 3).
 - **Never grouped:**
   - a game with no emulator source (a PC game);
   - a Switch-keyed game, which is already one game across the Switch emulators (D2);
