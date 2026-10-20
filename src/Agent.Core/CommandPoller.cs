@@ -321,6 +321,12 @@ public sealed class CommandPoller : IDisposable
                     local.EmulatorKey = key;
                     changed = true;
                 }
+                var emulators = (sg.Emulators ?? []).ToList();
+                if (!emulators.SequenceEqual(local.Emulators, StringComparer.OrdinalIgnoreCase))
+                {
+                    local.Emulators = emulators;
+                    changed = true;
+                }
                 if (local.EmulatorProfile != sg.EmulatorProfile)
                 {
                     local.EmulatorProfile = sg.EmulatorProfile;
@@ -436,6 +442,7 @@ public sealed class CommandPoller : IDisposable
                 Release = sg.Release,
                 EmulatorKey = sg.EmulatorKey,
                 EmulatorProfile = sg.EmulatorProfile,
+                Emulators = (sg.Emulators ?? []).ToList(),
                 SaveDirectory = dir ?? "",
                 ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
             };

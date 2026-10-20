@@ -330,10 +330,7 @@ public static class SwitchCopies
 
     /// <summary>The emulator's own process: its name, or its name and a suffix — <c>yuzu-cmd</c>, <c>Eden.AppImage</c>
     /// (Linux shortens a process name to 15 characters, which keeps the dot).</summary>
-    internal static bool IsProcessOf(string process, string emulator) =>
-        process.Equals(emulator, StringComparison.OrdinalIgnoreCase) ||
-        (process.StartsWith(emulator, StringComparison.OrdinalIgnoreCase) && process.Length > emulator.Length &&
-         process[emulator.Length] is '.' or '-' or '_');
+    internal static bool IsProcessOf(string process, string emulator) => EmulatorProcesses.IsProcessOf(process, emulator);
 
     /// <summary>After a pull into Ryujinx's committed copy (<c>&lt;save ID&gt;/0</c>), its working copy (<c>1</c>) is made the
     /// same, so Ryujinx finds the pulled save whichever one it opens.</summary>

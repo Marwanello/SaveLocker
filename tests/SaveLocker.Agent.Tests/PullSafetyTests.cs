@@ -71,4 +71,66 @@ public sealed class PullSafetyTests : IDisposable
         marked[Ps2Superblock.FormattedMarkOffset] = (byte)'x';
         Assert.False(Ps2Superblock.IsFormatted(marked));
     }
+
+    // ---- Phase 3 ----
+
+    [Theory]
+    [InlineData("pcsx2-qtx64", "PCSX2", true)]
+    [InlineData("pcsx2-qtx64-avx2", "PCSX2", true)]
+    [InlineData("PCSX2-qt.exe", "PCSX2", true)]
+    [InlineData("pcsx2helper", "PCSX2", false)]
+    [InlineData("duckstation-qt-x64-ReleaseLTCG", "DuckStation", true)]
+    [InlineData("duckstation-qt-", "DuckStation", true)]   // Linux keeps 15 characters
+    [InlineData("PPSSPPWindows64", "PPSSPP", true)]
+    [InlineData("PPSSPPSDL", "PPSSPP", true)]
+    [InlineData("dolphin-emu", "Dolphin", true)]
+    [InlineData("Dolphin.exe", "PrimeHack", true)]
+    [InlineData("retroarch", "RetroArch", true)]
+    [InlineData("retroarch", "PCSX2", false)]
+    [InlineData("emulator_multicpu.exe", "Model 2", true)]
+    [InlineData("emulator_multic", "Model 2", true)]       // Proton: 15 characters of emulator_multicpu.exe
+    [InlineData("emulationstatio", "Model 2", false)]      // ES-DE is not Model 2
+    [InlineData("xenia_canary.ex", "Xenia", true)]
+    [InlineData("xenia_manager", "Xenia", false)]
+    [InlineData("eden.AppImage", "Eden", true)]
+    [InlineData("EdenSync", "Eden", false)]
+    public void An_emulator_is_known_by_its_process_on_either_os(string process, string emulator, bool its) =>
+        Assert.Equal(its, EmulatorProcesses.IsProcessOf(process, emulator));
+
+    [Fact]
+    public void A_pull_waits_while_the_games_emulator_runs_and_only_that_emulator()
+    {
+        string[] running = ["explorer", "pcsx2-qtx64", "steam"];
+
+        Assert.True(GameActivity.IsActive(Game("PCSX2"), running, out var process));
+        Assert.Equal("pcsx2-qtx64", process);
+        Assert.False(GameActivity.IsActive(Game("RetroArch"), running, out _));
+
+        // A game taken from the server knows its emulator from the server, not from how this machine found it.
+        var adopted = new TrackedGame { GameId = Guid.NewGuid(), Name = "Tomb Raider", Emulators = ["PCSX2"] };
+        Assert.True(GameActivity.IsActive(adopted, running, out _));
+
+        // A PC game with no process names still cannot be told.
+        Assert.False(GameActivity.IsActive(new TrackedGame { GameId = Guid.NewGuid(), Name = "Hollow Knight" }, running, out _));
+    }
+
+    [Fact]
+    public void The_refusal_names_the_emulator()
+    {
+        var game = Game("PCSX2");
+        var message = GameActivity.RefusalMessage(game, "pcsx2-qtx64");
+        Assert.Contains("PCSX2 is open", message);
+        Assert.Contains("Close PCSX2 and pull again", message);
+
+        var pc = new TrackedGame { Name = "Hollow Knight", ProcessNames = ["hollow_knight"] };
+        Assert.Contains("the game is running (hollow_knight.exe)", GameActivity.RefusalMessage(pc, "hollow_knight"));
+    }
+
+    [Fact]
+    public void The_emulator_is_never_a_process_of_the_game()
+    {
+        var game = Game("PCSX2");
+        Assert.Empty(game.ProcessNames);
+        Assert.Equal(["PCSX2"], EmulatorProcesses.EmulatorsOf(game));
+    }
 }

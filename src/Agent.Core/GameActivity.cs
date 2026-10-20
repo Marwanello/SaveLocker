@@ -24,29 +24,36 @@ namespace SaveLocker.Agent;
 public static class GameActivity
 {
     /// <summary>
-    /// True if any of the game's configured process names is running. A game with no configured
-    /// process names returns false: we genuinely cannot tell, and refusing every pull for every
-    /// unmapped game would break sync outright. WA-08 is what makes that list non-empty.
+    /// True if any of the game's configured process names is running, or — for an emulator's game — that emulator
+    /// is (tasks/emulator-pull-safety Phase 3): PCSX2, Dolphin and DuckStation keep the whole memory card in memory, so
+    /// a save restored under them is not seen and is overwritten when they write the card back. Every game of a running
+    /// emulator waits (Q3). A game with neither returns false: we genuinely cannot tell, and refusing every pull for
+    /// every unmapped game would break sync outright. WA-08 is what makes the process list non-empty.
+    /// <para>The emulator is never put in <see cref="TrackedGame.ProcessNames"/>: <see cref="ProcessWatcher"/> would then
+    /// take "PCSX2 closed" as "every PS2 game exited" and push them all.</para>
     /// </summary>
     public static bool IsActive(TrackedGame game, out string? processName)
     {
         processName = null;
-        if (game.ProcessNames.Count == 0) return false;
+        var emulators = EmulatorProcesses.EmulatorsOf(game);
+        if (game.ProcessNames.Count == 0 && emulators.Count == 0) return false;
+        return IsActive(game, EmulatorProcesses.Snapshot(), out processName);
+    }
 
+    /// <summary><see cref="IsActive(TrackedGame, out string?)"/> against a list of running process names.</summary>
+    internal static bool IsActive(TrackedGame game, IReadOnlyCollection<string> running, out string? processName)
+    {
+        processName = null;
         var wanted = new HashSet<string>(game.ProcessNames.Select(StripExe), StringComparer.OrdinalIgnoreCase);
-        foreach (var p in Process.GetProcesses())
+        if (running.FirstOrDefault(wanted.Contains) is { } own)
         {
-            try
-            {
-                var name = p.ProcessName;
-                if (wanted.Contains(name))
-                {
-                    processName = name;
-                    return true;
-                }
-            }
-            catch { /* the process died between enumeration and read — it is not running */ }
-            finally { p.Dispose(); }
+            processName = own;
+            return true;
+        }
+        if (EmulatorProcesses.Running(EmulatorProcesses.EmulatorsOf(game), running) is { } emulator)
+        {
+            processName = emulator.Process;
+            return true;
         }
         return false;
     }
@@ -58,10 +65,14 @@ public static class GameActivity
     /// the same thing about the same condition.
     /// </summary>
     public static string RefusalMessage(TrackedGame game, string? processName) =>
-        $"[{game.Name}] REFUSED pull: the game is running" +
-        (processName is null ? "" : $" ({processName}.exe)") +
-        ". Restoring saves under a live game loses them when it writes at exit. " +
-        "Close the game and pull again.";
+        processName is not null && !game.ProcessNames.Any(n => StripExe(n).Equals(processName, StringComparison.OrdinalIgnoreCase)) &&
+        EmulatorProcesses.EmulatorsOf(game).FirstOrDefault(e => EmulatorProcesses.IsProcessOf(processName, e)) is { } emulator
+            ? $"[{game.Name}] REFUSED pull: {emulator} is open. It can hold the save in memory, so a save restored now is not " +
+              $"seen and can be overwritten. Close {emulator} and pull again."
+            : $"[{game.Name}] REFUSED pull: the game is running" +
+              (processName is null ? "" : $" ({processName}.exe)") +
+              ". Restoring saves under a live game loses them when it writes at exit. " +
+              "Close the game and pull again.";
 
     /// <summary>
     /// The process name a launcher path implies — <c>D:\Games\Foo\foo.exe</c> becomes <c>foo</c>.
