@@ -20,6 +20,7 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 | 5 — Set up a server emulator game on a machine that has no save for it yet | ⏳ Not started — Q4 decided 2026-10-20 |
 | 6 — DuckStation: a states-only game's card under DuckStation's own title | ⏳ Not started |
 | 7 — shadPS4: name a game by its installed title, not the save's own label | ⏳ Not started — source decided 2026-10-20 |
+| 8 — Another dump of a ROM: join a revision, name an edition | ⏳ Not started — A and B decided 2026-10-20 |
 
 ## What happened (evidence)
 
@@ -249,3 +250,58 @@ game always has it.
 
 Tests: the installed title wins; the save label and region tag are stripped when no install is found; a patch folder
 names nothing; the existing `MAINTITLE` fixture still reads.
+
+## Phase 8 — Another dump of a ROM: join a revision, name an edition
+
+**What happened (2026-10-20).** The PC saved *Metroid Prime - Hunters* in melonDS and RetroArch from
+`Metroid Prime - Hunters (USA) (Rev 1).nds`. The Deck has `Metroid Prime - Hunters (USA).nds`, the first release.
+The save files have different names (`…(USA) (Rev 1).srm` and `…(USA).srm`), so D1 (same files) did not join them.
+The Deck's RetroArch save became a third game. Its name came from the third step of `Enroller.NamesFor`:
+1. The clean title, `Metroid Prime - Hunters`: taken (PC, melonDS).
+2. The title plus the emulator, `Metroid Prime - Hunters (RetroArch)`: taken (PC, RetroArch, Rev 1).
+3. The ROM's file name plus the emulator, `Metroid Prime - Hunters (USA) (RetroArch)`: this one.
+
+This was working as designed: joining another dump is done by hand in Add games' **Change** (Phase 17 of
+emulator-saves; Decisions.md 2026-10-18). Two things read badly, though:
+- The name shows `(USA)`, which both dumps share, and leaves out `Rev 1`, the one real difference.
+- Which dump gets the short name depends only on which machine added it first.
+
+**A — Name the edition, not the ROM (decided 2026-10-20).** Step 3 of `NamesFor` becomes the title, the emulator,
+and only the tags that tell one dump from another: `Rev N`, `vN.N`, `Beta`, `Proto`, `Demo`, and the region. Hash
+and quality tags (`[!]`, `[b]`) and language lists (`(En,Fr,De)`) are dropped. A ROM with no revision tag is the
+first release, which No-Intro leaves untagged, so it is called `Rev 0` when another tag is needed to tell it apart.
+- The Deck's save would be `Metroid Prime - Hunters (RetroArch, Rev 0)`. A European dump would be
+  `Metroid Prime - Hunters (RetroArch, Europe)`.
+- The name still comes from the save file alone, so every machine walks the same list (`NamesFor`'s rule).
+- A server game keeps the name it was made with. The old long names stay until they are renamed in the console.
+
+**B — Join a revision automatically (decided 2026-10-20).** The automatic choice (`EnrollLinks.For`'s `auto`, through
+`Enroller.ServerNameFor`) becomes Phase 17's **rename** link when **all** of these hold:
+- The server game's emulators include this save's emulator.
+- No region differs: neither the release (`OtherRegion`) nor the ROM names' region tags.
+- The two ROM names are the same once revision, version and hash/quality tags are removed. For example,
+  `Metroid Prime - Hunters (USA)` and `Metroid Prime - Hunters (USA) (Rev 1)` are both `Metroid Prime - Hunters (USA)`.
+- `RenamePairs` can pair every file, states included.
+
+Anything else (another region, a hack, a Beta, a different emulator) stays a new game, and **Change** can still link it
+by hand where Phase 17 allows. Add games shows the automatic link as *Joins “Metroid Prime - Hunters (RetroArch)” —
+another revision* with the file names, and **Change → Keep as its own game** still works. The first sync asks which of
+the two saves to keep, as a manual Phase 17 link does. This amends Decisions.md 2026-10-18 ("A link is made in Add
+games"): a revision is linked automatically, everything else stays by hand. Record that in Decisions.md when it ships.
+
+**Fix.**
+1. `RomNames`: `EditionTags(romBase)` (revision, version, Beta/Proto/Demo, region) and `SameRelease(a, b)` (equal once
+   revision, version and hash tags are removed).
+2. `Enroller.NamesFor`: step 3 uses `EditionTags`, with `Rev 0` for an untagged first release. A ROM with no edition
+   tags at all keeps today's step 3.
+3. `Enroller.ServerNameFor` and `EnrollLinks.For`: with no D1 match, a server game that meets B's four rules is the
+   automatic choice, linked as `Rename`. D1 still wins when it matches.
+4. Agent UI: the automatic join's badge reads *Another revision*.
+
+**Tests.** `Rev 1` on the server with an untagged save here auto-links with file pairs; `(USA)` against `(Europe)` stays
+apart; another emulator's revision stays apart; a revision whose states can't be paired stays a new game; step-3 names:
+`(RetroArch, Rev 0)`, `(RetroArch, Europe)`, and `[!]` and the language lists dropped; D1 still wins over a revision match.
+
+**Verify (testenv).** On the Deck, stop tracking `Metroid Prime - Hunters (USA) (RetroArch)` and rescan. Add games
+shows *Joins “Metroid Prime - Hunters (RetroArch)” — another revision*. Add it, sync, and keep the Deck's save when
+asked. melonDS's `(USA).sav` joins `Metroid Prime - Hunters` the same way.
