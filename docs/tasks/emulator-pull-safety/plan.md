@@ -16,7 +16,7 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 | 2 — Pull into an unformatted folder card | ⏳ Not started — Q1, Q2 decided 2026-10-19 |
 | 3 — No pull while the game's emulator is open | ⏳ Not started — Q3 decided 2026-10-19 |
 | 4 — Help, testenv, Group H re-check | ⏳ Not started |
-| 5 — Set up a server emulator game on a machine that has no save for it yet | ⏳ Not started — Q4 first |
+| 5 — Set up a server emulator game on a machine that has no save for it yet | ⏳ Not started — Q4 decided 2026-10-20 |
 | 6 — DuckStation: a states-only game's card under DuckStation's own title | ⏳ Not started |
 
 ## What happened (evidence)
@@ -136,7 +136,17 @@ affects every emulator, not just these two. The Deck → Windows checks so far p
 already had a save of its own.
 
 **Fix.** In `ResolveSaveDirAsync`, before detection: when the server game names exactly one emulator
-(`GameDto.Emulators`) and that emulator's reader finds a setup on this machine, the game's folders are that setup's.
+(`GameDto.Emulators`), that emulator's reader finds a setup on this machine, **and the game's ROM is on this machine**
+(Q4), the game's folders are that setup's.
+- **The ROM check**: look in that emulator's ROM folders (EmuDeck's `roms/<system>`, a standalone install's game paths,
+  one level down as the readers already do). A ROM is the game's when it carries the game's identity and the reader can
+  read it: the Switch title ID (`SwitchEmulators`' ROM scan), the 3DS product code (Azahar's header read), a Wii U
+  folder's `meta.xml` `title_id`, a PSP ISO's `PARAM.SFO` disc ID. Otherwise, match by name: the file's
+  `RomNames.CleanTitle` equals the server game's name, or the ROM name the scope is built from (RetroArch, melonDS,
+  ScummVM, Supermodel, Model 2 scope by the ROM's own base name). Both of 2026-10-20's games match by name
+  (`Tomb Raider - The Last Revelation.chd`, `God Of War - Chains Of Olympus.iso`; compared ignoring case).
+- No ROM found: the game stays unmapped as today, with the same *"set its save folder in Settings"* notice. Once
+  its ROM is added, the next poll (every 20 s) sets it up.
 - `EmulatorSaves.PlaceFor(emulator, release, includeGlobs)` → the primary folder and the extra folders (`states`, and
   any other key the reader declares), real paths, EmuDeck's setup first. Each reader answers from the same `Folders(…)`
   it scans with. Shape 1 (a file named after the ROM) and shape 2 (title-ID folders) are the emulator's shared folder.
@@ -150,13 +160,15 @@ already had a save of its own.
   the same way.
 - Every result still goes through `Safe()` (`SavePathGuard`, folder claims).
 
-**Q4 (maintainer).** Set these games up automatically on every machine where the emulator is installed (proposed:
-the same as any other server game whose folder resolves), or only where the ROM is present too, or list them in Add
-games as *On the server — not played here* for the user to add?
+**Q4 — decided 2026-10-20: set it up automatically only where the emulator is installed and the game's ROM is
+present.** The alternatives were every machine with the emulator installed, or listing the game in Add games for the
+user to add by hand.
 
 Tests: a server DuckStation/PPSSPP/PCSX2/Cemu game is adopted with the right folders and scope on a machine with no save;
 it stays unmapped when the emulator isn't installed or the game names two emulators; PCSX2 with only a file card stays
-unmapped with the fix message; a folder claimed by another game here stays unmapped.
+unmapped with the fix message; a folder claimed by another game here stays unmapped; **no ROM → unmapped**, and the
+game is set up on the first poll after its ROM appears; a ROM matched by identity beats a different ROM with the same
+name; name matching ignores case and the extension.
 
 ## Phase 6 — DuckStation: a states-only game's card under DuckStation's own title
 
