@@ -537,15 +537,15 @@ public static class SaveArchive
     /// </para>
     /// </summary>
     public static void RestoreArchive(string archiveZip, string targetDir, string? stagingRoot = null,
-        IEnumerable<string>? includeGlobs = null) =>
-        RestoreArchive(archiveZip, new[] { SaveRoot.Primary(targetDir, includeGlobs) }, stagingRoot);
+        IEnumerable<string>? includeGlobs = null, IEnumerable<string>? excludeGlobs = null) =>
+        RestoreArchive(archiveZip, new[] { SaveRoot.Primary(targetDir, includeGlobs) }, stagingRoot, excludeGlobs);
 
     /// <summary>What a multi-folder restore did: the keys it restored, and the keys the archive
     /// carried that this machine has no folder for (skipped, never written anywhere else).</summary>
     public sealed record RestoreResult(IReadOnlyList<string> RestoredKeys, IReadOnlyList<string> SkippedKeys);
 
     /// <summary>
-    /// <see cref="RestoreArchive(string, string, string?, IEnumerable{string}?)"/> into every save
+    /// <see cref="RestoreArchive(string, string, string?, IEnumerable{string}?, IEnumerable{string}?)"/> into every save
     /// folder of a game, each from its own slice of the archive (<see cref="ReservedPrefix"/>).
     /// <para>
     /// The primary folder is always restored, exactly as a single-folder game's is. An extra folder is
@@ -560,13 +560,19 @@ public static class SaveArchive
     /// slice can never leave the others half-restored. <paramref name="stagingRoot"/> defaults to the
     /// primary folder's parent.
     /// </para>
+    /// <para>
+    /// A file matching <paramref name="excludeGlobs"/> is this machine's own: a push never carries it, so
+    /// the restore neither deletes it nor writes one an older archive still holds (Decisions.md §4).
+    /// </para>
     /// </summary>
-    public static RestoreResult RestoreArchive(string archiveZip, IReadOnlyList<SaveRoot> roots, string? stagingRoot = null)
+    public static RestoreResult RestoreArchive(string archiveZip, IReadOnlyList<SaveRoot> roots, string? stagingRoot = null,
+        IEnumerable<string>? excludeGlobs = null)
     {
         if (!File.Exists(archiveZip))
             throw new FileNotFoundException($"Archive not found: {archiveZip}");
         ValidateRoots(roots);
 
+        var excluded = IsExcluded(excludeGlobs);
         var primary = roots.Single(r => r.IsPrimary);
         var stageParent = stagingRoot
             ?? Path.GetDirectoryName(Path.GetFullPath(primary.Directory.TrimEnd(Path.DirectorySeparatorChar)))!;
@@ -612,13 +618,14 @@ public static class SaveArchive
                 // Another machine may have archived the whole shared folder; its copy of some OTHER
                 // game's save must not overwrite this machine's.
                 var inScope = InScope(root);
+                var prefix = NamePrefix(root);
                 plans.Add(new RestorePlan(root,
                     // Resolve the target root through a link before anything else. A user symlinking
                     // their save folder (onto an SD card, say) is legitimate and must keep working — so
                     // the root is FOLLOWED. What must not be followed is any component BELOW it,
                     // because those come from paths the archive chose.
                     ResolveRoot(root.Directory),
-                    staged.Where(f => inScope(f.Rel)).ToList()));
+                    staged.Where(f => inScope(f.Rel) && !excluded(prefix + f.Rel)).ToList()));
             }
             var skipped = markers.Concat(slices.Keys)
                 .Where(k => k != SaveRoot.PrimaryKey &&
@@ -649,16 +656,19 @@ public static class SaveArchive
             // skipped, never deleted — we did not archive them, so their absence from the archive
             // must not read as "the user removed this file". Only files in the folder's include scope
             // may go: in a shared emulator saves folder every other game's save is absent from this
-            // game's archive. The primary folder never touches the other folders' slices.
+            // game's archive. An excluded file is absent from every archive by design, so it stays.
+            // The primary folder never touches the other folders' slices.
             foreach (var plan in plans)
             {
                 var inSlice = plan.Files.Select(f => f.Rel).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var inScope = InScope(plan.Root);
+                var prefix = NamePrefix(plan.Root);
                 foreach (var tgt in EnumerateFilesNoFollow(plan.TargetFull))
                 {
                     var rel = Path.GetRelativePath(plan.TargetFull, tgt).Replace('\\', '/');
                     if (plan.Root.IsPrimary && IsSliceName(rel)) continue;
-                    if (ServerRel(plan.Root, rel) is { } server && inScope(server) && !inSlice.Contains(server))
+                    if (ServerRel(plan.Root, rel) is { } server && inScope(server) && !inSlice.Contains(server)
+                        && !excluded(prefix + server))
                         File.Delete(tgt);
                 }
             }
@@ -1351,6 +1361,18 @@ public static class SaveArchive
         if (g.Length == 0) return null;
         try { AddExclusion(new Matcher(StringComparison.OrdinalIgnoreCase), g); return null; }
         catch (ArgumentException ex) { return ex.Message; }
+    }
+
+    /// <summary>A test for "does an exclude pattern keep this archive name out of a push" — the matcher
+    /// <see cref="FilterExcluded"/> uses, built once.</summary>
+    private static Func<string, bool> IsExcluded(IEnumerable<string>? excludeGlobs)
+    {
+        var globs = CleanGlobs(excludeGlobs);
+        if (globs.Count == 0) return _ => false;
+        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
+        matcher.AddInclude("**/*");
+        foreach (var g in globs) AddExclusion(matcher, g);
+        return name => !matcher.Match(new[] { name }).HasMatches;
     }
 
     private static void AddExclusion(Matcher matcher, string glob)

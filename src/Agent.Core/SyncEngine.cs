@@ -804,7 +804,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 .Where(r => !Directory.Exists(r.Directory)).Select(r => r.Directory).ToList();
             try
             {
-                var restored = SaveArchive.RestoreArchive(archive, roots, _tempDir);
+                var restored = SaveArchive.RestoreArchive(archive, roots, _tempDir, game.ExcludeGlobs);
                 if (restored.SkippedKeys.Count > 0)
                     _log($"[{game.Name}] the server's save holds folder(s) this game no longer has " +
                          $"({string.Join(", ", restored.SkippedKeys)}); left out.");
@@ -1345,7 +1345,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         try
         {
             SaveArchive.CreateArchive(from, archive);
-            SaveArchive.RestoreArchive(archive, to, _tempDir);
+            SaveArchive.RestoreArchive(archive, to, _tempDir, game.ExcludeGlobs);
         }
         finally { TryDeleteTemp(archive); }
     }
