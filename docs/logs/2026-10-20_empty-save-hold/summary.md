@@ -1,8 +1,48 @@
 # Hold back a save folder that was emptied — summary
 
-Seeded 2026-10-18 from the competitor gap analysis ([[logs/2026-10-18_competitor-gap-analysis]]). No plan
-file yet. **Priority: High** — a data-safety gap, small to fix. Found by reading the code; **not reproduced
-yet**, so step 1 is a test that should fail today.
+Seeded 2026-10-18 from the competitor gap analysis ([[logs/2026-10-18_competitor-gap-analysis]]).
+**Shipped 2026-10-20** on branch `save-safety-empty-hold-and-excludes`, plus SaveLocker-Decky branch
+`empty-save-hold` (`ae4ab9f`), with [[logs/2026-10-20_keep-excluded-files-on-pull/summary|keep-excluded-files-on-pull]].
+
+## Status
+
+| Phase | Status |
+|-------|--------|
+| 1. Test first (`run-health-tests` §9) | ✅ Shipped 2026-10-20 — reproduced: on `main` the other machine **lost its saves**; 10 checks fail there, 51/51 with the fix |
+| 2. Agent guard + held state | ✅ Shipped 2026-10-20 |
+| 3. Answering it (agent UI, doctor, notification, CLI, console bell, Decky) | ✅ Shipped 2026-10-20 — Game Mode (`Ui/UiApp.Games.cs`) left out by choice |
+| 4. Server backstop | ✅ Shipped 2026-10-20 |
+
+## Decisions made with the maintainer (2026-10-20)
+
+- **A held game sits out every automatic sync — push AND pull** (option A). Sync all, the folder
+  watcher, the exit push, the pre-launch pull and queued unforced pulls all skip it; only Delete
+  everywhere (forced push), Restore here (forced pull) or the files coming back lift it. Rejected:
+  holding the push only, which let any ordinary Sync silently refill a folder the user had emptied on
+  purpose. A launch still goes ahead (`ProceedSyncPaused`, without a save).
+- Surfaces: agent UI, `doctor`, an OS notification and the Decky plugin. Game Mode not done.
+- The server backstop is in.
+
+## Outcome
+
+- **Rule** (`SyncEngine.HoldIfEmptied`): the folder exists, holds no file a push would carry (excludes
+  applied, every save folder of the game counted), and `LastSyncedHash` is set and differs from the
+  empty folder's hash. A game never synced here, or one whose deletion every machine already took,
+  is not held. A partial deletion is never held. The hold lifts by itself when **any** file is back
+  (OpenSave waits for all of them; this agent does not keep the old file list).
+- **State:** `<state>/emptied-holds.json` (`EmptyFolderHoldStore`, the `DlcHoldStore` pattern — shared
+  by daemon, tray and launch wrapper). `MarkSynced` clears it. New `PullOutcome.HeldEmptied`,
+  `SyncRunSummary.HeldEmptied`, event `savedir.emptied` (Warning).
+- **Answers:** `SyncEngine.AnswerEmptiedAsync`; local API `GET /api/holds/emptied`,
+  `POST /api/games/{id}/emptied-hold {action}`; CLI `emptied-hold [game] [--restore-here|--delete-everywhere]`;
+  agent UI `EmptiedHoldBanner` on the game page and Conflicts (sidebar badge counts it, Sync all says
+  "N held: save files gone"); console bell titles the event and offers **Restore there** (a forced Pull
+  command — Delete everywhere is deliberately not offered remotely); Decky: a "Needs attention" row and
+  a full-page section, both opening Restore here / Delete it everywhere (confirmed once).
+- **Backstop:** `SyncService.IngestAsync` refuses an unforced archive with no files over a head with
+  files — `EmptySaveRefusedException` → 409 on the single-shot upload and chunked `complete`.
+- **Not verified:** the Decky plugin on a real Deck (it typechecks and builds), and Linux `doctor`'s new
+  lines by eye.
 
 ---
 

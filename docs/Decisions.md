@@ -596,6 +596,21 @@ session can judge an edge case, not to reopen the choice.
   save root (the root itself is followed — it's user-chosen; paths *inside* the archive are not).
   Size caps (100k entries / 2 GB), checked against both declared and actual bytes. A refused
   restore is reported to the console as an event.
+- **An excluded file belongs to the machine it is on; a restore never deletes or writes one** (2026-10-20,
+  `logs/2026-10-20_keep-excluded-files-on-pull/`). A push never carries it, so its absence from an archive says
+  nothing — the delete pass used to read it as a deletion and removed `*.bak` backups and per-machine configs on every
+  pull. An archive made **before** a pattern existed can still carry the file: the restore skips it too (OpenSave's
+  `RestoreKeeping` does the same), so "excluded" means one thing in both directions. In that case the pull sets the head's
+  hash, which the local hash (excludes applied) no longer equals, so the next push sends a version without the file —
+  that convergence is intended. `RestoreArchive` takes the game's effective exclude globs and matches them with
+  `FilterExcluded`'s own matcher, so push and pull cannot disagree about what is excluded.
+- **A save folder that lost every file is held — no push, no pull — until a person chooses** (2026-10-20, maintainer's
+  choice, `logs/2026-10-20_empty-save-hold/`). Pushing it made a zero-file head that deleted every other machine's
+  saves. Holding the push alone was rejected: an ordinary Sync then pulls first and silently refills a folder the user
+  may have emptied on purpose. So the held game sits out Sync all, the watcher, the exit push and the pre-launch pull;
+  only **Delete everywhere** (forced push), **Restore here** (forced pull) or a file coming back lifts it. Only a
+  folder that had files at its last sync qualifies, and only when *every* file is gone — tidying a few is ordinary.
+  The server also refuses an unforced empty archive over a head with files (409), for agents that predate the hold.
 - **LAN-only over plain HTTP. No tunnel, no TLS termination, no reverse proxy** (2026-07-27). The
   payload is save files, not credentials or PII, and the earlier Cloudflare Tunnel plan is dropped.
   So `X-Forwarded-*` is never read **by default** and there is nothing in front to trust.

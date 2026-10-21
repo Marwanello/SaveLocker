@@ -4,7 +4,7 @@ namespace SaveLocker.Agent;
 
 /// <summary>
 /// The save files of one game on this machine right now, file by file against the server's head
-/// (tasks/save-file-trees Phase 3) — what the agent UI's "Save files on this PC" tree draws. Reads and
+/// (tasks/save-file-trees Phase 3) — what the agent UI's "Save files on this device" tree draws. Reads and
 /// hashes every file, the same cost as a push's own hash, so it is asked for on demand, never on a timer.
 /// </summary>
 public static class SaveFileTree

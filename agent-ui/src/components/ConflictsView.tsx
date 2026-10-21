@@ -3,14 +3,17 @@ import { GitBranch } from 'lucide-react'
 import { api } from '../api'
 import { formatAgo, formatDateTime, formatSpan, asUtc } from '../format'
 import { useConflictVersions } from '../useConflictVersions'
-import type { Conflict, SaveVersion, TrackedGame } from '../types'
+import type { Conflict, EmptiedHold, SaveVersion, TrackedGame } from '../types'
 import { ConflictCard } from './ConflictCard'
+import { EmptiedHoldBanner } from './EmptiedHoldBanner'
 import { Card } from './ui/Card'
 import { Chip } from './ui/Chip'
 import { PageHead } from './ui/PageHead'
 
 interface Props {
   conflicts: Conflict[]
+  /** Games held because every save file vanished here (tasks/empty-save-hold) — a choice waiting, like a conflict. */
+  emptied: EmptiedHold[]
   games: TrackedGame[]
   machineName: string
   onRefresh: () => void
@@ -28,7 +31,7 @@ const when = (v: SaveVersion | undefined) => (v ? `${formatAgo(v.createdAt)} (${
  * framing and is unchanged; this view is the page around it: the head, a "why" per conflict, and
  * what was recently resolved.
  */
-export function ConflictsView({ conflicts, games, machineName, onRefresh, onResolvedNote }: Props) {
+export function ConflictsView({ conflicts, emptied, games, machineName, onRefresh, onResolvedNote }: Props) {
   const { versions, stats } = useConflictVersions(conflicts)
   const [resolvingId, setResolvingId] = useState<string | null>(null)
   const [resolved, setResolved] = useState<Conflict[] | null>(null)
@@ -74,6 +77,25 @@ export function ConflictsView({ conflicts, games, machineName, onRefresh, onReso
     </Card>
   )
 
+  const held = emptied.map(h => (
+    <EmptiedHoldBanner
+      key={h.gameId}
+      hold={h}
+      gameName={gameName(h.gameId)}
+      onAnswered={message => { onResolvedNote(message); onRefresh() }}
+    />
+  ))
+
+  if (conflicts.length === 0 && emptied.length > 0) {
+    return (
+      <div className="sl-page">
+        <PageHead title="Conflicts" sub={`No open conflicts · ${emptied.length === 1 ? 'one game is' : `${emptied.length} games are`} held, waiting on you`} />
+        {held}
+        {recentlyResolved}
+      </div>
+    )
+  }
+
   if (conflicts.length === 0) {
     return (
       <div className="sl-page">
@@ -99,6 +121,7 @@ export function ConflictsView({ conflicts, games, machineName, onRefresh, onReso
         title="Conflicts"
         sub={`Sync paused for ${conflicts.length === 1 ? 'this game' : 'these games'} · ${conflicts.length} open${oldest !== null ? ` · oldest ${formatSpan(Date.now() - oldest)}` : ''}`}
       />
+      {held}
       {conflicts.map(c => {
         const a = versions[c.versionAId]
         const b = versions[c.versionBId]

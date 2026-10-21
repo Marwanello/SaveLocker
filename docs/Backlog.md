@@ -8,8 +8,6 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 
 ## High priority
 
-- [Hold back a save folder that was emptied](tasks/empty-save-hold/summary.md)
-- [A pull keeps this machine's excluded files](tasks/keep-excluded-files-on-pull/summary.md)
 - [Registry-based saves](tasks/registry-saves/summary.md)
 - [One console entry per game, one save tree per emulator](tasks/multi-emulator-games/plan.md)
 - [Playthroughs: named save forks to switch between](tasks/save-playthroughs/summary.md)

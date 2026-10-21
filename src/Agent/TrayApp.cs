@@ -161,6 +161,7 @@ internal sealed class TrayContext : ApplicationContext
             withGameLock: (game, work) => _engine.WithGameLockAsync(game, work, TimeSpan.FromSeconds(2)),
             resolveConflict: (conflict, winner, keepBoth, ct) => _engine.ResolveOwnConflictAsync(conflict, winner, keepBoth, ct),
             takeSide: (game, cloud, ct) => _engine.TakeSideAsync(game, cloud, ct),
+            answerEmptied: (game, deleteEverywhere, ct) => _engine.AnswerEmptiedAsync(game, deleteEverywhere, ct),
             openView: view => _ui.Post(() => OpenWindow(view)),
             // Explorer: a file is selected in its folder (a bare open would hand a large log to
             // whatever editor owns .log), a folder is simply opened.
@@ -420,6 +421,7 @@ internal sealed class TrayContext : ApplicationContext
             var game = g;
             _folderWatchers.Add(new FolderWatcher(game.RealRoots(_config.StateDir).Select(r => r.Directory), () =>
             {
+                SaveFolderChanges.Touch(game.GameId);
                 if (!IsRunning(game)) FireAndForget(() => _engine.PushAsync(game, settle: true));
             }));
         }

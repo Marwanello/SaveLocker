@@ -11,6 +11,7 @@ import { toast, toastError } from '../toast';
 const CODE = {
   conflict: 'sync.conflict',
   saveDirMissing: 'savedir.missing',
+  saveFolderEmptied: 'savedir.emptied',
   pushFailed: 'push.failed',
   adminLockout: 'admin.lockout',
 } as const;
@@ -24,6 +25,7 @@ function titleOf(p: AgentEvent): string {
     case 'push.failed': return `${game} push failed`;
     case 'savedir.missing': return `${game} save folder is missing`;
     case 'savedir.unsafe': return `${game} save folder refused`;
+    case 'savedir.emptied': return `${game} save folder was emptied on ${p.machineName}`;
     case 'pull.blocked': return `${game} pull held back`;
     case 'pull.blocked_running': return `${game} pull waiting for the game to close`;
     case 'lease.held_elsewhere': return `${game} is checked out elsewhere`;
@@ -92,6 +94,21 @@ export function NotificationsMenu({ problems, onOpenGame, onDismissProblems, onO
     onOpenGame(gameId, intent);
   }
 
+  async function restoreThere(p: AgentEvent) {
+    if (!p.gameId) return;
+    setRetrying(p.id);
+    try {
+      // A forced pull: the folder there is empty, so nothing is overwritten, and choosing it lifts the hold.
+      await api.queueCommand(p.machineId, p.gameId, 'Pull', true);
+      toast(`Queued a restore of ${p.gameName ?? 'the game'} on ${p.machineName}.`);
+      onRefresh();
+    } catch (e) {
+      toastError('Could not queue the restore: ' + errorText(e));
+    } finally {
+      setRetrying(null);
+    }
+  }
+
   async function retryPush(p: AgentEvent) {
     if (!p.gameId) return;
     setRetrying(p.id);
@@ -122,6 +139,16 @@ export function NotificationsMenu({ problems, onOpenGame, onDismissProblems, onO
         <Button size="sm" onClick={() => go(p.gameId!, { kind: 'folder', machineId: p.machineId })}
           title={`Open the game at ${p.machineName}'s save folder`}>
           Set folder
+        </Button>
+      );
+    }
+    if (p.code === CODE.saveFolderEmptied && p.gameId) {
+      // Delete everywhere is not offered here: it removes the save on every machine, so it is chosen on
+      // the machine itself, where the person can see the folder is meant to be empty.
+      return (
+        <Button size="sm" disabled={retrying === p.id} onClick={() => void restoreThere(p)}
+          title={`Put the latest save back on ${p.machineName}`}>
+          {retrying === p.id ? 'Queuing…' : 'Restore there'}
         </Button>
       );
     }

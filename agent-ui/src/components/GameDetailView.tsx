@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
-import type { Conflict, DlcCheck, GameState, GameSyncMode, SaveVersion, SyncStatus, TrackedGame, View } from '../types'
+import type { Conflict, DlcCheck, EmptiedHold, GameState, GameSyncMode, SaveVersion, SyncStatus, TrackedGame, View } from '../types'
 import { api } from '../api'
 import { formatAgo, formatBytes, formatDateTime } from '../format'
-import { refreshActivity, useActivityBusy } from '../useActivity'
+import { refreshActivity, useActivityBusy, useFilesChangedAt } from '../useActivity'
 import { PadGlyph } from '../gamepad/PadGlyph'
 import { GameArt } from './GameArt'
 import { GameManagement } from './GameManagement'
@@ -13,6 +13,7 @@ import { emulatorSettingsFor } from '../emulators'
 import { ReleaseChip } from './ReleaseChip'
 import { SourceChip } from './SourceChip'
 import { VersionsCard } from './VersionsCard'
+import { EmptiedHoldBanner } from './EmptiedHoldBanner'
 import { Banner } from './ui/Banner'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
@@ -23,6 +24,8 @@ import { Toast } from './ui/Toast'
 interface Props {
   game: TrackedGame
   conflicts: Conflict[]
+  /** Set while the game is held because every save file vanished here (tasks/empty-save-hold). */
+  emptiedHold: EmptiedHold | null
   machineName: string
   platform: string | undefined
   onBack: () => void
@@ -50,7 +53,7 @@ const POLICY: Record<string, string> = {
  * folder is hashed on "Check now" and by the Save files card (on open, after a sync, on Refresh) —
  * both walk every file, so neither runs on a timer.
  */
-export function GameDetailView({ game, conflicts, machineName, platform, onBack, onNavigate, onSynced, onChanged, onRemoved }: Props) {
+export function GameDetailView({ game, conflicts, emptiedHold, machineName, platform, onBack, onNavigate, onSynced, onChanged, onRemoved }: Props) {
   const busy = useActivityBusy()
   const [state, setState] = useState<GameState | null>(null)
   const [versions, setVersions] = useState<SaveVersion[] | null>(null)
@@ -88,6 +91,17 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
   }, [game.id])
 
   useEffect(() => { setState(null); setCheck(null); setEmuTab(null); load() }, [load])
+
+  // The agent's word that this game's files here changed, or that a push, pull or hold ran for it from anywhere (the
+  // folder watcher, Sync all, the launch gate, another surface): everything a sync from this page refreshes follows.
+  const changedAt = useFilesChangedAt(game.id)
+  const seenChange = useRef(changedAt)
+  useEffect(() => {
+    if (changedAt === seenChange.current) return
+    seenChange.current = changedAt
+    setSyncCount(n => n + 1)
+    load()
+  }, [changedAt, load])
 
   // What the page needs to point at Emulator settings: packs missing here, and other machines asking for this one's.
   useEffect(() => {
@@ -185,6 +199,7 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
           <div className="sl-gamehead__chips">
             {!enrolled && <Chip tone="warn">Not set up on this device</Chip>}
             {inConflict && <Chip tone="crit">Conflict</Chip>}
+            {emptiedHold && <Chip tone="crit">Save files gone</Chip>}
             {heldElsewhere && <Chip tone="warn">Checked out by {holder}</Chip>}
             {check && !check.hasOpenConflict && (check.inSync ? <Chip tone="ok">Matches the cloud</Chip> : <Chip tone="warn">Differs from the cloud</Chip>)}
           </div>
@@ -197,6 +212,20 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
           title={`${game.name} is waiting on you`}
           detail="This device and the cloud both changed. Open Conflicts to keep one."
           action={<Button variant="primary" onClick={() => onNavigate('conflicts')}>Choose</Button>}
+        />
+      )}
+
+      {emptiedHold && (
+        <EmptiedHoldBanner
+          hold={emptiedHold}
+          gameName={game.name}
+          onAnswered={(text, failed) => {
+            setToast({ text, failed })
+            setSyncCount(n => n + 1)
+            refreshActivity()
+            load()
+            onSynced()
+          }}
         />
       )}
 

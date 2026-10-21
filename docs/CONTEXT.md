@@ -2530,8 +2530,8 @@ The task parked on `offline-backoff-task` (`bee3116`) since 2026-07-29 now lives
 `tasks/offline-backoff/summary.md` ([[Backlog]] → Medium), with the 2026-10-18 competitor research
 added; the branch can be deleted. That review (`logs/2026-10-18_competitor-gap-analysis.md`) also
 added fourteen other items to [[Backlog]], two of them possible data-safety bugs at the top of High
-(an emptied save folder pushed as a new version; a pull deleting excluded files), both still to be
-confirmed by a failing test.
+(an emptied save folder pushed as a new version; a pull deleting excluded files) — both since
+**confirmed by a failing test and fixed** (next section).
 
 An agent that cannot reach the server retries forever at a fixed cadence: the offline drainer every
 30 s, *re-archiving the save folder each time before it finds out*, and the command poller every 20 s
@@ -2539,6 +2539,30 @@ carrying the reconcile, the command fetch and the heartbeat — roughly five fai
 indefinitely. On a Deck away from home that is battery and metered traffic spent on nothing.
 **Backing off only the drainer does not achieve the goal**, which is why the task covers all three
 loops.
+
+## Save safety: an emptied folder is held, a pull keeps excluded files (2026-10-20)
+
+Branch `save-safety-empty-hold-and-excludes` (worktree `.claude/worktrees/save-safety`, off `main` at
+`4c9b636`), **not merged, no PR yet**; plus SaveLocker-Decky branch `empty-save-hold` (`ae4ab9f`, its
+worktree `.claude/worktrees/empty-save-hold` there). Both bugs from the 2026-10-18 review were real:
+- **Excluded files** (`a0b6472`): every pull deleted this machine's excluded files (`*.bak` is a
+  default exclude). `RestoreArchive` now takes the excludes and neither deletes nor writes a match.
+  `run-hardening-tests` §10: 5 fail on `main`, 45/45 fixed. [[Decisions]] has the rule.
+- **Emptied folder** (`36c86d8`): an emptied folder was pushed and **wiped the other machine's saves**
+  (`run-health-tests` §9: 10 fail on `main`, 51/51 fixed). The game is now held — no push, no pull —
+  until Delete everywhere / Restore here (agent UI, `doctor`, notification, CLI `emptied-hold`, console
+  bell's Restore there, Decky), and the server refuses an unforced empty archive over a head with files.
+  Detail and the maintainer's choices: `logs/2026-10-20_empty-save-hold/summary.md`.
+
+**Gotcha found:** running several PowerShell suites back to back *while other dotnet/npm work runs*
+gave false failures (hardening §9, delta-upload 4 of 12 with a 404). Each passed alone. Run suites
+on a quiet box before trusting a red one.
+
+**Not done:** the testenv pass (the browser check used a hand-started scratch tray — against the
+standing "manual tests through testenv" rule; redo it with testenv), the Decky plugin on a real
+Deck, `run-linux-tests`, Game Mode (by choice). `openapi.json` unchanged on purpose: no server route
+or DTO shape changed, only a 409 the routes did not declare. **Next:** testenv pass, then PRs for
+both repos.
 
 ---
 

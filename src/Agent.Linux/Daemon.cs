@@ -201,6 +201,7 @@ public sealed class Daemon : IAsyncDisposable
             withGameLock: (game, work) => _engine.WithGameLockAsync(game, work, TimeSpan.FromSeconds(2)),
             resolveConflict: (conflict, winner, keepBoth, ct) => _engine.ResolveOwnConflictAsync(conflict, winner, keepBoth, ct),
             takeSide: (game, cloud, ct) => _engine.TakeSideAsync(game, cloud, ct),
+            answerEmptied: (game, deleteEverywhere, ct) => _engine.AnswerEmptiedAsync(game, deleteEverywhere, ct),
             prefixForAppId: PrefixForAppId,
             openFile: DesktopEnvironment.TryOpenFile);
         _apiServer.Start();
@@ -393,7 +394,11 @@ public sealed class Daemon : IAsyncDisposable
             {
                 var game = g;
                 _folderWatchers.Add(new FolderWatcher(
-                    game.RealRoots(_config.StateDir).Select(r => r.Directory), () => _ = PushQuietlyAsync(game)));
+                    game.RealRoots(_config.StateDir).Select(r => r.Directory), () =>
+                    {
+                        SaveFolderChanges.Touch(game.GameId);
+                        _ = PushQuietlyAsync(game);
+                    }));
             }
         }
     }
