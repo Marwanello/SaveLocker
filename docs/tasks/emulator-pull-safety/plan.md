@@ -22,6 +22,12 @@ Phase 5, plus a DuckStation naming gap, Phase 6.
 | 7 — shadPS4: name a game by its installed title, not the save's own label | ✅ Shipped 2026-10-20 — the installed game's `TITLE` (EmuDeck's `storage/shadps4/games` and `config.toml` `installDirs`), else `MAINTITLE` without the save label and region tag. The server game keeps its old name until renamed |
 | 8 — Another dump of a ROM: join a revision, name an edition | ✅ Shipped 2026-10-20 — B: `EnrollLinks.RevisionOf`, the automatic choice in Add games (*Another revision*) and in enrolling; A: `RomNames.EditionTags`, names `(RetroArch, USA)` then `(RetroArch, USA, Rev 0)` before the old file-name step. As built, a name keeps its region (it comes from the save file alone, which can't tell whether the region differs), so the Deck's dump kept apart would be `(RetroArch, USA)`, not `(RetroArch, Rev 0)`. Decisions.md amended |
 
+**Review fixes (2026-10-21, PR #81):** off Windows, `dolphin` (KDE's file manager) and `emulator` (the Android SDK's)
+are no longer taken for Dolphin, PrimeHack or Model 2 — only their `.exe` under Wine/Proton is. Phase 6's "the fleet's
+card will be pulled" now waits until the head holds a region-named card, so a machine whose repairing push never landed
+cannot have its only card deleted by a pull. Phases 5 and 6's poller steps no longer throw into the tick (that skipped the
+dashboard's commands), and a scope the server refuses is not asked for again every poll.
+
 ## What happened (evidence)
 
 - **Windows card `D:\Emulation\saves\pcsx2\saves\mc1.ps2`**: `_pcsx2_superblock` is **0 bytes**. The Deck's
