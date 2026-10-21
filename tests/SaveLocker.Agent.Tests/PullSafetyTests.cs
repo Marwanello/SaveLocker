@@ -202,6 +202,9 @@ public sealed class PullSafetyTests : IDisposable
 
         var pc = new TrackedGame { Name = "Hollow Knight", ProcessNames = ["hollow_knight"] };
         Assert.Contains("the game is running (hollow_knight.exe)", GameActivity.RefusalMessage(pc, "hollow_knight"));
+
+        Assert.Equal("PCSX2", GameActivity.WhatIsOpen(game, "pcsx2-qtx64"));
+        Assert.Equal("the game", GameActivity.WhatIsOpen(pc, "hollow_knight"));
     }
 
     [Fact]

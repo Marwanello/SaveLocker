@@ -1014,6 +1014,16 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             catch (Exception ex) when (!ct.IsCancellationRequested) { _log($"[{game!.Name}] could not read the rejected version: {ex.Message}"); }
         }
 
+        // Keeping the cloud's means replacing the save here, which cannot happen under a running game or its emulator. Asked
+        // before the server hears of it: resolved there but not here, the next sync pushes the loser again and reopens it.
+        if (here && keepCloud && GameActivity.IsActive(game!, out var open))
+        {
+            var what = GameActivity.WhatIsOpen(game!, open);
+            return (false, what == "the game"
+                ? $"{game!.Name} is running, so the cloud's save cannot replace the save here yet. Close it, then choose again."
+                : $"{what} is open, so the cloud's save of {game!.Name} cannot replace the save here yet. Close {what}, then choose again.");
+        }
+
         var (ok, error) = await _api.ResolveConflictAsync(conflict.Id, winningVersionId, keepBoth, ct);
         if (!ok) return (false, error ?? "Could not resolve the conflict.");
         if (!here) return (true, "Resolved.");

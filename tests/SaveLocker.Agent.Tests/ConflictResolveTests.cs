@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using SaveLocker.Agent;
 using SaveLocker.Shared;
 using Xunit;
@@ -102,6 +103,24 @@ public sealed class ConflictResolveTests : IClassFixture<ServerProcess>, IDispos
 
         Assert.False(ok);
         Assert.StartsWith("Latest changed after this conflict opened", message);
+    }
+
+    [Fact]
+    public async Task Keeping_the_clouds_save_while_the_game_runs_changes_nothing_anywhere()
+    {
+        var deck = await Machine("deck", "deck-progress");
+        var pc = await Machine("pc", "pc-progress");
+        var (engine, game, conflict) = await ConflictOnThePc(deck, pc);
+        await using var _ = engine;
+        game.ProcessNames = [Process.GetCurrentProcess().ProcessName];
+
+        var (ok, message) = await engine.ResolveOwnConflictAsync(conflict, conflict.VersionAId, keepBoth: false);
+
+        Assert.False(ok);
+        Assert.Contains("Close it, then choose again", message);
+        Assert.Equal("pc-progress", Read("pc"));
+        // Still open on the server, so the choice is made again once the game is closed — not recorded there alone.
+        Assert.Contains(await ApiClient.For(pc).GetOpenConflictsForMachineAsync(pc.MachineId), c => c.Id == conflict.Id);
     }
 
     [Fact]

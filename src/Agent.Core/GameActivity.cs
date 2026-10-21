@@ -60,6 +60,14 @@ public static class GameActivity
 
     public static bool IsActive(TrackedGame game) => IsActive(game, out _);
 
+    /// <summary>What is open, for a sentence: the emulator holding <paramref name="processName"/> (<c>PCSX2</c>), else
+    /// <c>the game</c>.</summary>
+    public static string WhatIsOpen(TrackedGame game, string? processName) =>
+        processName is not null && !game.ProcessNames.Any(n => StripExe(n).Equals(processName, StringComparison.OrdinalIgnoreCase)) &&
+        EmulatorProcesses.EmulatorsOf(game).FirstOrDefault(e => EmulatorProcesses.IsProcessOf(processName, e)) is { } emulator
+            ? emulator
+            : "the game";
+
     /// <summary>
     /// The refusal sentence. One wording everywhere, so the console, a toast, and the CLI all say
     /// the same thing about the same condition.
