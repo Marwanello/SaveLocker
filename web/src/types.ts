@@ -27,6 +27,7 @@ export type ManifestRefreshSettings = Schemas['ManifestRefreshSettingsDto'];
 export type MachineSavePath = Schemas['MachineSavePathDto'];
 export type MergePreview = Schemas['MergePreviewDto'];
 export type TitleCandidate = Schemas['TitleCandidateDto'];
+export type CopyTarget = Schemas['CopyTargetDto'];
 export type MachineGameSource = Schemas['MachineGameSourceDto'];
 export type GameContent = Schemas['GameContentDto'];
 export type ContentTransfer = Schemas['ContentTransferDto'];

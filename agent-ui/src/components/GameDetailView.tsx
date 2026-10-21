@@ -20,6 +20,9 @@ import { Card } from './ui/Card'
 import { Chip } from './ui/Chip'
 import { Stat } from './ui/Stat'
 import { Toast } from './ui/Toast'
+import { EmulatorTabs } from './EmulatorTabs'
+import { CopySaveModal } from './CopySaveModal'
+import { emulatorOf, treeLabel } from '../titles'
 
 interface Props {
   game: TrackedGame
@@ -37,6 +40,12 @@ interface Props {
   onChanged: () => void
   /** The game was removed from this device: the shell leaves its page. */
   onRemoved: () => void
+  /** Every tree of the title `game` is one of (tasks/multi-emulator-games Phase 6), `game` included; just `game` for a game
+   *  shown alone. With two or more, the page gets a tab per emulator and everything under the tabs is `game`'s. */
+  trees?: TrackedGame[]
+  onPickTree?: (id: string) => void
+  /** A sentence the shell shows after this page has gone (a copy opens the other tree's page). */
+  onNote?: (text: string) => void
 }
 
 const onOff = (v: boolean | null | undefined, unset: string) => (v == null ? unset : v ? 'On' : 'Off')
@@ -53,7 +62,7 @@ const POLICY: Record<string, string> = {
  * folder is hashed on "Check now" and by the Save files card (on open, after a sync, on Refresh) —
  * both walk every file, so neither runs on a timer.
  */
-export function GameDetailView({ game, conflicts, emptiedHold, machineName, platform, onBack, onNavigate, onSynced, onChanged, onRemoved }: Props) {
+export function GameDetailView({ game, conflicts, emptiedHold, machineName, platform, onBack, onNavigate, onSynced, onChanged, onRemoved, trees = [game], onPickTree, onNote }: Props) {
   const busy = useActivityBusy()
   const [state, setState] = useState<GameState | null>(null)
   const [versions, setVersions] = useState<SaveVersion[] | null>(null)
@@ -83,6 +92,11 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   const [emuTab, setEmuTab] = useState<EmulatorTab | null>(null)
   const [dlc, setDlc] = useState<DlcCheck | null>(null)
   const emulator = emulatorSettingsFor(game)
+  const titled = trees.length > 1
+  const lead = trees.find(t => t.title?.lead) ?? trees[0]
+  const treeName = titled ? treeLabel(game, trees) : null
+  // Copy this save to another emulator: open on one version, null when closed.
+  const [copyFrom, setCopyFrom] = useState<string | null>(null)
 
   const load = useCallback(() => {
     api.gameState(game.id)
@@ -120,6 +134,8 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   }, [game.id, syncCount, game.path])
 
   const inConflict = conflicts.some(c => c.gameId === game.id)
+  const conflicted = new Set(conflicts.map(c => c.gameId))
+  const conflictElsewhere = titled ? trees.find(t => t.id !== game.id && conflicted.has(t.id)) : undefined
   // Without a save folder here there is nothing to push, pull or compare — the game only exists on the
   // server until one is chosen (Games groups it apart for the same reason).
   const enrolled = !!game.path
@@ -187,9 +203,9 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       <Button size="sm" variant="quiet" className="sl-back" onClick={onBack}>← Games</Button>
 
       <div className="sl-gamehead">
-        <div className="sl-gamehead__cover"><GameArt id={game.id} name={game.name} kind="grid" w={192} console={game.release?.console} /></div>
+        <div className="sl-gamehead__cover"><GameArt id={lead.id} name={lead.name} kind="grid" w={192} console={game.release?.console} /></div>
         <div className="sl-gamehead__main">
-          <h2 className="sl-gamehead__title">{game.name}</h2>
+          <h2 className="sl-gamehead__title">{titled ? game.title?.name ?? game.name : game.name}</h2>
           {(enrolled || game.release) && (
             <div className="sl-gamehead__source">
               {enrolled && <SourceChip source={game.source} />}
@@ -199,6 +215,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
           <div className="sl-gamehead__chips">
             {!enrolled && <Chip tone="warn">Not set up on this device</Chip>}
             {inConflict && <Chip tone="crit">Conflict</Chip>}
+            {conflictElsewhere && <Chip tone="crit">Conflict in {emulatorOf(conflictElsewhere) ?? conflictElsewhere.name}</Chip>}
             {emptiedHold && <Chip tone="crit">Save files gone</Chip>}
             {heldElsewhere && <Chip tone="warn">Checked out by {holder}</Chip>}
             {check && !check.hasOpenConflict && (check.inSync ? <Chip tone="ok">Matches the cloud</Chip> : <Chip tone="warn">Differs from the cloud</Chip>)}
@@ -206,11 +223,15 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
         </div>
       </div>
 
+      {titled && <EmulatorTabs trees={trees} current={game.id} conflicted={conflicted} onPick={id => onPickTree?.(id)} />}
+
       {inConflict && (
         <Banner
           tone="crit"
-          title={`${game.name} is waiting on you`}
-          detail="This device and the cloud both changed. Open Conflicts to keep one."
+          title={`${titled ? `${game.title?.name} · ${treeName}` : game.name} is waiting on you`}
+          detail={titled
+            ? `This device and the cloud both changed ${treeName}'s save. The other emulators' saves are fine. Open Conflicts to keep one.`
+            : 'This device and the cloud both changed. Open Conflicts to keep one.'}
           action={<Button variant="primary" onClick={() => onNavigate('conflicts')}>Choose</Button>}
         />
       )}
@@ -269,7 +290,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       {enrolled ? (
         <div className="sl-actions">
           <Button variant="primary" data-pad-action="sync-this-game" disabled={locked} onClick={() => void run('sync')}>
-            {pending === 'sync' ? 'Syncing…' : 'Sync this game'}
+            {pending === 'sync' ? 'Syncing…' : titled ? `Sync ${treeName} save` : 'Sync this game'}
             <PadGlyph id="x" />
           </Button>
           <Button data-pad-action="push-now" disabled={locked} onClick={() => void run('push')}>
@@ -286,6 +307,12 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
               {emuCount > 0 && <span className="sl-count" style={{ marginLeft: 4 }}>{emuCount}</span>}
             </Button>
           )}
+          {titled && versions && versions.length > 0 && (
+            <Button data-pad-label="Copy to another emulator"
+              onClick={() => setCopyFrom(versions.find(v => v.id === state?.head?.id)?.id ?? versions.find(v => !v.mergedFrom)?.id ?? null)}>
+              Copy to another emulator…
+            </Button>
+          )}
           <Button variant="quiet" disabled={locked} onClick={() => void checkNow()}>
             {pending === 'check' ? 'Checking…' : 'Check now'}
           </Button>
@@ -293,8 +320,10 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       ) : (
         <Banner
           tone="warn"
-          title={`${game.name} has no save folder on this device`}
-          detail="It is on your server, but this machine does not sync it yet. Choose its save folder below to start."
+          title={titled ? `${treeName}'s save for ${game.title?.name} has no folder on this device` : `${game.name} has no save folder on this device`}
+          detail={titled
+            ? `It is on your server, but this machine does not sync ${treeName}'s save yet. Choose its save folder below to start; the other emulators' saves are not affected.`
+            : 'It is on your server, but this machine does not sync it yet. Choose its save folder below to start.'}
         />
       )}
 
@@ -372,11 +401,25 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       </div>
 
       <div className="sl-grid2">
-        <VersionsCard gameId={game.id} headId={state?.head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions} />
+        <VersionsCard gameId={game.id} headId={state?.head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions}
+          title={titled ? `Versions on the server · ${treeName}` : undefined} onCopy={titled ? setCopyFrom : undefined} />
         <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
       </div>
 
       {enrolled && <SaveFilesCard gameId={game.id} refreshKey={syncCount} />}
+
+      {copyFrom && versions && (
+        <CopySaveModal
+          game={game} versions={versions} versionId={copyFrom} headId={state?.head?.id ?? null} trees={trees}
+          onClose={() => setCopyFrom(null)}
+          onCopied={(target, text) => {
+            setCopyFrom(null)
+            onSynced()
+            if (onNote && onPickTree) { onNote(text); onPickTree(target) }
+            else setToast({ text, failed: false })
+          }}
+        />
+      )}
 
       {toastView}
     </div>

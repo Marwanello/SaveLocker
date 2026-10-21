@@ -24,6 +24,8 @@ interface Props {
   reloadVersions: () => Promise<void>;
   onSetLatest: (v: Version) => Promise<void>;
   onRefresh: () => void;
+  /** Inside a title: copy a version to another emulator's tree (tasks/multi-emulator-games Phase 6). */
+  onCopy?: (v: Version) => void;
 }
 
 type View = 'main' | 'backups';
@@ -37,7 +39,7 @@ type View = 'main' | 'backups';
  * Every row starts collapsed and already says what it changed; its chevron opens the changed files
  * (tasks/save-file-trees Phase 2, variant B). One request covers the whole list.
  */
-export function VersionsCard({ game, headId, versions, conflicts, loading, reloadVersions, onSetLatest, onRefresh }: Props) {
+export function VersionsCard({ game, headId, versions, conflicts, loading, reloadVersions, onSetLatest, onRefresh, onCopy }: Props) {
   // Inside a title every action here is this emulator's tree only, and the confirm says so.
   const tw = useTreeWord();
   const only = tw ? ` Only the${tw} save changes; the other emulators’ are not touched.` : '';
@@ -125,6 +127,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
     if (v.id === headId) return <Chip tone="ok">Latest</Chip>;
     if (conflicting.has(v.id)) return <Chip tone="crit">Conflicting</Chip>;
     if (v.mergedFrom) return <span title={`Made as ${v.mergedFrom}, merged into this game. Read-only history: it can be downloaded, never made Latest.`}><Chip>From {v.mergedFrom}</Chip></span>;
+    if (v.copiedFrom) return <span title={`Copied from ${v.copiedFrom}'s save of this game.`}><Chip>From {v.copiedFrom}</Chip></span>;
     if (v.protected) return <Chip tone="warn">Protected</Chip>;
     return <Chip>{view === 'main' ? 'Kept' : 'Backup'}</Chip>;
   }
@@ -209,6 +212,9 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
                       />
                     )}
                     <Button size="sm" variant="quiet" onClick={() => void download(v)} title="Download this version's archive">Download</Button>
+                    {onCopy && !v.mergedFrom && (
+                      <Button size="sm" variant="quiet" onClick={() => onCopy(v)} title="Copy this save to another emulator's tree of this game">Copy to…</Button>
+                    )}
                     {v.protected && (
                       <InlineConfirm
                         label="Unprotect"

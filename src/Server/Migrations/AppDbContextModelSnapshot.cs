@@ -691,6 +691,12 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("ContentJson")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CopiedFrom")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CopiedFromVersionId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 

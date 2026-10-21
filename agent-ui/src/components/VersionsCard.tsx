@@ -4,6 +4,7 @@ import { formatAgo, formatBytes, formatDateTime } from '../format'
 import type { SaveVersion } from '../types'
 import { Card } from './ui/Card'
 import { Chip } from './ui/Chip'
+import { Button } from './ui/Button'
 
 interface Props {
   gameId: string
@@ -11,6 +12,10 @@ interface Props {
   /** Bumped by the page after a sync, so the list follows what that sync just did. */
   refreshKey: number
   onLoaded: (versions: SaveVersion[]) => void
+  /** The card's heading; inside a title it names the emulator. */
+  title?: string
+  /** Inside a title: copy a version to another emulator's tree (tasks/multi-emulator-games Phase 6). */
+  onCopy?: (versionId: string) => void
 }
 
 /**
@@ -18,7 +23,7 @@ interface Props {
  * versions route. Read-only — this page is the agent's; pruning and Set-as-Latest are the console's.
  * The newest ten are shown; the count above is always the real total.
  */
-export function VersionsCard({ gameId, headId, refreshKey, onLoaded }: Props) {
+export function VersionsCard({ gameId, headId, refreshKey, onLoaded, title = 'Versions on the server', onCopy }: Props) {
   const [versions, setVersions] = useState<SaveVersion[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,7 +40,7 @@ export function VersionsCard({ gameId, headId, refreshKey, onLoaded }: Props) {
 
   return (
     <Card
-      title="Versions on the server"
+      title={title}
       flush
       headerRight={versions && <Chip>{versions.length} kept</Chip>}
     >
@@ -54,12 +59,20 @@ export function VersionsCard({ gameId, headId, refreshKey, onLoaded }: Props) {
             <tbody>
               {shown.map(v => (
                 <tr key={v.id}>
-                  <td title={formatDateTime(v.createdAt)}>{formatAgo(v.createdAt)}</td>
+                  <td title={formatDateTime(v.createdAt)}>
+                    {formatAgo(v.createdAt)}
+                    {v.copiedFrom && <span className="sl-copied">Copied from {v.copiedFrom}</span>}
+                  </td>
                   <td className="sl-dim">{v.machineName}</td>
                   <td className="sl-num sl-dim">{formatBytes(v.size)}</td>
                   <td>
                     {v.id === headId && <Chip tone="ok">Latest</Chip>}
                     {v.protected && v.id !== headId && <Chip>Protected</Chip>}
+                    {onCopy && !v.mergedFrom && (
+                      <Button size="sm" variant="quiet" data-pad-label="Copy this version to another emulator" onClick={() => onCopy(v.id)}>
+                        Copy to…
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}

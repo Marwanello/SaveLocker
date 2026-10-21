@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, EmptiedHold, SaveVsCloud, SwitchCopy, SwitchUserAction, SwitchUserSharing, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, EmptiedHold, SaveVsCloud, SwitchCopy, SwitchUserAction, SwitchUserSharing, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, CopyTarget, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -157,6 +157,11 @@ export const api = {
   // Every version the server keeps of one game, newest first.
   gameVersions: (id: string) => req<SaveVersion[]>(`/api/games/${id}/versions`),
   resolvedConflicts: () => req<Conflict[]>('/api/conflicts/resolved'),
+  // Copy a save to another emulator's tree of the same game (tasks/multi-emulator-games Phase 6): where it can go and
+  // what each file becomes, then the copy itself — a new version of the target, its old Latest kept.
+  copyTargets: (id: string, versionId: string) => req<CopyTarget[]>(`/api/games/${id}/versions/${versionId}/copy-targets`),
+  copyToEmulator: (id: string, versionId: string, target: string) =>
+    post<SaveVersion>(`/api/games/${id}/versions/${versionId}/copy-to?target=${encodeURIComponent(target)}`),
   // How big a game's save folder is now — a plain directory walk, so fine to ask on opening the page.
   localSize: (id: string) => req<{ bytes: number }>(`/api/games/${id}/local-size`),
   // Conflict resolution (tasks/conflict-resolution-ui/plan.md, Phase 6) — every open conflict on the

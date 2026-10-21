@@ -74,7 +74,8 @@ public static class Mapping
 
     public static SaveVersionDto ToDto(this SaveVersion v) =>
         new(v.Id, v.GameId, v.MachineId, UploaderName(v), v.CreatedAt,
-            v.ContentHash, v.Size, v.ParentVersionId, v.Protected, ReadContent(v.ContentJson), v.MergedFrom);
+            v.ContentHash, v.Size, v.ParentVersionId, v.Protected, ReadContent(v.ContentJson), v.MergedFrom,
+            v.CopiedFrom, v.CopiedFromVersionId);
 
     /// <summary>A stored package list, or null for none — or for JSON this build cannot read.</summary>
     public static ContentPackageDto[]? ReadContent(string? json)

@@ -11,7 +11,7 @@ using SaveLocker.Server.Data;
 namespace SaveLocker.Server.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261021150709_AddGameTitles")]
+    [Migration("20261021152439_AddGameTitles")]
     partial class AddGameTitles
     {
         /// <inheritdoc />
@@ -692,6 +692,12 @@ namespace SaveLocker.Server.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ContentJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CopiedFrom")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CopiedFromVersionId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")

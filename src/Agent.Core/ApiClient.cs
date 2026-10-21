@@ -670,6 +670,27 @@ public sealed class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<SaveVersionDto>>(cancellationToken: ct) ?? new();
     }
 
+    /// <summary>Where a version can be copied — another emulator's tree of its title (tasks/multi-emulator-games Phase 6);
+    /// empty for a game in no title, or a server too old to copy.</summary>
+    public async Task<List<CopyTargetDto>> GetCopyTargetsAsync(Guid gameId, Guid versionId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/versions/{versionId}/copy-targets", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return new();
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<List<CopyTargetDto>>(cancellationToken: ct) ?? new();
+    }
+
+    /// <summary>Copy a version into another emulator's tree of its title: the new version, or the server's reason not to.</summary>
+    public async Task<(SaveVersionDto? Version, string? Refusal)> CopyToEmulatorAsync(Guid gameId, Guid versionId, Guid targetId,
+        CancellationToken ct = default)
+    {
+        var resp = await _http.PostAsync($"/api/agent/games/{gameId}/versions/{versionId}/copy-to?target={targetId}", null, ct);
+        if (resp.StatusCode is HttpStatusCode.BadRequest)
+            return (null, await resp.Content.ReadFromJsonAsync<string>(cancellationToken: ct));
+        resp.EnsureSuccessStatusCode();
+        return (await resp.Content.ReadFromJsonAsync<SaveVersionDto>(cancellationToken: ct), null);
+    }
+
     /// <summary>One conflict by id, or null if the server does not know it (a stale reference, or a
     /// server too old to have this route).</summary>
     public async Task<ConflictDto?> GetConflictAsync(Guid conflictId, CancellationToken ct = default)

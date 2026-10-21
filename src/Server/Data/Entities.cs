@@ -159,6 +159,11 @@ public class SaveVersion
     /// Phase 17): read-only history — its files may be another dump's names — never made Latest. Null for the game's own.</summary>
     public string? MergedFrom { get; set; }
 
+    /// <summary>Made by copying another emulator's save of the same title (tasks/multi-emulator-games Phase 6): that
+    /// emulator's name, and the version copied. Null for a version a machine uploaded.</summary>
+    public string? CopiedFrom { get; set; }
+    public Guid? CopiedFromVersionId { get; set; }
+
     /// <summary>Relative path of the stored archive within the archive store.</summary>
     public string ArchivePath { get; set; } = "";
 

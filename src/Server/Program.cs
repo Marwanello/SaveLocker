@@ -850,6 +850,16 @@ agent.MapGet("/agent/games/{id:guid}/versions", async (Guid id, SyncService sync
     Results.Ok((await sync.ListVersionsAsync(id)).Select(v => v.ToDto())))
     .Produces<List<SaveVersionDto>>();
 
+// Copy a save to another emulator's tree of the same title, from an agent's own UI (tasks/multi-emulator-games Phase 6).
+// The same refusals as the console's: a machine key may already push any save, and the target's Latest is kept.
+agent.MapGet("/agent/games/{id:guid}/versions/{versionId:guid}/copy-targets", async (Guid id, Guid versionId, SyncService sync) =>
+    await sync.GetCopyTargetsAsync(id, versionId) is { } targets ? Results.Ok(targets) : Results.NotFound())
+    .Produces<List<CopyTargetDto>>().Produces(StatusCodes.Status404NotFound);
+
+agent.MapPost("/agent/games/{id:guid}/versions/{versionId:guid}/copy-to", async (Guid id, Guid versionId, Guid target, HttpContext http, SyncService sync) =>
+    CopyResult(await sync.CopyToEmulatorAsync(id, versionId, target, http.CurrentMachine().Id, http.CurrentMachine().Name)))
+    .Produces<SaveVersionDto>().Produces<string>(StatusCodes.Status400BadRequest).Produces(StatusCodes.Status404NotFound);
+
 // The head version's files with their SHA-256, so an agent can say file by file whether its own save
 // matches the server's (tasks/save-file-trees Phase 3). Hashed from the stored archive, cached per version.
 agent.MapGet("/agent/games/{id:guid}/head/files", async (Guid id, SyncService sync, CancellationToken ct) =>
@@ -1444,6 +1454,16 @@ admin.MapPost("/games/{id:guid}/title/split", async (Guid id, TitleGrouping titl
     .Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status404NotFound);
 
+// Copy a save to another emulator's tree of the same title (tasks/multi-emulator-games Phase 6). The target's Latest stays
+// as an older version, so nothing is lost; the console and the agents offer the same two routes.
+admin.MapGet("/games/{id:guid}/versions/{versionId:guid}/copy-targets", async (Guid id, Guid versionId, SyncService sync) =>
+    await sync.GetCopyTargetsAsync(id, versionId) is { } targets ? Results.Ok(targets) : Results.NotFound())
+    .Produces<List<CopyTargetDto>>().Produces(StatusCodes.Status404NotFound);
+
+admin.MapPost("/games/{id:guid}/versions/{versionId:guid}/copy-to", async (Guid id, Guid versionId, Guid target, SyncService sync) =>
+    CopyResult(await sync.CopyToEmulatorAsync(id, versionId, target, null, "admin")))
+    .Produces<SaveVersionDto>().Produces<string>(StatusCodes.Status400BadRequest).Produces(StatusCodes.Status404NotFound);
+
 admin.MapPost("/games/{id:guid}/rollback", async (Guid id, Guid version, SyncService sync) =>
     await sync.RollbackAsync(id, version, "admin")
         ? Results.Ok() : Results.BadRequest("Could not roll back."));
@@ -1787,6 +1807,9 @@ static IResult UnknownPlatform(string? requested) => Results.BadRequest(
 // headers so the agent can record the parent version for its next upload.
 // A route's optional `path` query: which of a game's save folders. Absent means the primary one, which is
 // all an older agent or console ever sends.
+static IResult CopyResult((SaveVersionDto? Version, string? Refusal) r) =>
+    r.Version is { } v ? Results.Ok(v) : r.Refusal == "not_found" ? Results.NotFound() : Results.BadRequest(r.Refusal);
+
 static IResult TitleResult(string? why) => why switch
 {
     null => Results.NoContent(),

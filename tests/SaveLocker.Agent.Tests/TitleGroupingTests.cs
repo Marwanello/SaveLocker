@@ -41,6 +41,53 @@ public sealed class TitleNamesTests
     }
 }
 
+/// <summary>Copy this save to another emulator: which pairs, and what each file is called on the other side.</summary>
+public sealed class EmulatorSaveCopyTests
+{
+    [Fact]
+    public void Only_checked_pairs_are_offered()
+    {
+        Assert.NotNull(EmulatorSaveCopy.For("melonDS", "RetroArch"));
+        Assert.NotNull(EmulatorSaveCopy.For("retroarch", "MELONDS"));
+        Assert.NotNull(EmulatorSaveCopy.For("Dolphin", "PrimeHack"));
+        Assert.Null(EmulatorSaveCopy.For("Dolphin", "RetroArch"));
+        Assert.Null(EmulatorSaveCopy.For("DuckStation", "RetroArch"));
+        Assert.Null(EmulatorSaveCopy.For(null, "RetroArch"));
+    }
+
+    [Fact]
+    public void A_renamed_save_takes_the_targets_own_name_when_it_has_one()
+    {
+        var rule = EmulatorSaveCopy.For("melonDS", "RetroArch")!;
+        var (files, refusal) = EmulatorSaveCopy.Map(rule, ["Hunters (USA).sav"], ["Hunters (USA) (Rev 1).srm"], ["Hunters (USA) (Rev 1).srm"]);
+        Assert.Null(refusal);
+        Assert.Equal(("Hunters (USA).sav", "Hunters (USA) (Rev 1).srm"), Assert.Single(files));
+
+        // No target save yet: the extension swap, if the scope takes it.
+        (files, refusal) = EmulatorSaveCopy.Map(rule, ["Hunters (USA).sav"], null, ["Hunters (USA).srm"]);
+        Assert.Equal(("Hunters (USA).sav", "Hunters (USA).srm"), Assert.Single(files));
+
+        (_, refusal) = EmulatorSaveCopy.Map(rule, ["a.sav", "b.sav"], null, null);
+        Assert.Contains("2 .sav files", refusal);
+        // The scope names the target's save outright, whatever its ROM is called: that is the name.
+        (files, _) = EmulatorSaveCopy.Map(rule, ["Hunters (USA).sav"], null, ["Hunters (Europe).srm"]);
+        Assert.Equal("Hunters (Europe).srm", Assert.Single(files).To);
+        (_, refusal) = EmulatorSaveCopy.Map(rule, ["Hunters (USA).sav"], null, ["saves/*.dsv"]);
+        Assert.NotNull(refusal);
+    }
+
+    [Fact]
+    public void A_folder_save_copies_under_its_own_paths_within_the_targets_scope()
+    {
+        var rule = EmulatorSaveCopy.For("Dolphin", "PrimeHack")!;
+        var (files, refusal) = EmulatorSaveCopy.Map(rule, ["banner.bin", "data/save1.dat"], null, null);
+        Assert.Null(refusal);
+        Assert.Equal(new[] { ("banner.bin", "banner.bin"), ("data/save1.dat", "data/save1.dat") }, files);
+        (_, refusal) = EmulatorSaveCopy.Map(rule, ["banner.bin"], null, ["data/**"]);
+        Assert.NotNull(refusal);
+    }
+}
+
 /// <summary>Titles on a real server: who groups, who never does, split and group by hand, and the backfill.</summary>
 public sealed class TitleGroupingServerTests : IDisposable
 {
@@ -48,6 +95,7 @@ public sealed class TitleGroupingServerTests : IDisposable
     private readonly string _db = Path.Combine(Path.GetTempPath(), "savelocker-titles-" + Guid.NewGuid().ToString("N"));
     private readonly string _id = Guid.NewGuid().ToString("N")[..6];
     private ServerProcess _server;
+    private readonly Dictionary<ApiClient, string> _keys = new();
 
     public TitleGroupingServerTests()
     {
@@ -76,14 +124,16 @@ public sealed class TitleGroupingServerTests : IDisposable
         using (var http = Admin())
             await http.PostAsJsonAsync("/api/admin/password", new SetAdminPasswordRequest(AdminPassword));
         var reg = await new ApiClient(_server.Url, null).RegisterAsync(name + _id, AdminPassword);
-        return new ApiClient(_server.Url, reg.ApiKey);
+        var api = new ApiClient(_server.Url, reg.ApiKey);
+        _keys[api] = reg.ApiKey;
+        return api;
     }
 
     private static async Task<GameDto> Add(ApiClient api, string name, string emulator, string? console = "DS",
-        GameReleaseDto? release = null, string kind = GameSourceKinds.Emulator, string? key = null)
+        GameReleaseDto? release = null, string kind = GameSourceKinds.Emulator, string? key = null, bool wholeFolder = false)
     {
         var game = await api.CreateGameAsync(new CreateGameRequest(name, null, null,
-            IncludeGlobs: [name + ".sav"], Release: release, EmulatorKey: key));
+            IncludeGlobs: wholeFolder ? null : [name + ".sav"], Release: release, EmulatorKey: key));
         await api.SetGameSourceAsync(game.Id, new GameSourceDto(kind, emulator, console is null ? null : [console]));
         return game;
     }
@@ -186,6 +236,99 @@ public sealed class TitleGroupingServerTests : IDisposable
         Assert.Equal(title, o[older.Id].Game.TitleId);
         Assert.Equal(title, o[melon.Id].Game.TitleId);
         Assert.Equal(title, o[retro.Id].Game.TitleId);
+    }
+
+    private async Task<Guid> Push(ApiClient api, Guid gameId, string file, string content, string[]? include, Guid? parent = null,
+        UploadStatus expect = UploadStatus.Created)
+    {
+        var dir = Path.Combine(_db, "saves", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(dir, file))!);
+        File.WriteAllText(Path.Combine(dir, file), content);
+        var (_, hash) = SaveArchive.ComputeManifest(dir, null, include);
+        var zip = Path.Combine(_db, Guid.NewGuid().ToString("N") + ".zip");
+        SaveArchive.CreateArchive(dir, zip, null, include);
+        var result = await api.UploadAsync(gameId, hash, parent, false, zip);
+        Assert.Equal(expect, result.Status);
+        return result.Version!.Id;
+    }
+
+    [Fact]
+    public async Task A_save_copies_to_another_emulator_as_its_new_latest_and_the_old_one_stays()
+    {
+        var pc = await Machine("pc");
+        var hunters = "Metroid Prime - Hunters " + _id;
+        var melon = await Add(pc, hunters, "melonDS");
+        var retro = await Add(pc, hunters + " (RetroArch)", "RetroArch");
+        var sav = await Push(pc, melon.Id, hunters + ".sav", "melonDS progress", [hunters + ".sav"]);
+        await Push(pc, retro.Id, hunters + " (RetroArch).sav", "unused", [hunters + " (RetroArch).sav"]);
+        using var http = Admin();
+
+        var targets = await http.GetFromJsonAsync<List<CopyTargetDto>>($"/api/games/{melon.Id}/versions/{sav}/copy-targets");
+        var target = Assert.Single(targets!);
+        // This RetroArch game was made with a .sav scope, which names no .srm: refused, not guessed.
+        Assert.Contains(".srm", target.Refusal);
+        Assert.Empty(target.Files);
+
+        // A real RetroArch tree: its scope names the .srm.
+        var srm = hunters + " (USA).srm";
+        var ra = await pc.CreateGameAsync(new CreateGameRequest(hunters + " (USA) (RetroArch)", null, null, IncludeGlobs: [srm]));
+        await pc.SetGameSourceAsync(ra.Id, new GameSourceDto(GameSourceKinds.Emulator, "RetroArch", ["DS"]));
+        var raHead = await Push(pc, ra.Id, srm, "old RetroArch save", [srm]);
+        targets = await http.GetFromJsonAsync<List<CopyTargetDto>>($"/api/games/{melon.Id}/versions/{sav}/copy-targets");
+        var t = targets!.Single(x => x.GameId == ra.Id);
+        Assert.Null(t.Refusal);
+        Assert.Equal(new CopyFileDto(hunters + ".sav", srm, "melonDS progress".Length), Assert.Single(t.Files));
+        Assert.Equal(raHead, t.TargetHead?.Id);
+
+        var copied = await (await http.PostAsync($"/api/games/{melon.Id}/versions/{sav}/copy-to?target={ra.Id}", null))
+            .EnsureSuccessStatusCode().Content.ReadFromJsonAsync<SaveVersionDto>();
+        Assert.Equal(("RetroArch", "melonDS", sav), ("RetroArch", copied!.CopiedFrom, copied.CopiedFromVersionId));
+        var o = await Overview();
+        Assert.Equal(copied.Id, o[ra.Id].Head?.Id);
+        Assert.Equal(sav, o[melon.Id].Head?.Id);
+        var versions = await pc.GetGameVersionsAsync(ra.Id);
+        Assert.Contains(versions, v => v.Id == raHead);
+        Assert.Equal(raHead, copied.ParentVersionId);
+
+        // What a machine pulls: the .srm with the .sav's bytes, and the hash it computes over the restored folder.
+        using var agent = new HttpClient { BaseAddress = new Uri(_server.Url) };
+        agent.DefaultRequestHeaders.Add("X-Api-Key", _keys[pc]);
+        var zip = Path.Combine(_db, "pulled.zip");
+        await File.WriteAllBytesAsync(zip, await agent.GetByteArrayAsync($"/api/versions/{copied.Id}/download"));
+        var restored = Path.Combine(_db, "restored");
+        SaveArchive.RestoreArchive(zip, restored);
+        Assert.Equal("melonDS progress", File.ReadAllText(Path.Combine(restored, srm)));
+        Assert.Equal(copied.ContentHash, SaveArchive.ComputeManifest(restored, null, [srm]).ContentHash);
+    }
+
+    [Fact]
+    public async Task A_copy_is_refused_between_formats_that_differ_and_into_an_open_conflict()
+    {
+        var pc = await Machine("pc");
+        var trilogy = "Metroid Prime Trilogy " + _id;
+        var deck = await Machine("deck");
+        var dolphin = await Add(pc, trilogy, "Dolphin", "Wii", wholeFolder: true);
+        var prime = await Add(pc, trilogy + " (PrimeHack)", "PrimeHack", "Wii", wholeFolder: true);
+        var other = await Add(pc, trilogy + " (RetroArch)", "RetroArch", "Wii", wholeFolder: true);
+        var v = await Push(pc, dolphin.Id, "data/save1.dat", "dolphin", null);
+        using var http = Admin();
+        var targets = (await http.GetFromJsonAsync<List<CopyTargetDto>>($"/api/games/{dolphin.Id}/versions/{v}/copy-targets"))!;
+        Assert.Contains("different formats", targets.Single(t => t.GameId == other.Id).Refusal);
+        Assert.Equal("data/save1.dat", Assert.Single(targets.Single(t => t.GameId == prime.Id).Files).To);
+
+        // Two machines diverge on PrimeHack's save: an open conflict there refuses the copy.
+        var first = await Push(pc, prime.Id, "data/save1.dat", "pc", null);
+        await Push(deck, prime.Id, "data/save1.dat", "deck", null, expect: UploadStatus.Conflict);
+        targets = (await http.GetFromJsonAsync<List<CopyTargetDto>>($"/api/games/{dolphin.Id}/versions/{v}/copy-targets"))!;
+        Assert.Contains("conflict", targets.Single(t => t.GameId == prime.Id).Refusal);
+        _ = first;
+
+        var refused = await http.PostAsync($"/api/games/{dolphin.Id}/versions/{v}/copy-to?target={other.Id}", null);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, refused.StatusCode);
+        // An unrelated game is never a target, whatever its emulator.
+        var lone = await Add(pc, "Something else " + _id, "PrimeHack", "Wii", wholeFolder: true);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest,
+            (await http.PostAsync($"/api/games/{dolphin.Id}/versions/{v}/copy-to?target={lone.Id}", null)).StatusCode);
     }
 
     [Fact]

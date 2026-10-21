@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { usePad, type PadAction } from './pad'
-import { hasKeepBothOption, hasResolveButton, isGamePage, useNav } from './nav'
+import { hasEmulatorTabs, hasKeepBothOption, hasResolveButton, isGamePage, useNav } from './nav'
 import { GLYPH_BAR_SIZE, Glyph, useGlyphPrefs } from './glyphs'
 
 /**
@@ -50,6 +50,7 @@ export function HintBar() {
       hints.push({ key: 'x', glyphs: ['x'], label: 'Sync' })
       if (!hasKeepBothOption()) hints.push({ key: 'lt', glyphs: ['lt'], label: 'Push' })
       if (!hasResolveButton()) hints.push({ key: 'rt', glyphs: ['rt'], label: 'Pull' })
+      if (hasEmulatorTabs()) hints.push({ key: 'r3', glyphs: ['r3'], label: 'Next emulator' })
     } else {
       hints.push({ key: 'x', glyphs: ['x'], label: 'Search' })
       if (nav.viewToggleAvailable) hints.push({ key: 'r3', glyphs: ['r3'], label: 'List / Grid' })

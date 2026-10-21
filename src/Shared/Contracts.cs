@@ -542,7 +542,22 @@ public record SaveVersionDto(
     ContentPackageDto[]? Content = null,
     // The game this version was made under before it was merged into this one (tasks/emulator-saves Phase 17): read-only
     // history, never Latest again. Null for the game's own versions.
-    string? MergedFrom = null);
+    string? MergedFrom = null,
+    // Made by copying another emulator's save of the same title (tasks/multi-emulator-games Phase 6): that emulator's
+    // name and the version copied. Null for a version a machine uploaded.
+    string? CopiedFrom = null,
+    Guid? CopiedFromVersionId = null);
+
+/// <summary>
+/// Where one version of a title's tree can be copied (tasks/multi-emulator-games Phase 6): another emulator's tree of the
+/// same title. <see cref="Refusal"/> says why not; otherwise <see cref="Files"/> is what each file becomes and
+/// <see cref="TargetHead"/> the target's current Latest, which stays as an older version.
+/// </summary>
+public record CopyTargetDto(Guid GameId, string GameName, string? Emulator, string? How, string? Refusal,
+    CopyFileDto[] Files, SaveVersionDto? TargetHead);
+
+/// <summary>One file of a copy: its name in the source save, its name in the target's, and its size.</summary>
+public record CopyFileDto(string From, string To, long Size);
 
 /// <summary>
 /// One installed package of a game — DLC (<see cref="Dlc"/>) or a title update (<see cref="Update"/>) — as the DLC check

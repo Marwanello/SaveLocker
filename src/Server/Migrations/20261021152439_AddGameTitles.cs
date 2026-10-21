@@ -12,6 +12,18 @@ namespace SaveLocker.Server.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
+                name: "CopiedFrom",
+                table: "SaveVersions",
+                type: "TEXT",
+                nullable: true);
+
+            migrationBuilder.AddColumn<Guid>(
+                name: "CopiedFromVersionId",
+                table: "SaveVersions",
+                type: "TEXT",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
                 name: "TitleEdition",
                 table: "Games",
                 type: "TEXT",
@@ -73,6 +85,14 @@ namespace SaveLocker.Server.Migrations
             migrationBuilder.DropIndex(
                 name: "IX_Games_TitleId",
                 table: "Games");
+
+            migrationBuilder.DropColumn(
+                name: "CopiedFrom",
+                table: "SaveVersions");
+
+            migrationBuilder.DropColumn(
+                name: "CopiedFromVersionId",
+                table: "SaveVersions");
 
             migrationBuilder.DropColumn(
                 name: "TitleEdition",

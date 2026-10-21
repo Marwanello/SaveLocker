@@ -27,7 +27,7 @@ export function treeLabel(tree: GameSummary, trees: GameSummary[]): string {
   const title = tree.game.titleName ?? '';
   const emulator = (emulatorOf(tree) ?? '').toLowerCase();
   const rest = (tree.game.name.toLowerCase().startsWith(title.toLowerCase()) ? tree.game.name.slice(title.length) : tree.game.name)
-    .replace(/\(([^()]*)\)/g, (group, inner: string) => inner.split(',')[0].trim().toLowerCase() === emulator ? '' : inner)
+    .replace(/\(([^()]*)\)/g, (_, inner: string) => inner.split(',')[0].trim().toLowerCase() === emulator ? '' : inner)
     .replace(/\s+/g, ' ').trim();
   return rest ? `${base(tree)} · ${rest}` : base(tree);
 }

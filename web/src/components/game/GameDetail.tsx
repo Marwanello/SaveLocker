@@ -25,6 +25,7 @@ import { MergeCard } from './MergeCard';
 import { Card } from '../ui/Card';
 import { EmulatorTabs, GroupWith } from './EmulatorTabs';
 import { TreeContext } from './treeContext';
+import { CopyPanel } from './CopyPanel';
 import { emulatorOf, treeLabel } from './titles';
 import type { TitleSummary } from './titles';
 
@@ -63,6 +64,8 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   // Emulator settings, open on one of its sections; null is the game's own page.
   const [emuTab, setEmuTab] = useState<EmulatorTab | null>(null);
   const [content, setContent] = useState<GameContent | null>(null);
+  // Copy this save to another emulator, open on one version.
+  const [copying, setCopying] = useState<Version | null>(null);
 
   useEffect(() => {
     setLoadingVersions(true);
@@ -222,6 +225,11 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
         />
       ))}
 
+      {copying && trees && (
+        <CopyPanel game={game} emulator={treeName ?? game.name} version={copying} onClose={() => setCopying(null)}
+          onCopied={id => { setCopying(null); onRefresh(); onPickTree?.(id); }} />
+      )}
+
       <GameStats summary={summary} versionCount={versions.length} machinesWithGame={withGame} onRefresh={onRefresh} />
 
       <BalancedColumns items={[
@@ -239,6 +247,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
               reloadVersions={reloadVersions}
               onSetLatest={setLatest}
               onRefresh={onRefresh}
+              onCopy={trees ? setCopying : undefined}
             />
           ),
         },
