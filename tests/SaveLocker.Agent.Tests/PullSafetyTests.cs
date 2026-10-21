@@ -214,4 +214,27 @@ public sealed class PullSafetyTests : IDisposable
         Assert.Empty(game.ProcessNames);
         Assert.Equal(["PCSX2"], EmulatorProcesses.EmulatorsOf(game));
     }
+
+    [Fact]
+    public void Closing_an_emulator_is_raised_once_for_its_games_and_starting_one_is_not()
+    {
+        var ps2 = Game("PCSX2", "/saves/mc1.ps2");
+        var ps1 = Game("DuckStation", "/saves/duckstation");
+        string[] processes = ["explorer"];
+        var watcher = new EmulatorWatcher(() => [ps2, ps1], () => processes);
+        var closed = new List<string>();
+        watcher.EmulatorClosed += closed.Add;
+
+        processes = ["explorer", "pcsx2-qtx64"];
+        watcher.Poll();                       // the first look only records what runs
+        processes = ["explorer", "pcsx2-qtx64", "duckstation-qt-x64-ReleaseLTCG"];
+        watcher.Poll();                       // DuckStation started: nothing to push yet
+        Assert.Empty(closed);
+        processes = ["explorer", "duckstation-qt-x64-ReleaseLTCG"];
+        watcher.Poll();
+        watcher.Poll();
+        Assert.Equal(["PCSX2"], closed);
+
+        Assert.Same(ps2, Assert.Single(EmulatorWatcher.GamesOf([ps2, ps1, Game("PCSX2")], "PCSX2")));   // not set up here: left out
+    }
 }
