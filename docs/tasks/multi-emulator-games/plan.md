@@ -20,7 +20,7 @@ design history.
 | 3 — Console game page: emulator tabs | ⏳ Not started |
 | 4 — Group and split by hand | ⏳ Not started |
 | 5 — Help, testenv check, docs | ⏳ Not started |
-| 6 — Later: agent UI, and copying a save to another emulator | ⏳ Not started |
+| 6 — Later: agent UI, and copying a save to another emulator | ⏳ Not started — mockup drawn 2026-10-21 ([`phase6-mockup.html`](phase6-mockup.html)) |
 
 ## Why the saves stay apart
 
@@ -178,6 +178,9 @@ Branch `multi-emulator-games`, cut from `main` after `emulator-saves-group-h` is
   - Split Trilogy out, then group it back.
 
 ### 6 — Later
+
+**Mockup:** [`phase6-mockup.html`](phase6-mockup.html). It shows the agent UI as the Windows tray and as the Deck in Game
+Mode (controller hints), and the Copy to another emulator dialog. Its open questions are listed under the window.
 
 - The agent UI (Deck and tray) shows titles the same way.
 - **Copy this save to another emulator**, where the formats match (DS `.sav` ⇄ RetroArch `.srm`, Dolphin ⇄
