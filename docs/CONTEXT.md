@@ -1765,7 +1765,7 @@ new **server-side** `Game.IncludeGlobs` (migration `AddGameIncludeGlobs`; `opena
 regenerated, additions only). `SaveArchive` hashes/archives/lists **and restores** within the scope — a restore
 deletes local files absent from the archive, so an unscoped pull into a shared saves folder would delete every
 other ROM's save (a test proves it, and the three scoped-restore tests fail with the scope disabled). Decisions
-taken with the maintainer and every deviation from the plan: `tasks/emulator-saves/plan.md` → *Status* /
+taken with the maintainer and every deviation from the plan: `tasks/_done/emulator-saves/plan.md` → *Status* /
 *Phase 1 — as built*; [[Decisions]] → *A game can own part of a save folder*. **Verified:** xunit 202 (+21),
 delta 33, hardening 33, health 33; a scratch two-machine round trip (Linux daemon + Windows CLI, each pull
 leaving the other ROMs' saves intact); and through `testenv` — `emu-fixture` (new) → the Windows test tray's
@@ -1775,12 +1775,12 @@ verified:** a real EmuDeck install on the Deck or on Windows (`Build and Run` �
 (not opt-in), as a second save path of the same game — so they wait for *Multiple save paths*, which the
 maintainer chose to build first in its own session/branch off `main`; `emulator-saves` is then rebased and
 continues with Phase 1b (states). What that feature must provide for emulators is appended to
-`logs/2026-10-06_multiple-save-paths/summary.md`; the states research is in `tasks/emulator-saves/plan.md` → *Save states
+`logs/2026-10-06_multiple-save-paths/summary.md`; the states research is in `tasks/_done/emulator-saves/plan.md` → *Save states
 — decided*. Also fixed: EmuDeck for Windows' RetroArch lives at
 `%USERPROFILE%\emudeck\EmulationStation-DE\Emulators\RetroArch` (Phase 1 had guessed an `%APPDATA%` path).
 <br>**Resumed 2026-10-06: `main` (multiple save paths Groups A+B) merged in, Phase 1b (save states) built.** The
 merge kept `main`'s version of every shared file — its per-folder include scopes replace this branch's migration,
-DTO fields, server validation and `SaveArchive` code (`tasks/emulator-saves/plan.md` → *Merged onto multiple save
+DTO fields, server validation and `SaveArchive` code (`tasks/_done/emulator-saves/plan.md` → *Merged onto multiple save
 paths*). A RetroArch game is now two scoped folders: `main` (`<rom>.srm`/`.rtc`) and `states` (`<rom>.state*`),
 the states folder declared even before it exists. `testenv emu-fixture` now writes a second tree for the WSL
 daemon, so the Windows ↔ WSL round trip runs on the rig. Unit **247**, multipath **39**, delta **33**.
@@ -1789,7 +1789,7 @@ RetroArch" + SNES/Flatpak/EmuDeck tags, "Steam › Installed game", …) — new
 `PUT /api/agent/source/{id}`, admin `GET /api/games/{id}/sources` — shown on the game page of the console
 (chip, "N sources" + per-machine popover), agent UI (chip + tags) and Game Mode (pill). RetroArch games drop the
 "(RetroArch)" suffix. Agent UI Add games gained an
-*Emulators* chip with an *Emulator* row (one chip per emulator — add each new one). `tasks/emulator-saves/plan.md`
+*Emulators* chip with an *Emulator* row (one chip per emulator — add each new one). `tasks/_done/emulator-saves/plan.md`
 → *Game sources and names*. Unit **280**.
 <br>**2026-10-07: review of PR #60, every finding fixed on the PR.** The first naming rule (append the console
 when *this machine's scan* had a same-named game) split one ROM into two server games across a Deck with Steam ROM
@@ -1807,7 +1807,7 @@ folder was researched from EmuDeck's own setup scripts (both OSes) and the emula
 are in five groups by save shape, one PR each: B saves named after the ROM, C memory cards, D Sony (`PARAM.SFO`),
 E title-ID folders, F Switch. Two design points need the maintainer's yes first: D1, an emulator game found by its
 folders rather than its name (B), and D2, a server title key so Ryujinx's numbered folders sync with the Yuzu forks
-(F). Details: `tasks/emulator-saves/plan.md` → *The other emulators* and `implementation-grouping.md`.
+(F). Details: `tasks/_done/emulator-saves/plan.md` → *The other emulators* and `implementation-grouping.md`.
 <br>**Group A merged as PR #60.** Its testenv pass of the source chips and the EmuDeck hardware pass are still open.
 <br>**2026-10-07: Group B built (branch `emulator-saves-group-b`, one commit per phase, no PR yet).** D1 confirmed by
 the maintainer and built first: an emulator save joins the server game that keeps exactly its files, whatever it is
@@ -1819,7 +1819,7 @@ paths all as researched, and one trap the plan missed — EmuDeck rsyncs 29 Supe
 `~/.supermodel/NVRAM` at install, exactly like Model 2's 39 `NVDATA` files; both are now hidden by SHA-256 until the
 game rewrites them (maintainer's choice for Model 2). testenv `emu-fixture` gained all four plus a fixture home per
 machine (`SAVELOCKER_EMULATOR_HOME`). Unit **319**. The maintainer also asked for a manual "link to this server game"
-option: researched and mocked up (three variants), not built — `tasks/emulator-saves/plan.md` → *Linking by hand*.
+option: researched and mocked up (three variants), not built — `tasks/_done/emulator-saves/plan.md` → *Linking by hand*.
 <br>**Next action for this item:** the testenv pass (`testenv clean` first — the rig still maps nine real save
 folders from earlier sessions), then merge PR #61 (Group B, opened since; *Linking by hand* was picked and built). A played
 Supermodel/Model 2 save on the Deck is the one thing no capture could show.
@@ -1835,7 +1835,7 @@ each save collapsed + the agent's current save tree, three variants) is at
 (`tasks/save-file-trees/plan.md`, a separate PR — built 2026-10-08, see below).
 <br>**Group H, real-game checks** (no code, always the last group): melonDS, ScummVM, Supermodel and Model 2 are
 waiting for real games (maintainer has none yet). Any later emulator shipped without a real-game test is added there
-(`tasks/emulator-saves/plan.md` → *Phase 18*).
+(`tasks/_done/emulator-saves/plan.md` → *Phase 18*).
 <br>**2026-10-07: PR #61 (Group B) reviewed, every finding fixed on the PR.** The one that mattered: *Keep it as its own
 game* could still end up syncing with the fleet's game. The machine that kept a save apart also tracked the fleet's
 same-files game (adopted, no folder), and the poller mapped it the moment a folder resolved here: another Windows
@@ -1865,7 +1865,7 @@ That last rule contradicts Group F's planned Eden ↔ Ryujinx sync, so confirm i
 capture found PCSX2 on **one 64 MB shared file card** (EmuDeck does not make it a folder card) and Metroid Prime
 Trilogy saved in both Dolphin and PrimeHack. The maintainer's PC turned out to have a real EmuDeck for Windows (link
 layout as researched), which broke a Group B test that read its ES-DE gamelists; that is fixed, see Gotchas. Unit
-**361**. Details: `tasks/emulator-saves/plan.md` → *Group C — as built*.
+**361**. Details: `tasks/_done/emulator-saves/plan.md` → *Group C — as built*.
 <br>**2026-10-08: names by serial.** The maintainer's Deck showed Warrior Within and The Two Thrones both as "Prince
 of Persia" (`icon.sys` says only the series). PS1/PS2/GameCube/Wii saves are now named by their serial from a
 bundled Redump table (`ConsoleTitles`, CC BY-SA 4.0 via libretro-database, PS3 included for later), region kept —
@@ -1931,7 +1931,7 @@ change. 2026-10-12 follow-up: RPCS3, Vita3K and shadPS4 save per emulator user (
 save's owner); Vita3K now reads every `ux0/user/*/savedata`, not only `00`, and the help article says how to move a
 game to another user's folder (**Change** on the game's folder). A PSP game played from states only is now listed
 (*Save states only so far*); the other emulators' version is new Phase 19 / Group I. Merged `main` (PR #64) into the
-branch. Unit **427**. Details: `tasks/emulator-saves/plan.md` → *Group D — as built*.
+branch. Unit **427**. Details: `tasks/_done/emulator-saves/plan.md` → *Group D — as built*.
 <br>**2026-10-12: Group E built (branch `emulator-saves-group-e`, one commit per phase).** Cemu (Wii U), Azahar (3DS, Citra's
 folders as its rows — maintainer: one game) and Xenia (Xbox 360), on Group D's `TitleFolders`. The maintainer asked for a
 bundled title table where licensed: the table gained **Xbox 360 by title ID** (a Redump serial spells it: `MS-2505` →
@@ -1940,14 +1940,14 @@ new `Ncch`), same pinned commit, every old row unchanged. No Wii U table exists 
 keep only saves: Azahar `<low>/data/**` (never the installed `content/`), Xenia `<TID>/00000001/**` + its headers (never DLC),
 both mutation-checked in two-machine tests. Captured read-only: the Deck's three 3DS saves and 11 ROM headers, its Cemu/Azahar
 AppImages, Xenia's two layouts; the PC's real Xenia *Forza Horizon* saves (per profile). Unit **471**. All three are in Group H.
-Details: `tasks/emulator-saves/plan.md` → *Group E — as built*.
+Details: `tasks/_done/emulator-saves/plan.md` → *Group E — as built*.
 <br>**Same day, PR #68 (Group E) follow-ups:** a user-binding review of every emulator (none checks a save's owner; Cemu, RPCS3,
 shadPS4, Vita3K and Xenia bind by folder only; Xenia XUIDs are random per profile). Built: Xenia device saves
 (`content/0000000000000000`, key `device`) and the 2023 named-profile layout; unit **474**. Designed, not built: **Phase 5c**,
 copying the whole Xenia profile to another machine and optional per-game DLC (Forza Horizon's is 1.0 GB, over the 500 MB cap) —
-four open questions in `tasks/emulator-saves/plan.md` → *Phase 5c*.
+four open questions in `tasks/_done/emulator-saves/plan.md` → *Phase 5c*.
 <br>**Phase 5c approved and started (same day):** the Xenia profile checked at launch with the profile split by game, and the
-DLC check — final plan in `tasks/emulator-saves/plan.md` → *Phase 5c — final plan*, 14 steps. Steps 1–4 built on #68: Xenia
+DLC check — final plan in `tasks/_done/emulator-saves/plan.md` → *Phase 5c — final plan*, 14 steps. Steps 1–4 built on #68: Xenia
 file formats (XDBF, Account gamertag, DLC/update headers, the `logged_profile_slot_0_xuid` config incl. Xenia Manager's per-game
 configs), `LaunchDecision.Ask` + `POST /api/games/{id}/launch-answer` (the default is applied before asking; answers kept on
 disk 10 min so the Linux wrapper honours a Decky answer), the profile at launch. Plugin PRs: Marwanello/SaveLocker-Decky#5,
@@ -1992,7 +1992,7 @@ one game in two emulators: the agent's Emulator settings page copies the synced 
 sync (the one played last wins; asks when both changed; nothing copied while an emulator runs; backups under
 `<state>/emulator-copies`), or makes it the synced copy. Captured read-only: the PC's Eden (*Metroid Prime 4*) and
 Ryujinx index; the Deck's Yuzu and Ryujinx, with *Undertale* saved in both. Also marked Groups C and E (with 5c) shipped.
-Unit **551**. Details: `tasks/emulator-saves/plan.md` → *Group F — as built*.
+Unit **551**. Details: `tasks/_done/emulator-saves/plan.md` → *Group F — as built*.
 <br>**2026-10-14, Group F follow-ups (same PR):** Switch games are named from a bundled eShop table
 (`src/Shared/SwitchTitles`, blawar/titledb, MIT) when the machine has no Ryujinx record or ROM name; a game first
 added as `Switch <title ID>` is renamed by the server when a machine knows its name; Switch rows have **Change**; the
@@ -2015,7 +2015,7 @@ play) not installed. The Switch Emulator settings page now leads with a status l
 save in Yuzu** / **Keep Yuzu's and upload it**, forced, refused if it no longer syncs) and an **On this device, you play it
 in** picker (switch keeping its save or taking the cloud's; not-installed and no-slot emulators explained, with **Tell me
 when … is ready**). New local route `vs-cloud`, actions `take-cloud`/`upload`/`tell-when-ready`/`stop-telling`. Agent
-tests **639**. Details: `tasks/emulator-saves/plan.md` → Group F follow-ups, 2026-10-15.
+tests **639**. Details: `tasks/_done/emulator-saves/plan.md` → Group F follow-ups, 2026-10-15.
 <br>**2026-10-16, same PR:** a Switch game's folder keys now follow the server game's layout on join (a device save is
 `main` where the fleet has no `device` folder), which is why the Deck's Animal Crossing island never reached the PC's
 Eden — **remove the game and add it again** on machines enrolled before this. The picker moves the save to the emulator
@@ -2052,7 +2052,7 @@ Manager shortcut is the emulator's game (`SrmShortcuts`; its app ID drives the l
 differently, with a per-machine file-by-file name list (`FileNames`, `OwnFileNames`), plus a **server merge** of two games
 (console, preview + typed name; merged versions read-only history). Migration `AddFileNamesAndMerge`. Phase 21 (J): emulator and
 console icons generated from Arcticons and RetroArch's Monochrome glyphs (`web/scripts/build-platform-icons.mjs`, `NOTICE-icons.md`)
-in all three UIs; `SvgPath` draws every path command. Agent tests **721**. Details: `tasks/emulator-saves/plan.md` → *Group G/I/J
+in all three UIs; `SvgPath` draws every path command. Agent tests **721**. Details: `tasks/_done/emulator-saves/plan.md` → *Group G/I/J
 — as built*.
 <br>**2026-10-19: review fixes on the same PR.** A file that the name swap would give the server's name (another dump's
 `… (USA).state1` beside this machine's `… (USA) (Rev 1).state1`) is now that other dump's, never archived or deleted as this game's,
@@ -2062,6 +2062,11 @@ differing save meets the kept game's Latest as a conflict instead of being pulle
 launch-options status is per shortcut (`ShortcutLaunchOptions`); a shortcut gone from Steam leaves the game's list; only the
 program word (or what `flatpak run` starts) names an emulator; merge also refuses on the kept game's lease/conflict. Agent tests
 **728** (in Release: the Debug agent output was held by a running test tray).
+<br>**2026-10-21: emulator saves done.** PR #78 (Groups G, I, J) merged 2026-10-19 and PR #81 (Group H's real-game checks plus
+`tasks/_done/emulator-pull-safety`) merged 2026-10-21; both task folders moved to `tasks/_done/`. Left, none started: Model 2's
+real-game check (no game), the testenv PCSX2 0-byte-superblock fixture, Ryujinx against a real game, Group J's screenshots and the
+Deck icons on hardware, and the not-built items listed in each plan's *Status* and *Deferred* sections. The next action lines below
+are history.
 <br>**Next action for this item:** the testenv pass with the Windows agent (Phase 17 Earthbound link Windows ⇄ WSL — the Windows
 test agent still maps a real `D:\Emulation` Animal Crossing save; unmap it first), the Deck pass (Forza Horizon listed once;
 launching it from Steam syncs), then merge PR #78. Group H stays open.

@@ -1,7 +1,7 @@
 # More standalone emulators — summary
 
 Seeded 2026-10-18 from the competitor gap analysis ([[logs/2026-10-18_competitor-gap-analysis]]). No plan
-file yet. **Priority: Low.** Separate from [[tasks/emulator-saves/plan|Emulator saves]] (whose remaining work
+file yet. **Priority: Low.** Separate from [[tasks/_done/emulator-saves/plan|Emulator saves]] (whose remaining work
 is Switch, Groups G–I) because these are mostly cheap: a ROM-named save in a shared folder is one more row of
 `RomSaves` (`RomSaveRules`), the D4 "shape 1" reader.
 
