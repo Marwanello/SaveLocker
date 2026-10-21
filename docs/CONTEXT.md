@@ -2063,10 +2063,10 @@ launch-options status is per shortcut (`ShortcutLaunchOptions`); a shortcut gone
 program word (or what `flatpak run` starts) names an emulator; merge also refuses on the kept game's lease/conflict. Agent tests
 **728** (in Release: the Debug agent output was held by a running test tray).
 <br>**2026-10-21: emulator saves done.** PR #78 (Groups G, I, J) merged 2026-10-19 and PR #81 (Group H's real-game checks plus
-`tasks/_done/emulator-pull-safety`) merged 2026-10-21; both task folders moved to `tasks/_done/`. Left, none started: Model 2's
-real-game check (no game), the testenv PCSX2 0-byte-superblock fixture, Ryujinx against a real game, Group J's screenshots and the
-Deck icons on hardware, and the not-built items listed in each plan's *Status* and *Deferred* sections. The next action lines below
-are history.
+`tasks/_done/emulator-pull-safety`) merged 2026-10-21; both task folders moved to `tasks/_done/`. The maintainer verified every
+testenv and hardware pass (Groups A–J), played Ryujinx and Xenia (launched from EmulationStation) against real games. Left by
+choice: Model 2's real-game check (no game) and the items each plan lists as not built or *Deferred*. The testenv PCSX2 fixture
+with a 0-byte superblock was added afterwards (WSL `Mcd000.ps2`). The next action lines below are history.
 <br>**Next action for this item:** the testenv pass with the Windows agent (Phase 17 Earthbound link Windows ⇄ WSL — the Windows
 test agent still maps a real `D:\Emulation` Animal Crossing save; unmap it first), the Deck pass (Forza Horizon listed once;
 launching it from Steam syncs), then merge PR #78. Group H stays open.
