@@ -901,6 +901,11 @@ function New-EmuDeckFixture {
         Write-FixtureFile (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-21005SYS\kh2save') 'old kingdom hearts ii save on the WSL machine'
         Write-FixtureFile (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-21115OKAMI\okamisave') 'wsl okami - must survive every Kingdom Hearts pull'
         New-Item -ItemType Directory -Force (Join-Path $wPs2 'states') | Out-Null
+        # tasks/_done/emulator-pull-safety Phase 4: a new folder card PCSX2 has not formatted yet (a 0-byte superblock, no
+        # saves), sorted before Mcd001 so it is the card a never-played game is set up on, and the Warrior Within ROM that
+        # sets it up once Windows adds the game. The pull onto it must leave an 8192-byte formatted superblock.
+        Write-FixtureBytes (Join-Path $wPs2 'saves\Mcd000.ps2\_pcsx2_superblock') ([byte[]]@())
+        Write-FixtureFile (Join-Path $wsl 'roms\ps2\Prince of Persia - Warrior Within (USA).iso') ''
         $wDs = Join-Path $wsl 'saves\duckstation'
         Write-FixtureBytes (Join-Path $wDs 'saves\Crash Bandicoot (USA)_1.mcd') (New-Ps1Card @('BASCUS-94900OLD'))
         Write-FixtureBytes (Join-Path $wDs 'saves\Tekken 3 (USA)_1.mcd') (New-Ps1Card @('BASLUS-00402TEKKEN'))

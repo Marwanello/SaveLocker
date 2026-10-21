@@ -353,7 +353,7 @@ session can judge an edge case, not to reopen the choice.
   choice: everywhere else the file name already reads well), Supermodel's `Games.xml`, a ScummVM description —
   and the name list above only matters to the machine that enrolls first. Unscoped (PC) candidates still match by
   name only. Mutation-checked both halves (`IdentityByFoldersTests`). Follow-up asked for, not built: a manual
-  "link to this server game" choice at enrollment — mockup with three variants, `tasks/emulator-saves/plan.md` →
+  "link to this server game" choice at enrollment — mockup with three variants, `tasks/_done/emulator-saves/plan.md` →
   *Linking by hand*.
   <br>**Amended by the PR #61 review (2026-10-07):** only the **primary folder's** include patterns decide, compared
   ignoring case (`Enroller.SameFiles`). Requiring every folder to match made a game enrolled by an older agent (no

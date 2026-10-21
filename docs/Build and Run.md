@@ -333,6 +333,11 @@ Group C adds, under `Emulation\saves` on both machines:
   *The Two Thrones*, whose saves both say only "Prince of Persia": the rows must read *Prince of Persia - Warrior
   Within* and *Prince of Persia - The Two Thrones*, each with a *USA* chip — no region in the name. Once added, the
   game page's *USA* chip opens the details (game ID *SLUS-21022*, *PlayStation 2*, its languages). Windows also has a file card `Mcd002.ps2`, listed greyed out with the fix.
+  **An unformatted card (pull safety):** WSL also has a new card `Mcd000.ps2` whose `_pcsx2_superblock` is 0 bytes, and a
+  *Warrior Within* ROM. Add *Prince of Persia - Warrior Within* on Windows; within a minute or two WSL sets it up on
+  `Mcd000.ps2` (*Set up … its ROM is on this machine*) and pulls it (press Sync on its game page if not). Then
+  `Mcd000.ps2\BASLUS-21022WW\save` holds the Windows save and `_pcsx2_superblock` is 8192 bytes starting `Sony PS2 Memory
+  Card Format`, and the daemon log says *formatted PCSX2 card "Mcd000.ps2"*.
 - **DuckStation:** *Crash Bandicoot*, with a state on Windows. *Spyro* and *Tekken 3* stay put. A
   `shared_card_1.mcd` on Windows is greyed out.
 - **Dolphin:** GameCube *Metroid Prime* and *Melee* (Windows), and Wii *Metroid: Other M* on both. Windows keeps it

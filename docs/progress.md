@@ -3594,7 +3594,7 @@ Worktree: `.claude/worktrees/emulator-saves`.
 
 - *Multiple save paths per game* marked done: removed from `Backlog.md`, folder moved to
   `logs/2026-10-06_multiple-save-paths/`, indexed in `logs/shipped-2026-10.md`, links updated.
-- `tasks/emulator-saves/plan.md`: Phases 1, 1b, 7 and 7b marked shipped; section *Game sources and names — as
+- `tasks/_done/emulator-saves/plan.md`: Phases 1, 1b, 7 and 7b marked shipped; section *Game sources and names — as
   built*. The Backlog line now reads "Emulator saves: the other emulators (RetroArch is done)".
 - `Decisions.md` (names without the suffix; source per machine), `API Reference.md`, `Build and Run.md`,
   `CONTEXT.md`.
@@ -3677,7 +3677,7 @@ pushed to the PR's branch `emulator-saves-phase-1` on the fork `Marwanello/SaveL
 `src/Agent/GameScanner.cs`, `src/Agent.Linux/{LinuxGameScanner,Ui/UiApp}.cs`, `src/Shared/Contracts.cs`,
 `src/Server/{Program,Services/SyncService}.cs`, `agent-ui/src/{api,api-types}.ts`,
 `agent-ui/src/components/AddGamesView.tsx`, tests (`EnrollNamingTests` new; `GameSourcesTests`, `RetroArchTests`).
-Vault: `Decisions.md` (naming rule rewritten, and a new *A game never joins…*), `tasks/emulator-saves/plan.md`,
+Vault: `Decisions.md` (naming rule rewritten, and a new *A game never joins…*), `tasks/_done/emulator-saves/plan.md`,
 `CONTEXT.md`, `Build and Run.md`, this entry, `session_summary.md`.
 
 ## 2026-10-07 — Emulator saves Group H: real-game checks (no code)
@@ -3688,11 +3688,11 @@ each phase's emulator they couldn't test, so it sits at the end. Pushed to PR #6
 `f4af2d8`, docs only.
 
 **Where it is:**
-- **`tasks/emulator-saves/implementation-grouping.md`:** a new Group H row in the status table and a short
+- **`tasks/_done/emulator-saves/implementation-grouping.md`:** a new Group H row in the status table and a short
   write-up. Group H always stays last so new emulators can keep joining it. A rule was added to "Every group's
   checks": an emulator with no real game goes into Group H when its group ships, instead of holding that group
   back.
-- **`tasks/emulator-saves/plan.md`:** a status row for **Phase 18** and a Phase 18 section at the end of the
+- **`tasks/_done/emulator-saves/plan.md`:** a status row for **Phase 18** and a Phase 18 section at the end of the
   groups. It covers:
   - backing up the save folders first;
   - the rig for each machine: the Deck test daemon scans the real EmuDeck install, while the Windows test tray
@@ -3713,7 +3713,7 @@ follow-up PR. `CONTEXT.md` mentions Group H too.
 
 ### Files
 
-`docs/tasks/emulator-saves/{plan,implementation-grouping}.md`, `docs/CONTEXT.md`, this entry, `session_summary.md`.
+`docs/tasks/_done/emulator-saves/{plan,implementation-grouping}.md`, `docs/CONTEXT.md`, this entry, `session_summary.md`.
 
 ## 2026-10-09 — Quick wins: seven backlog items, one verification item retired (PR #64)
 
@@ -3894,7 +3894,7 @@ passed on every rerun.
 `src/Agent.Core/{ParamSfo,TitleFolders,PpssppSaves,Rpcs3Saves,Vita3KSaves,ShadPs4Saves,ConsoleTitles,EmulatorSaves,GameSources}.cs`,
 `ConsoleTitles/*`, `agent-ui/src/components/AddGamesView.tsx`, `tests/SaveLocker.Agent.Tests/{SonySavesTests,GroupDSyncTests,ConsoleSaveFixtures,EmulatorChipTests}.cs`,
 `tests/testenv.ps1`, `web/src/help/emulator-backups.md`, `docs/{CONTEXT,REPO_MAP,Build and Run}.md`,
-`docs/tasks/emulator-saves/{plan,implementation-grouping}.md`, this entry, `session_summary.md`.
+`docs/tasks/_done/emulator-saves/{plan,implementation-grouping}.md`, this entry, `session_summary.md`.
 
 ### 2026-10-12 addendum — states-only PSP games, Phase 19, merge with `main`
 
@@ -4002,7 +4002,7 @@ A machine on an older agent can't report this, so it's in neither list. The prot
 ### Phase 5c — designed, not built
 
 Step 1, the profile as its own Add games entry scoped to its XUID, pullable onto a machine that lacks it; step 2, DLC per game
-as its own entry, opt-in, which needs a larger server cap. Four open questions in `tasks/emulator-saves/plan.md` → *Phase 5c*.
+as its own entry, opt-in, which needs a larger server cap. Four open questions in `tasks/_done/emulator-saves/plan.md` → *Phase 5c*.
 
 ### Not verified
 

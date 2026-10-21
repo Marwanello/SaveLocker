@@ -92,7 +92,7 @@ OpenSave.
 | 1 | High | [[logs/2026-10-20_empty-save-hold/summary\|Hold back a save folder that was emptied]] | New |
 | 2 | High | [[logs/2026-10-20_keep-excluded-files-on-pull/summary\|A pull keeps this machine's excluded files]] | New |
 | 3 | High | [[tasks/registry-saves/summary\|Registry-based saves]] | Amended |
-| 4 | High | [[tasks/emulator-saves/plan\|Emulator saves: Switch (Group F)]] | Amended |
+| 4 | High | [[tasks/_done/emulator-saves/plan\|Emulator saves: Switch (Group F)]] | Amended |
 | 5 | High | [[tasks/file-level-saves/summary\|File-level saves]] | Amended |
 | 6 | High | [[tasks/native-linux-saves/summary\|Native Linux save support]] | Amended |
 | 7 | High | [[tasks/interactive-setup-guide/summary\|Setup guide + Unraid template]] | Amended |
