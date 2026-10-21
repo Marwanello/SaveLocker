@@ -461,6 +461,11 @@ function findBackupInput(): HTMLInputElement | null {
   return null
 }
 
+/** A title's game page, with a tab per emulator tree. */
+export function hasEmulatorTabs(): boolean {
+  return document.querySelectorAll('.sl-content .sl-emutab').length > 1
+}
+
 export function hasKeepBothOption(): boolean {
   return !!findBackupInput()
 }
@@ -588,6 +593,13 @@ function pressRT() {
  *  server-game Change link) in Add Games. */
 function pressR3() {
   const section = currentSection()
+  // A title's page (tasks/multi-emulator-games Phase 6): the next emulator's tab. LB/RB already move between sections.
+  if (section === 'Games' && hasEmulatorTabs()) {
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>('.sl-content .sl-emutab')]
+    const at = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true')
+    tabs[(at + 1) % tabs.length]?.click()
+    return
+  }
   if (section === 'Games') {
     const seg = document.querySelector('.sl-content .sl-seg')
     if (!seg) return

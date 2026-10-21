@@ -20,6 +20,8 @@ SaveLocker/
 │   │   │                               #   refreshed on a window, never pinned
 │   │   ├── Appearance.cs                # The look (theme/accent/mark) as three closed id lists + the DTOs,
 │   │   │                               #   and `Appearances.Normalize` — every reader normalises, none rejects
+│   │   ├── TitleNames.cs                # The name a game groups under across emulators: "(RetroArch)" and the region off
+│   │   ├── EmulatorSaveCopy.cs          # Which emulators' saves copy between (melonDS⇄RetroArch, Dolphin⇄PrimeHack) + file names
 │   │   ├── SwitchTitles.cs              # Switch title ID → eShop name + icon hash (agent names, server icon);
 │   │   │                               #   SwitchTitles/switch-titles.tsv.gz from blawar/titledb, MIT (NOTICE.md);
 │   │   │                               #   Update-SwitchTitles.ps1 rebuilds it
@@ -61,6 +63,7 @@ SaveLocker/
 │   │   │   │                           #   pinned by hand, else the first name match — the options listing,
 │   │   │   │                           #   Refresh art and the backfill all read it; `art/search` feeds
 │   │   │   │                           #   the picker's search box)
+│   │   │   ├── TitleGrouping.cs         # GameTitle: one console entry over one game's emulator trees (backfill, join, split)
 │   │   │   ├── ArtBackfillService.cs    # Background fill of games with no art, run when a key is saved
 │   │   │   │                           #   AND once after startup (a config-supplied key never "saves").
 │   │   │   │                           #   Missing art only — never replaces a hand-picked cover

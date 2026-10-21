@@ -523,6 +523,173 @@ public sealed class SyncService
             .ToList();
     }
 
+    // ----- Copying a save to another emulator (tasks/multi-emulator-games Phase 6) -----
+
+    /// <summary>
+    /// Where version <paramref name="versionId"/> of <paramref name="gameId"/> can be copied: each other emulator's tree of
+    /// its title, with what its files become or why not. Null when the game or version does not exist; empty for a game
+    /// that is not in a title.
+    /// </summary>
+    public async Task<List<CopyTargetDto>?> GetCopyTargetsAsync(Guid gameId, Guid versionId)
+    {
+        var source = await _db.Games.FindAsync(gameId);
+        var version = await _db.SaveVersions.FirstOrDefaultAsync(v => v.Id == versionId && v.GameId == gameId);
+        if (source is null || version is null) return null;
+        if (source.TitleId is null) return [];
+        var targets = await _db.Games.Where(g => g.TitleId == source.TitleId && g.Id != gameId).ToListAsync();
+        var result = new List<CopyTargetDto>();
+        foreach (var target in targets.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase))
+            result.Add((await PlanCopyAsync(source, version, target)).Dto);
+        return result;
+    }
+
+    /// <summary>
+    /// Copy a version of one emulator's tree into another's of the same title: a new version of the target, made from the
+    /// source's save files under the target's names, with the target's other save folders carried over from its Latest.
+    /// It becomes the target's Latest — the old one stays as an older version — and every machine that syncs the target
+    /// is told to pull. The source is not touched. Returns the new version, or why not ("not_found" for a missing one).
+    /// </summary>
+    public async Task<(SaveVersionDto? Version, string? Refusal)> CopyToEmulatorAsync(
+        Guid gameId, Guid versionId, Guid targetId, Guid? machineId, string by, CancellationToken ct = default)
+    {
+        var source = await _db.Games.FindAsync([gameId], ct);
+        var target = await _db.Games.FindAsync([targetId], ct);
+        var version = await _db.SaveVersions.FirstOrDefaultAsync(v => v.Id == versionId && v.GameId == gameId, ct);
+        if (source is null || target is null || version is null) return (null, "not_found");
+        if (source.TitleId is null || source.TitleId != target.TitleId || gameId == targetId)
+            return (null, "A save can only be copied to another emulator's tree of the same game.");
+        var plan = await PlanCopyAsync(source, version, target);
+        if (plan.Dto.Refusal is { } refusal) return (null, refusal);
+
+        var newId = Guid.NewGuid();
+        var stage = _store.NewStagingPath(newId);
+        string contentHash;
+        List<SaveVersionFile> manifest = [];
+        try
+        {
+            var head = plan.Head;
+            var rename = plan.Dto.Files.ToDictionary(f => f.From, f => f.To, StringComparer.Ordinal);
+            using var src = ZipFile.OpenRead(_store.FullPath(version.ArchivePath));
+            using var old = head is null ? null : ZipFile.OpenRead(_store.FullPath(head.ArchivePath));
+            // The source's save files under their new names, then everything of the target's own that is not its primary
+            // folder (its extra folders and their markers), so a pull changes the save and nothing else.
+            var items = new SortedDictionary<string, ZipArchiveEntry>(StringComparer.Ordinal);
+            foreach (var e in src.Entries)
+                if (!string.IsNullOrEmpty(e.Name) && SaveArchive.SplitArchiveName(e.FullName.Replace('\\', '/')) is { Key: SaveRoot.PrimaryKey } p &&
+                    rename.TryGetValue(p.Path, out var to))
+                    items[to] = e;
+            foreach (var e in old?.Entries ?? [])
+            {
+                var name = e.FullName.Replace('\\', '/');
+                if (name.EndsWith('/') || SaveArchive.SplitArchiveName(name) is { Key: SaveRoot.PrimaryKey }) continue;
+                items.TryAdd(name, e);
+            }
+
+            using (var dst = ZipFile.Open(stage, ZipArchiveMode.Create))
+            using (var aggregate = SHA256.Create())
+            {
+                var buffer = new byte[81920];
+                long total = 0;
+                // The same digest an agent computes over the restored folder (SaveArchive.ComputeManifest): every archive
+                // name and its bytes, in ordinal order — so a machine that pulls it sees exactly this hash.
+                foreach (var (name, from) in items)
+                {
+                    var nameBytes = System.Text.Encoding.UTF8.GetBytes(name + "\n");
+                    aggregate.TransformBlock(nameBytes, 0, nameBytes.Length, null, 0);
+                    var entry = dst.CreateEntry(name, SaveArchive.IsMarker(name) ? CompressionLevel.NoCompression : CompressionLevel.Optimal);
+                    SaveArchive.CopyWriteTime(from, entry);
+                    using var file = SHA256.Create();
+                    using var input = from.Open();
+                    using var output = entry.Open();
+                    long length = 0;
+                    int read;
+                    while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        if ((total += read) > SaveArchive.MaxRestoreBytes)
+                            throw new SaveArchive.UnsafeArchiveException("The save is over the restore size limit; not copying it.");
+                        length += read;
+                        output.Write(buffer, 0, read);
+                        aggregate.TransformBlock(buffer, 0, read, null, 0);
+                        file.TransformBlock(buffer, 0, read, null, 0);
+                    }
+                    file.TransformFinalBlock([], 0, 0);
+                    manifest.Add(new SaveVersionFile { VersionId = newId, Path = name, Sha256 = Convert.ToHexString(file.Hash!).ToLowerInvariant(), Size = length });
+                }
+                aggregate.TransformFinalBlock([], 0, 0);
+                contentHash = Convert.ToHexString(aggregate.Hash!).ToLowerInvariant();
+            }
+        }
+        catch
+        {
+            _store.TryDeleteStaged(stage);
+            throw;
+        }
+
+        var (rel, size) = _store.PublishFile(targetId, newId, stage);
+        var machineName = machineId is { } m ? await _db.Machines.Where(x => x.Id == m).Select(x => x.Name).FirstOrDefaultAsync(ct) : null;
+        var created = new SaveVersion
+        {
+            Id = newId,
+            GameId = targetId,
+            MachineId = machineName is null ? null : machineId,
+            MachineName = machineName ?? "Console",
+            CreatedAt = DateTime.UtcNow,
+            ContentHash = contentHash,
+            Size = size,
+            ParentVersionId = target.HeadVersionId,
+            ArchivePath = rel,
+            CopiedFrom = plan.FromEmulator ?? source.Name,
+            CopiedFromVersionId = versionId,
+        };
+        _db.SaveVersions.Add(created);
+        _db.SaveVersionFiles.AddRange(manifest);
+        await SetHeadAndPropagateAsync(target, newId, "version.copy",
+            $"{plan.FromEmulator} {versionId} → {plan.ToEmulator}, by {by}", propagate: true, exceptMachineId: null, ct);
+        await PruneVersionsAsync(targetId, ct);
+        await LoadMachine(created, ct);
+        return (created.ToDto(), null);
+    }
+
+    private sealed record CopyPlan(CopyTargetDto Dto, SaveVersion? Head, string? FromEmulator, string? ToEmulator);
+
+    private async Task<CopyPlan> PlanCopyAsync(Game source, SaveVersion version, Game target)
+    {
+        var emulators = await GetEmulatorMapAsync();
+        var from = emulators.GetValueOrDefault(source.Id)?.FirstOrDefault();
+        var to = emulators.GetValueOrDefault(target.Id)?.FirstOrDefault();
+        var head = target.HeadVersionId is { } h ? await _db.SaveVersions.Include(v => v.Machine).FirstOrDefaultAsync(v => v.Id == h) : null;
+        CopyPlan Refuse(string why) => new(new CopyTargetDto(target.Id, target.Name, to, null, why, [], head?.ToDto()), head, from, to);
+
+        if (version.MergedFrom is not null) return Refuse("That version is history of a merged game; it can't be copied.");
+        if (EmulatorSaveCopy.For(from, to) is not { } rule)
+            return Refuse($"{from ?? source.Name} and {to ?? target.Name} keep this game's save in different formats, so it can't be copied between them.");
+        if (await _db.Conflicts.AnyAsync(c => c.GameId == target.Id && c.Status == ConflictStatus.Open))
+            return Refuse($"{to}'s save has an open conflict. Resolve it first.");
+        if (await ActiveLeaseAsync(target.Id) is { } lease)
+            return Refuse($"{lease.Machine?.Name ?? "A machine"} is playing it in {to} right now. Copy it once that session ends.");
+
+        List<(string Path, long Size)> PrimaryFiles(string rel) =>
+            SaveArchive.ListArchiveFolders(_store.FullPath(rel), int.MaxValue)
+                .Where(f => f.Key == SaveRoot.PrimaryKey).SelectMany(f => f.Files).Select(f => (f.Path, f.Size)).ToList();
+        List<(string Path, long Size)> sourceFiles, targetFiles;
+        try
+        {
+            sourceFiles = PrimaryFiles(version.ArchivePath);
+            targetFiles = head is null ? [] : PrimaryFiles(head.ArchivePath);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return Refuse("A stored save could not be read: " + ex.Message);
+        }
+
+        var (files, refusal) = EmulatorSaveCopy.Map(rule, sourceFiles.Select(f => f.Path).ToList(),
+            targetFiles.Select(f => f.Path).ToList(), GlobConfig.Parse(target.IncludeGlobs));
+        if (refusal is not null) return Refuse(refusal);
+        var sizes = sourceFiles.ToDictionary(f => f.Path, f => f.Size, StringComparer.Ordinal);
+        return new CopyPlan(new CopyTargetDto(target.Id, target.Name, to, rule.How, null,
+            files.Select(f => new CopyFileDto(f.From, f.To, sizes.GetValueOrDefault(f.From))).ToArray(), head?.ToDto()), head, from, to);
+    }
+
     /// <summary>Remove a machine's stored save path for one of a game's save folders.</summary>
     public async Task ClearMachinePathAsync(Guid machineId, Guid gameId, string pathKey = SaveRoot.PrimaryKey)
     {
@@ -587,6 +754,8 @@ public sealed class SyncService
         row.Tags = stored;
         row.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+        // A game becomes an emulator's here — the moment it can join another emulator's game under one title.
+        if (kind == GameSourceKinds.Emulator) await new TitleGrouping(_db).AssignAsync(gameId);
         return true;
     }
 
@@ -669,7 +838,7 @@ public sealed class SyncService
     // ----- Games -----
 
     public async Task<List<Game>> ListGamesAsync() =>
-        await _db.Games.OrderBy(g => g.Name).ToListAsync();
+        await _db.Games.Include(g => g.Title).OrderBy(g => g.Name).ToListAsync();
 
     /// <summary>Set/clear the suggested save folder (or template) propagated to agents, for the primary
     /// folder or one extra folder. False when the game or folder does not exist.</summary>
@@ -853,6 +1022,8 @@ public sealed class SyncService
         _db.Games.Remove(game);
         await Audit(null, gameId, "game.delete", game.Name);
         await _db.SaveChangesAsync();
+        // A title left with one game is no title; one whose first game this was takes the next.
+        if (game.TitleId is not null) await new TitleGrouping(_db).TidyAsync();
         // The game row is gone, so the audit below can no longer reference it — pass no game id.
         var orphans = versions.Where(v => !_store.TryDelete(v.ArchivePath)).ToList();
         if (orphans.Count > 0)
@@ -876,6 +1047,8 @@ public sealed class SyncService
             .ToDictionaryAsync(x => x.GameId, x => x.Total);
 
         var extras = await GetExtraSavePathsAsync();
+        // Read once so every game's Title is fixed up from the context, not looked up per game.
+        await _db.GameTitles.LoadAsync();
 
         // Same N+1 reasoning for the console's Device/Source groupings: two flat reads grouped in memory
         // (a machines × games row count, small) instead of two queries per game.
@@ -918,6 +1091,7 @@ public sealed class SyncService
     {
         var game = await _db.Games.FindAsync(gameId);
         if (game is null) return null;
+        if (game.TitleId is not null) await _db.Entry(game).Reference(g => g.Title).LoadAsync();
 
         var head = game.HeadVersionId is null
             ? null
@@ -942,8 +1116,10 @@ public sealed class SyncService
             ? await SourcesForGameAsync(gameId)
             : sourcesByGame.TryGetValue(gameId, out var knownSources) ? knownSources : new List<GameSourceDto>();
 
+        var emulator = sources.Where(s => s.Kind == GameSourceKinds.Emulator && s.Detail.Trim().Length > 0)
+            .Select(s => s.Detail.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
         return new GameStateDto(game.ToDto(extras), head?.ToDto(), lease.ToDto(gameId), hasConflict, totalStorage,
-            CleanMachines(machines), CleanSources(sources));
+            CleanMachines(machines), CleanSources(sources), emulator.Length == 0 ? null : string.Join(" + ", emulator));
     }
 
     /// <summary>Machines that have this game: a stored save folder or a recorded source (one small query each).</summary>

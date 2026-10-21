@@ -22,6 +22,12 @@ import { ExcludePatternsCard } from './ExcludePatternsCard';
 import { RemoteCommandsCard } from './RemoteCommandsCard';
 import { BalancedColumns } from '../ui/BalancedColumns';
 import { MergeCard } from './MergeCard';
+import { Card } from '../ui/Card';
+import { EmulatorTabs, GroupWith } from './EmulatorTabs';
+import { TreeContext } from './treeContext';
+import { CopyPanel } from './CopyPanel';
+import { emulatorOf, treeLabel } from './titles';
+import type { TitleSummary } from './titles';
 
 interface Props {
   summary: GameSummary;
@@ -32,6 +38,10 @@ interface Props {
   onRefresh: () => void;
   /** Where a deep link asked to land on this page; `seq` makes each request act exactly once. */
   intent?: { value: GameIntent; seq: number } | null;
+  /** The title `summary` is one tree of (tasks/multi-emulator-games). With two or more trees the page gets a tab per
+   *  emulator; everything under the tabs is `summary`'s, the head is the title's. */
+  title?: TitleSummary;
+  onPickTree?: (gameId: string) => void;
 }
 
 /**
@@ -39,8 +49,10 @@ interface Props {
  * below is a direct child of it, which is what staggers their entrance. It owns only what several
  * sections read: the version list and the machines' folders. Each card owns its own actions.
  */
-export function GameDetail({ summary, machines, commands, conflicts, health, onRefresh, intent }: Props) {
+export function GameDetail({ summary, machines, commands, conflicts, health, onRefresh, intent, title, onPickTree }: Props) {
   const { game, head } = summary;
+  const trees = title && title.trees.length > 1 ? title.trees : null;
+  const treeName = trees ? treeLabel(summary, trees) : null;
   const [versions, setVersions] = useState<Version[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(true);
   const [paths, setPaths] = useState<MachineSavePath[]>([]);
@@ -52,6 +64,8 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   // Emulator settings, open on one of its sections; null is the game's own page.
   const [emuTab, setEmuTab] = useState<EmulatorTab | null>(null);
   const [content, setContent] = useState<GameContent | null>(null);
+  // Copy this save to another emulator, open on one version.
+  const [copying, setCopying] = useState<Version | null>(null);
 
   useEffect(() => {
     setLoadingVersions(true);
@@ -136,11 +150,25 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
     return <EmulatorSettings game={game} tab={emuTab} onTab={setEmuTab} onBack={() => setEmuTab(null)} refreshKey={versions.length} />;
   }
 
+  const problems = problemGameIds(health);
+  // Inside a title the head is the title's: its name and the first game's art. Its status chip is this tree's, unless
+  // another tree has a conflict, which it names ("Conflict in PrimeHack").
+  const headSummary = trees && title
+    ? { ...summary, game: { ...summary.game, name: title.game.name, gridUrl: title.game.gridUrl, iconUrl: title.game.iconUrl,
+        heroUrl: title.game.heroUrl, logoUrl: title.game.logoUrl } }
+    : summary;
+  const conflictElsewhere = trees?.find(t => t !== summary && t.hasOpenConflict && t.game.id !== game.id);
+  const ownStanding = standing(summary, problems);
+  const headStanding = conflictElsewhere && ownStanding.tone !== 'crit'
+    ? { tone: 'crit' as const, label: `Conflict in ${emulatorOf(conflictElsewhere) ?? conflictElsewhere.game.name}` }
+    : ownStanding;
+  const emulator = emulatorOf(summary);
+
   return (
-    <>
+    <TreeContext.Provider value={treeName}>
       <GameHead
-        summary={summary}
-        standing={standing(summary, problemGameIds(health))}
+        summary={headSummary}
+        standing={headStanding}
         versionCount={versions.length}
         machines={withGame.length > 0 ? withGame : machines}
         source={sources.length > 0 || game.release || game.emulatorProfile
@@ -175,7 +203,11 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
       />
 
       {artOpen && (
-        <ArtPicker game={game} onChanged={onRefresh} onClose={() => { setArtOpen(false); penRef.current?.focus(); }} />
+        <ArtPicker game={trees && title ? title.game : game} onChanged={onRefresh} onClose={() => { setArtOpen(false); penRef.current?.focus(); }} />
+      )}
+
+      {trees && (
+        <EmulatorTabs trees={trees} current={game.id} problems={problems} onPick={id => onPickTree?.(id)} onRefresh={onRefresh} />
       )}
 
       {gameConflicts.map(c => (
@@ -192,6 +224,11 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
           onChanged={reloadVersions}
         />
       ))}
+
+      {copying && trees && (
+        <CopyPanel game={game} emulator={treeName ?? game.name} version={copying} onClose={() => setCopying(null)}
+          onCopied={id => { setCopying(null); onRefresh(); onPickTree?.(id); }} />
+      )}
 
       <GameStats summary={summary} versionCount={versions.length} machinesWithGame={withGame} onRefresh={onRefresh} />
 
@@ -210,6 +247,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
               reloadVersions={reloadVersions}
               onSetLatest={setLatest}
               onRefresh={onRefresh}
+              onCopy={trees ? setCopying : undefined}
             />
           ),
         },
@@ -235,9 +273,20 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
         { key: 'rules', node: <RulesCard game={game} machines={machines} health={health} onRefresh={onRefresh} /> },
         { key: 'exclude', node: <ExcludePatternsCard game={game} onRefresh={onRefresh} /> },
         { key: 'merge', node: <MergeCard game={game} onRefresh={onRefresh} /> },
+        ...(!trees && emulator ? [{
+          key: 'title',
+          node: (
+            <Card title="Other emulators">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <span className="text-[11.5px] text-dim">Saved with another emulator too? Group them into one entry. Each keeps its own versions and syncs as now.</span>
+                <GroupWith gameId={game.id} onRefresh={onRefresh} label="Group with another emulator…" />
+              </div>
+            </Card>
+          ),
+        }] : []),
       ]} />
 
       <RemoteCommandsCard commands={gameCmds} />
-    </>
+    </TreeContext.Provider>
   );
 }

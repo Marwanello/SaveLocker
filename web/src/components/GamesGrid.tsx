@@ -9,6 +9,8 @@ import { GameCover } from './game/GameCover';
 import { regionLabel } from './game/gameState';
 import { standing } from './game/gameState';
 import type { OrganizeGroup } from './game/organize';
+import { EmulatorBadges } from './game/EmulatorTabs';
+import { treesOf } from './game/titles';
 
 interface Props {
   /** The games as headings, sorted — from `organize()`; 'none' grouping yields one unlabelled group. */
@@ -29,6 +31,7 @@ export function GamesGrid({ groups, grouped, collapsed, onToggleGroup, onOpen, p
   function tile(s: GameSummary) {
     const { game, head, totalStorageBytes } = s;
     const st = standing(s, problems);
+    const trees = treesOf(s);
     return (
       <button
         key={game.id}
@@ -53,7 +56,8 @@ export function GamesGrid({ groups, grouped, collapsed, onToggleGroup, onOpen, p
             <span className="text-[13.5px] font-semibold tracking-[-0.02em] truncate">{game.name}</span>
             <span className="flex items-center gap-[7px] text-[10.5px] text-dim truncate tabular-nums">
               <Dot tone={st.tone} label={st.label} />
-              {game.release && regionLabel(game.release) && <>{regionLabel(game.release)}<span aria-hidden>·</span></>}
+              {trees.length > 1 && <><EmulatorBadges trees={trees} />{trees.length} emulators<span aria-hidden>·</span></>}
+              {trees.length === 1 && game.release && regionLabel(game.release) && <>{regionLabel(game.release)}<span aria-hidden>·</span></>}
               {head ? ago(head.createdAt) : 'no saves yet'}
               <span aria-hidden>·</span>
               {fmtSize(totalStorageBytes)}

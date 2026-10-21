@@ -334,6 +334,11 @@ public sealed class CommandPoller : IDisposable
                     local.EmulatorProfile = sg.EmulatorProfile;
                     changed = true;
                 }
+                if (local.Title != TitleInfo.From(sg))
+                {
+                    local.Title = TitleInfo.From(sg);
+                    changed = true;
+                }
                 // This machine syncs a device save the server doesn't know is one (a game enrolled before it was recorded):
                 // it is told, so every other machine keeps the game in its device save too.
                 if (SwitchCopies.ShouldSayDeviceSave(local, sg) && _deviceSaveSaid.TryAdd(sg.Id, 0))
@@ -445,6 +450,7 @@ public sealed class CommandPoller : IDisposable
                 EmulatorKey = sg.EmulatorKey,
                 EmulatorProfile = sg.EmulatorProfile,
                 Emulators = (sg.Emulators ?? []).ToList(),
+                Title = TitleInfo.From(sg),
                 SaveDirectory = dir ?? "",
                 ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
             };

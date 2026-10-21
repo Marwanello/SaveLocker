@@ -1,3 +1,4 @@
+import { useTreeWord } from './treeContext';
 import { useEffect, useState } from 'react';
 import { api, errorText } from '../../api';
 import type { Game, GameSummary, MergePreview } from '../../types';
@@ -26,6 +27,7 @@ const fieldCls = `bg-tile text-fg border border-line rounded-lg px-2 py-[5px] te
  * and the merge needs this game's name typed: it cannot be undone. Its versions are kept as read-only history of the other.
  */
 export function MergeCard({ game, onRefresh }: Props) {
+  const tw = useTreeWord();
   const [open, setOpen] = useState(false);
   const [games, setGames] = useState<GameSummary[]>([]);
   const [into, setInto] = useState<string | null>(null);
@@ -101,7 +103,7 @@ export function MergeCard({ game, onRefresh }: Props) {
               ) : (
                 <form className="flex flex-col gap-1.5" onSubmit={e => { e.preventDefault(); if (typed.trim() === preview.fromName.trim()) void merge(); }}>
                   <label htmlFor={`merge-${game.id}`} className="text-[11px] text-dim">
-                    Type <b className="text-fg">{preview.fromName}</b> to merge it. This cannot be undone.
+                    Type <b className="text-fg">{preview.fromName}</b> to merge it. This cannot be undone.{tw && <> Only the{tw} tree is merged.</>}
                   </label>
                   <div className="flex gap-1.5 items-center flex-wrap">
                     <input id={`merge-${game.id}`} value={typed} onChange={e => setTyped(e.target.value)} className={fieldCls} autoComplete="off" />

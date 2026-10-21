@@ -9,6 +9,8 @@ import type { Layout } from './game/gameState';
 import { DEFAULT_ORGANIZE, GROUP_OPTIONS, SORT_OPTIONS, groupLabel, organize } from './game/organize';
 import type { GroupBy, OrganizeState, SortBy } from './game/organize';
 import { OrganizeControls } from './game/OrganizeControls';
+import { groupTitles, holds, emulatorsOf } from './game/titles';
+import type { TitleSummary } from './game/titles';
 import { Page } from './ui/Page';
 import { PageHead } from './ui/PageHead';
 import { Card } from './ui/Card';
@@ -20,6 +22,12 @@ import { SearchField } from './ui/SearchField';
 
 const LAYOUT_KEY = 'sl_games_layout';
 const ORGANIZE_KEY = 'sl_games_organize';
+
+/** `#game=<id>`: the game a link or a refresh opens â€” any tree of a title, which opens on that tree's tab. */
+function gameFromHash(): string | null {
+  const m = location.hash.match(/^#game=([0-9a-f-]{36})$/i);
+  return m ? m[1] : null;
+}
 
 function loadLayout(): Layout {
   try { return localStorage.getItem(LAYOUT_KEY) === 'grid' ? 'grid' : 'list'; }
@@ -65,7 +73,7 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
   // Collapsed headings live for one visit only: group ids change with the arrangement, so a persisted
   // set would silently apply to different headings after a reload.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [selectedId, setSelectedId] = useState<string | null>(games[0]?.game.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => gameFromHash() ?? games[0]?.game.id ?? null);
   // In the grid layout: whether the wall or one game's page is showing.
   const [gridOpen, setGridOpen] = useState(false);
   // Where on the game's page a deep link asked to land, with the request's sequence number so the
@@ -75,10 +83,13 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
   // left over from yesterday would read as missing games.
   const [query, setQuery] = useState('');
   const problems = useMemo(() => problemGameIds(health), [health]);
+  // One row per title (tasks/multi-emulator-games): a game saved with two emulators is one entry with a tree each.
+  const titles = useMemo(() => groupTitles(games), [games]);
   const matching = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? games.filter(s => s.game.name.toLowerCase().includes(q)) : games;
-  }, [games, query]);
+    return q ? titles.filter(s => s.game.name.toLowerCase().includes(q) ||
+      (s.trees.length > 1 && emulatorsOf(s).some(e => e.toLowerCase().includes(q)))) : titles;
+  }, [titles, query]);
   const groups = useMemo(
     () => organize(matching, organizeState, { machines, problems }),
     [matching, organizeState, machines, problems]);
@@ -122,8 +133,18 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
     handledRef.current?.();
   }, [request]);
 
-  // A deleted game falls back to the first one rather than to an empty page.
-  const selected = games.find(s => s.game.id === selectedId) ?? games[0] ?? null;
+  // A deleted game falls back to the first one rather than to an empty page. `selectedId` is a game, so a link to any
+  // tree of a title opens the title on that tree's tab.
+  const selected: TitleSummary | null = titles.find(s => holds(s, selectedId)) ?? titles[0] ?? null;
+  const tree = selected?.trees.find(t => t.game.id === selectedId) ?? selected?.trees[0] ?? null;
+
+  // Kept in the address so a link or a refresh opens this game on this emulator's tab. Replaced, not pushed: Back
+  // leaves the Games tab rather than stepping through every game looked at.
+  const treeId = tree?.game.id ?? null;
+  useEffect(() => {
+    if (!treeId || location.hash === `#game=${treeId}`) return;
+    if (location.hash === '' || location.hash.startsWith('#game=')) history.replaceState(null, '', `#game=${treeId}`);
+  }, [treeId]);
 
   if (games.length === 0) {
     return (
@@ -149,10 +170,12 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
     <p className="px-2 py-3 text-[12.5px] text-dim">No game matches “{query.trim()}”.</p>
   );
 
-  const page = selected && (
+  const page = selected && tree && (
     <GameDetail
-      key={selected.game.id}
-      summary={selected}
+      key={tree.game.id}
+      summary={tree}
+      title={selected}
+      onPickTree={id => { setSelectedId(id); setIntent(null); }}
       machines={machines}
       commands={commands}
       conflicts={conflicts}
@@ -165,7 +188,7 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
   if (layout === 'grid') {
     return (
       // Keyed, so the canvas's entrance plays when the wall gives way to a game and back.
-      <Page key={gridOpen && selected ? selected.game.id : 'wall'}>
+      <Page key={gridOpen && selected ? selected.titleKey : 'wall'}>
         {gridOpen && selected ? (
           <>
             <div>
@@ -177,7 +200,7 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
           <>
             <PageHead
               title="Games"
-              sub={`${plural(games.length, 'game')} tracked${grouped ? ` · grouped by ${groupLabel(organizeState.groupBy).toLowerCase()}` : ''} · art from SteamGridDB`}
+              sub={`${plural(titles.length, 'game')} tracked${grouped ? ` · grouped by ${groupLabel(organizeState.groupBy).toLowerCase()}` : ''} · art from SteamGridDB`}
               actions={<>
                 {search(false)}
                 <Seg size="sm" value={layout} onChange={changeLayout} aria-label="Games layout" options={LAYOUT_OPTIONS} />
@@ -203,7 +226,7 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
   return (
     <div className="flex-1 min-h-0 grid grid-cols-[250px_minmax(0,1fr)] overflow-hidden">
       <GamesSidebar
-        games={games}
+        games={titles}
         groups={groups}
         grouped={grouped}
         collapsed={collapsed}
@@ -213,15 +236,15 @@ export function GamesView({ games, machines, commands, conflicts, health, onRefr
           {search(true)}
         </>}
         empty={noMatch}
-        selectedId={selected?.game.id ?? null}
-        onSelect={id => { setSelectedId(id); setIntent(null); }}
+        selectedId={tree?.game.id ?? null}
+        onSelect={id => { if (selected && holds(selected, id)) return; setSelectedId(id); setIntent(null); }}
         onAddGame={onAddGame}
         layout={layout}
         onLayoutChange={changeLayout}
         commands={commands}
         problems={problems}
       />
-      <Page key={selected?.game.id}>{page}</Page>
+      <Page key={selected?.titleKey}>{page}</Page>
     </div>
   );
 }

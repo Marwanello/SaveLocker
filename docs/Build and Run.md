@@ -344,6 +344,10 @@ Group C adds, under `Emulation\saves` on both machines:
   under `states`, WSL under `StateSaves`.
 - **Metroid Prime Trilogy in Dolphin AND PrimeHack** on Windows: two rows, two server games. WSL's PrimeHack copy
   joins only the PrimeHack one.
+- **Metroid Prime - Hunters in melonDS AND RetroArch** on Windows (WSL has melonDS's only): two server games that the
+  console and both agents list as **one entry with a tab per emulator** (tasks/multi-emulator-games), as is Trilogy.
+  On WSL the RetroArch tab reads *Not set up here*. **Copy to another emulator…** turns melonDS's `.sav` into
+  RetroArch's `.srm` with the same bytes.
 
 Group D adds, on both machines (each `PARAM.SFO` written byte-accurate by `New-ParamSfo`):
 - **PPSSPP:** *Grand Theft Auto - Liberty City Stories* (two save folders, `ULUS10041*`; a state and its `.jpg` on

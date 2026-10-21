@@ -3301,6 +3301,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/versions/{versionId}/copy-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    versionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyTargetDto"][];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/versions/{versionId}/copy-to": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query: {
+                    target: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                    versionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SaveVersionDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/conflicts/resolved": {
         parameters: {
             query?: never;
@@ -4082,6 +4201,22 @@ export interface components {
             expiresAt: string;
             parts: components["schemas"]["TransferPartDto"][];
         };
+        CopyFileDto: {
+            from: string;
+            to: string;
+            /** Format: int64 */
+            size: number;
+        };
+        CopyTargetDto: {
+            /** Format: uuid */
+            gameId: string;
+            gameName: string;
+            emulator: null | string;
+            how: null | string;
+            refusal: null | string;
+            files: components["schemas"]["CopyFileDto"][];
+            targetHead: null | components["schemas"]["SaveVersionDto"];
+        };
         DeckyStatusDto: {
             applicable: boolean;
             deckyPresent: boolean;
@@ -4250,6 +4385,12 @@ export interface components {
             emulatorProfile?: null | string;
             emulatorKey?: null | string;
             mergedGameIds?: null | string[];
+            /** Format: uuid */
+            titleId?: null | string;
+            titleName?: null | string;
+            titleEdition?: null | string;
+            /** @default false */
+            titleLead: boolean;
         };
         GameFilesDto: {
             folders: components["schemas"]["GameFolderFilesDto"][];
@@ -4299,6 +4440,7 @@ export interface components {
             totalStorageBytes: number;
             machineIds?: null | string[];
             sources?: null | components["schemas"]["GameSourceDto"][];
+            emulator?: null | string;
         };
         GameSyncRequest: {
             mode: null | string;
@@ -4531,6 +4673,9 @@ export interface components {
             protected: boolean;
             content?: null | components["schemas"]["ContentPackageDto"][];
             mergedFrom?: null | string;
+            copiedFrom?: null | string;
+            /** Format: uuid */
+            copiedFromVersionId?: null | string;
         };
         SaveVsCloudDto: {
             state: string;
@@ -4676,6 +4821,13 @@ export interface components {
             latencyMs: number;
             error: null | string;
         };
+        TitleInfo: {
+            /** Format: uuid */
+            id: string;
+            name: null | string;
+            edition: null | string;
+            lead: boolean;
+        };
         TrackedGameDto: {
             /** Format: uuid */
             id: string;
@@ -4699,6 +4851,8 @@ export interface components {
             saveFiles?: null | string;
             sameGameAs?: null | components["schemas"]["SameGameAsDto"];
             ownFileNames?: null | components["schemas"]["FileNameDto"][];
+            emulators?: null | string[];
+            title?: null | components["schemas"]["TitleInfo"];
         };
         TransferAnswerRequest: {
             approve: boolean;

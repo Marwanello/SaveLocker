@@ -432,11 +432,22 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("SuggestedSaveDir")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TitleEdition")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("TitleId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("TitleLocked")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EmulatorKey")
                         .IsUnique()
                         .HasFilter("\"EmulatorKey\" IS NOT NULL");
+
+                    b.HasIndex("TitleId");
 
                     b.HasIndex("Name", "Region")
                         .IsUnique();
@@ -470,6 +481,35 @@ namespace SaveLocker.Server.Migrations
                     b.HasKey("GameId", "Key");
 
                     b.ToTable("GameSavePaths");
+                });
+
+            modelBuilder.Entity("SaveLocker.Server.Data.GameTitle", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BaseName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("LeadGameId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PlatformKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegionKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("GameTitles");
                 });
 
             modelBuilder.Entity("SaveLocker.Server.Data.Lease", b =>
@@ -651,6 +691,12 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("ContentJson")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CopiedFrom")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CopiedFromVersionId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -763,6 +809,16 @@ namespace SaveLocker.Server.Migrations
                         .HasForeignKey("GameId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("SaveLocker.Server.Data.Game", b =>
+                {
+                    b.HasOne("SaveLocker.Server.Data.GameTitle", "Title")
+                        .WithMany()
+                        .HasForeignKey("TitleId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Title");
                 });
 
             modelBuilder.Entity("SaveLocker.Server.Data.GameSavePath", b =>

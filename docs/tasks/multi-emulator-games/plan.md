@@ -15,12 +15,12 @@ design history.
 | Phase | Status |
 |---|---|
 | 0 — Pick a variation (mockup) | ✅ Shipped 2026-10-20 — maintainer picked **A, Emulator tabs** |
-| 1 — Server: titles that group games | ⏳ Not started |
-| 2 — Console list: one row per title | ⏳ Not started |
-| 3 — Console game page: emulator tabs | ⏳ Not started |
-| 4 — Group and split by hand | ⏳ Not started |
-| 5 — Help, testenv check, docs | ⏳ Not started |
-| 6 — Later: agent UI, and copying a save to another emulator | ⏳ Not started |
+| 1 — Server: titles that group games | ✅ Shipped 2026-10-21 (branch `multi-emulator-games`) — `GameTitle`, `TitleNames`, `TitleGrouping`, backfill; migration `AddGameTitles` |
+| 2 — Console list: one row per title | ✅ Shipped 2026-10-21 — `titles.ts`; organize fixtures +8 |
+| 3 — Console game page: emulator tabs | ✅ Shipped 2026-10-21 — `#game=<id>` keeps the tab (not `#emulator=`: it also names the game, so a refresh reopens it) |
+| 4 — Group and split by hand | ✅ Shipped 2026-10-21 — a lone game can also join a titled one (*Other emulators* card) |
+| 5 — Help, testenv check, docs | 🚧 In progress — help article, Decisions and docs done; the testenv check is the maintainer's (steps in the PR) |
+| 6 — Agent UI, and copying a save to another emulator | ✅ Shipped 2026-10-21 — as [`phase6-mockup.html`](phase6-mockup.html); copy runs on the server, offered in the agent and the console (Decisions) |
 
 ## Why the saves stay apart
 
@@ -177,7 +177,10 @@ Branch `multi-emulator-games`, cut from `main` after `emulator-saves-group-h` is
   - Restore a RetroArch version and check that the melonDS folder is unchanged.
   - Split Trilogy out, then group it back.
 
-### 6 — Later
+### 6 — Agent UI, and copying a save to another emulator
+
+**Mockup:** [`phase6-mockup.html`](phase6-mockup.html). It shows the agent UI as the Windows tray and as the Deck in Game
+Mode (controller hints), and the Copy to another emulator dialog. Its open questions are listed under the window.
 
 - The agent UI (Deck and tray) shows titles the same way.
 - **Copy this save to another emulator**, where the formats match (DS `.sav` ⇄ RetroArch `.srm`, Dolphin ⇄

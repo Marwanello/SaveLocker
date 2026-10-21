@@ -225,7 +225,8 @@ export default function App() {
     else if (view === 'backups') location.hash = 'backups';
     else if (view === 'help') { if (!location.hash.startsWith('#help')) location.hash = 'help'; }
     else if (view === 'whats-new') { if (!location.hash.startsWith('#whats-new')) location.hash = 'whats-new'; }
-    else location.hash = '';
+    // `#game=<id>` is the Games tab's own: the game, and so the emulator tab, a link or a refresh opens.
+    else if (!location.hash.startsWith('#game=')) location.hash = '';
   }, [view]);
 
   // Opening the notes clears the dot. Done here rather than in the view so it fires however the
