@@ -4218,6 +4218,147 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/title/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TitleCandidateDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/title/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query: {
+                    into: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/title/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/rollback": {
         parameters: {
             query?: never;
@@ -5705,6 +5846,12 @@ export interface components {
             emulatorProfile?: null | string;
             emulatorKey?: null | string;
             mergedGameIds?: null | string[];
+            /** Format: uuid */
+            titleId?: null | string;
+            titleName?: null | string;
+            titleEdition?: null | string;
+            /** @default false */
+            titleLead: boolean;
         };
         GameReleaseDto: {
             console: string;
@@ -5730,6 +5877,7 @@ export interface components {
             totalStorageBytes: number;
             machineIds?: null | string[];
             sources?: null | components["schemas"]["GameSourceDto"][];
+            emulator?: null | string;
         };
         HandoverOverviewDto: {
             /** Format: int64 */
@@ -6063,6 +6211,15 @@ export interface components {
         SwitchUsersDto: {
             shared: null | components["schemas"]["SwitchUserDto"];
             machines: components["schemas"]["MachineSwitchUsersDto"][];
+        };
+        TitleCandidateDto: {
+            /** Format: uuid */
+            gameId: string;
+            name: string;
+            emulator: string;
+            platform: null | string;
+            region: null | string;
+            sameName: boolean;
         };
         TransferAnswerRequest: {
             approve: boolean;

@@ -587,6 +587,8 @@ public sealed class SyncService
         row.Tags = stored;
         row.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+        // A game becomes an emulator's here — the moment it can join another emulator's game under one title.
+        if (kind == GameSourceKinds.Emulator) await new TitleGrouping(_db).AssignAsync(gameId);
         return true;
     }
 
@@ -669,7 +671,7 @@ public sealed class SyncService
     // ----- Games -----
 
     public async Task<List<Game>> ListGamesAsync() =>
-        await _db.Games.OrderBy(g => g.Name).ToListAsync();
+        await _db.Games.Include(g => g.Title).OrderBy(g => g.Name).ToListAsync();
 
     /// <summary>Set/clear the suggested save folder (or template) propagated to agents, for the primary
     /// folder or one extra folder. False when the game or folder does not exist.</summary>
@@ -853,6 +855,8 @@ public sealed class SyncService
         _db.Games.Remove(game);
         await Audit(null, gameId, "game.delete", game.Name);
         await _db.SaveChangesAsync();
+        // A title left with one game is no title; one whose first game this was takes the next.
+        if (game.TitleId is not null) await new TitleGrouping(_db).TidyAsync();
         // The game row is gone, so the audit below can no longer reference it — pass no game id.
         var orphans = versions.Where(v => !_store.TryDelete(v.ArchivePath)).ToList();
         if (orphans.Count > 0)
@@ -876,6 +880,8 @@ public sealed class SyncService
             .ToDictionaryAsync(x => x.GameId, x => x.Total);
 
         var extras = await GetExtraSavePathsAsync();
+        // Read once so every game's Title is fixed up from the context, not looked up per game.
+        await _db.GameTitles.LoadAsync();
 
         // Same N+1 reasoning for the console's Device/Source groupings: two flat reads grouped in memory
         // (a machines × games row count, small) instead of two queries per game.
@@ -918,6 +924,7 @@ public sealed class SyncService
     {
         var game = await _db.Games.FindAsync(gameId);
         if (game is null) return null;
+        if (game.TitleId is not null) await _db.Entry(game).Reference(g => g.Title).LoadAsync();
 
         var head = game.HeadVersionId is null
             ? null
@@ -942,8 +949,10 @@ public sealed class SyncService
             ? await SourcesForGameAsync(gameId)
             : sourcesByGame.TryGetValue(gameId, out var knownSources) ? knownSources : new List<GameSourceDto>();
 
+        var emulator = sources.Where(s => s.Kind == GameSourceKinds.Emulator && s.Detail.Trim().Length > 0)
+            .Select(s => s.Detail.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
         return new GameStateDto(game.ToDto(extras), head?.ToDto(), lease.ToDto(gameId), hasConflict, totalStorage,
-            CleanMachines(machines), CleanSources(sources));
+            CleanMachines(machines), CleanSources(sources), emulator.Length == 0 ? null : string.Join(" + ", emulator));
     }
 
     /// <summary>Machines that have this game: a stored save folder or a recorded source (one small query each).</summary>

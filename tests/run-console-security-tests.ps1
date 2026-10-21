@@ -470,6 +470,13 @@ Check "cancel: withdrawing commands needs the admin credential (401 without)" `
     ((Http POST "/api/commands/cancel" @{ ids = @($requeue.id) }).Status -eq 401)
 Check "cancel: ... and a MACHINE key is not one (401) - an agent must not cancel another machine's work" `
     ((Http POST "/api/commands/cancel" @{ ids = @($requeue.id) } @{ "X-Api-Key" = $m3.apiKey }).Status -eq 401)
+$titleGame = [guid]::NewGuid()
+foreach ($r in @(@("GET", "/api/games/$titleGame/title/candidates"), @("POST", "/api/games/$titleGame/title/join?into=$([guid]::NewGuid())"),
+                 @("POST", "/api/games/$titleGame/title/split"))) {
+    Check "titles: $($r[0]) $($r[1] -replace '/[0-9a-f-]{36}', '/{id}') needs the admin credential (401 without)" `
+        ((Http $r[0] $r[1]).Status -eq 401)
+    Check "titles: ... and a MACHINE key is not one (401)" ((Http $r[0] $r[1] $null @{ "X-Api-Key" = $m3.apiKey }).Status -eq 401)
+}
 Check "a made-up session token -> 401" ((Http GET "/api/overview" $null (Session "not-a-real-token")).Status -eq 401)
 $wrong = Login "nope"
 Check "sign-in with the wrong password -> 401" ($wrong.Status -eq 401 -and $wrong.Json.error -match "Wrong password")

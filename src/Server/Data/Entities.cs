@@ -95,7 +95,35 @@ public class Game
     /// that synced one of them moves to this game.</summary>
     public string? MergedGameIds { get; set; }
 
+    /// <summary>The title this game is one emulator's tree of (tasks/multi-emulator-games), or null for a game shown on its own.
+    /// Console-side only: nothing syncs differently because of it.</summary>
+    public Guid? TitleId { get; set; }
+    public GameTitle? Title { get; set; }
+
+    /// <summary>Split out of its title by hand: automatic grouping never takes it back.</summary>
+    public bool TitleLocked { get; set; }
+
+    /// <summary>What tells this tree from another of the same emulator in its title ("Rev 0"), or null.</summary>
+    public string? TitleEdition { get; set; }
+
     public List<SaveVersion> Versions { get; set; } = new();
+}
+
+/// <summary>
+/// One console entry over the games an emulated title is saved as, one per emulator (tasks/multi-emulator-games). Its
+/// name is <see cref="BaseName"/> — the first game's without its "(RetroArch)" suffix — and its art the first game's.
+/// </summary>
+public class GameTitle
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    /// <summary>The console its games are for ("DS"), or "" when none said.</summary>
+    public string PlatformKey { get; set; } = "";
+    public string BaseName { get; set; } = "";
+    /// <summary>The region its games are, "" for none recorded.</summary>
+    public string RegionKey { get; set; } = "";
+    /// <summary>The game whose art the title shows: the oldest. When it leaves, the next oldest takes over.</summary>
+    public Guid? LeadGameId { get; set; }
 }
 
 /// <summary>An uploaded snapshot of a game's saves. Forms a parent chain (lineage).</summary>

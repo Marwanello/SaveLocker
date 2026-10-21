@@ -60,6 +60,7 @@ builder.Services.AddSingleton<ArchiveStore>();
 builder.Services.AddSingleton<AgentInstallerService>();
 builder.Services.AddSingleton<ConflictEscalationPolicy>();
 builder.Services.AddScoped<SyncService>();
+builder.Services.AddScoped<TitleGrouping>();
 builder.Services.AddScoped<ContentTransferService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<ArtService>();
@@ -1427,6 +1428,22 @@ admin.MapPost("/games/{id:guid}/merge", async (Guid id, MergeGamesRequest req, S
     .Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status404NotFound);
 
+// One console entry per game (tasks/multi-emulator-games Phase 4): group a game with another emulator's by hand, or split
+// it out. Only the console-side title changes; no version moves, so neither asks for a typed confirm.
+admin.MapGet("/games/{id:guid}/title/candidates", async (Guid id, TitleGrouping titles) =>
+    Results.Ok(await titles.CandidatesAsync(id)))
+    .Produces<List<TitleCandidateDto>>();
+
+admin.MapPost("/games/{id:guid}/title/join", async (Guid id, Guid into, TitleGrouping titles) =>
+    TitleResult(await titles.JoinAsync(id, into, "admin")))
+    .Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound);
+
+admin.MapPost("/games/{id:guid}/title/split", async (Guid id, TitleGrouping titles) =>
+    TitleResult(await titles.SplitAsync(id, "admin")))
+    .Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound);
+
 admin.MapPost("/games/{id:guid}/rollback", async (Guid id, Guid version, SyncService sync) =>
     await sync.RollbackAsync(id, version, "admin")
         ? Results.Ok() : Results.BadRequest("Could not roll back."));
@@ -1770,6 +1787,13 @@ static IResult UnknownPlatform(string? requested) => Results.BadRequest(
 // headers so the agent can record the parent version for its next upload.
 // A route's optional `path` query: which of a game's save folders. Absent means the primary one, which is
 // all an older agent or console ever sends.
+static IResult TitleResult(string? why) => why switch
+{
+    null => Results.NoContent(),
+    "not_found" => Results.NotFound(),
+    _ => Results.BadRequest(why),
+};
+
 static string PathKeyOf(string? path) =>
     string.IsNullOrWhiteSpace(path) ? SaveRoot.PrimaryKey : path.Trim();
 

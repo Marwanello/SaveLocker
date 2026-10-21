@@ -8,6 +8,7 @@ public class AppDbContext : DbContext
 
     public DbSet<Machine> Machines => Set<Machine>();
     public DbSet<Game> Games => Set<Game>();
+    public DbSet<GameTitle> GameTitles => Set<GameTitle>();
     public DbSet<SaveVersion> SaveVersions => Set<SaveVersion>();
     public DbSet<SaveVersionFile> SaveVersionFiles => Set<SaveVersionFile>();
     public DbSet<Lease> Leases => Set<Lease>();
@@ -33,6 +34,9 @@ public class AppDbContext : DbContext
         b.Entity<Game>().HasIndex(g => new { g.Name, g.Region }).IsUnique();
         // D2: one game per emulated title.
         b.Entity<Game>().HasIndex(g => g.EmulatorKey).IsUnique().HasFilter("\"EmulatorKey\" IS NOT NULL");
+        // A title is a console-side group: deleting it leaves its games standing alone, never deletes them.
+        b.Entity<Game>().HasIndex(g => g.TitleId);
+        b.Entity<Game>().HasOne(g => g.Title).WithMany().HasForeignKey(g => g.TitleId).OnDelete(DeleteBehavior.SetNull);
 
         // One active lease per game.
         b.Entity<Lease>().HasIndex(l => l.GameId).IsUnique();
