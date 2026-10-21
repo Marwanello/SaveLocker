@@ -1830,6 +1830,29 @@ public sealed class SyncService
             joined is null ? "whole folder" : string.Join(", ", GlobConfig.Parse(joined));
     }
 
+    /// <summary>
+    /// An agent adds patterns to a game's primary include scope, never removing one (tasks/emulator-pull-safety Phase 6:
+    /// a DuckStation game enrolled before it took the region-named card). A whole-folder scope already holds every
+    /// file, so it is left as it is. <c>added</c> lists the patterns that were new.
+    /// </summary>
+    public async Task<(bool found, string? error, IReadOnlyList<string> added)> AddIncludeGlobsAsync(
+        Guid machineId, Guid gameId, IReadOnlyList<string> patterns)
+    {
+        var game = await _db.Games.FindAsync(gameId);
+        if (game is null) return (false, null, []);
+        var current = GlobConfig.Parse(game.IncludeGlobs).ToList();
+        if (current.Count == 0) return (true, null, []);
+        var added = patterns.Where(p => !current.Contains(p, StringComparer.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (added.Count == 0) return (true, null, []);
+        List<string?> list = [.. current, .. added];
+        if (GlobConfig.ValidateIncludes(list) is { } refused) return (true, refused, []);
+        game.IncludeGlobs = GlobConfig.Join(list);
+        await Audit(machineId, gameId, "game.include_globs", $"added {string.Join(", ", added)}");
+        await _db.SaveChangesAsync();
+        return (true, null, added);
+    }
+
     public async Task<(bool found, string? error)> SetExcludeGlobsAsync(Guid gameId, IEnumerable<string> patterns)
     {
         var game = await _db.Games.FindAsync(gameId);

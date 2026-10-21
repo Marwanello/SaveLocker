@@ -144,3 +144,62 @@ public sealed class ProcessWatcher : IDisposable
         _timer.Dispose();
     }
 }
+
+/// <summary>
+/// Raises <see cref="EmulatorClosed"/> when an emulator of a tracked game stops running (tasks/emulator-pull-safety Phase
+/// 3). A game's settled save is not pushed while its emulator runs (<see cref="GameActivity.IsActive(TrackedGame)"/>), and
+/// an emulator is never one of a game's own process names, so without this a state saved in PCSX2 waited for the next
+/// change made with PCSX2 closed. Only the close is raised: an emulator starting says nothing about which game it plays.
+/// </summary>
+public sealed class EmulatorWatcher : IDisposable
+{
+    private readonly System.Timers.Timer _timer;
+    private readonly Func<IEnumerable<TrackedGame>> _games;
+    private readonly Func<IReadOnlyCollection<string>> _snapshot;
+    private HashSet<string>? _running;
+    private int _polling;
+    private volatile bool _disposed;
+
+    public event Action<string>? EmulatorClosed;
+
+    public EmulatorWatcher(Func<IEnumerable<TrackedGame>> games, Func<IReadOnlyCollection<string>>? snapshot = null, double pollMs = 4000)
+    {
+        _games = games;
+        _snapshot = snapshot ?? (() => EmulatorProcesses.Snapshot().ToList());
+        _timer = new System.Timers.Timer(pollMs) { AutoReset = true };
+        _timer.Elapsed += (_, _) => Poll();
+    }
+
+    public void Start() => _timer.Start();
+
+    /// <summary>One look at the running processes. The first only records what runs, as <see cref="ProcessWatcher"/>'s does.</summary>
+    internal void Poll()
+    {
+        if (_disposed || Interlocked.CompareExchange(ref _polling, 1, 0) != 0) return;
+        try
+        {
+            var processes = _snapshot();
+            var now = _games().SelectMany(EmulatorProcesses.EmulatorsOf)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(e => processes.Any(p => EmulatorProcesses.IsProcessOf(p, e)))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var before = _running;
+            _running = now;
+            if (before is null) return;
+            foreach (var closed in before.Where(e => !now.Contains(e))) EmulatorClosed?.Invoke(closed);
+        }
+        finally { Interlocked.Exchange(ref _polling, 0); }
+    }
+
+    /// <summary>The games to push when <paramref name="emulator"/> closes: set up here, saving through it.</summary>
+    public static IReadOnlyList<TrackedGame> GamesOf(IEnumerable<TrackedGame> games, string emulator) =>
+        games.Where(g => g.IsEnrolledHere && EmulatorProcesses.EmulatorsOf(g).Contains(emulator, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _timer.Stop();
+        _timer.Dispose();
+    }
+}

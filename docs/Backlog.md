@@ -10,6 +10,8 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 
 - [Registry-based saves](tasks/registry-saves/summary.md)
 - [Emulator saves: the other emulators (Groups A–F are done; G, I, J in PR #78)](tasks/emulator-saves/plan.md)
+- [Emulator pulls: unformatted PCSX2 folder cards, and no pull while the emulator is open](tasks/emulator-pull-safety/plan.md)
+- [One console entry per game, one save tree per emulator](tasks/multi-emulator-games/plan.md)
 - [Playthroughs: named save forks to switch between](tasks/save-playthroughs/summary.md)
 - [File-level saves](tasks/file-level-saves/summary.md)
 - [Native Linux save support](tasks/native-linux-saves/summary.md)

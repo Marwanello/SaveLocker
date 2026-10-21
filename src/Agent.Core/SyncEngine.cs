@@ -844,6 +844,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                          $"({string.Join(", ", restored.SkippedKeys)}); left out.");
                 XeniaProfileSlice.AfterPull(game, _log, stateDir: _config.StateDir);
                 SwitchCopies.AfterPull(game, _log);
+                Pcsx2Saves.FormatCardOf(game, _log);
                 if (OwnFileNames.Grow(_config, game)) _ = OwnFileNames.ReportAsync(_api, game, _log);
             }
             catch (SaveArchive.UnsafeArchiveException ex)
@@ -979,6 +980,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// </summary>
     public async Task<string> SyncGameAsync(TrackedGame game, GameSyncMode mode, CancellationToken ct = default)
     {
+        // A PCSX2 card a save was pulled onto before SaveLocker formatted cards itself, which the scan could not fix
+        // (PCSX2 was open, or the write failed): fixed now (tasks/emulator-pull-safety Q2).
+        Pcsx2Saves.FormatCardOf(game, _log);
         switch (mode)
         {
             case GameSyncMode.Pull:
@@ -1071,6 +1075,16 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         {
             try { rejectedHash = (await _api.GetVersionAsync(conflict.VersionBId, ct))?.ContentHash; }
             catch (Exception ex) when (!ct.IsCancellationRequested) { _log($"[{game!.Name}] could not read the rejected version: {ex.Message}"); }
+        }
+
+        // Keeping the cloud's means replacing the save here, which cannot happen under a running game or its emulator. Asked
+        // before the server hears of it: resolved there but not here, the next sync pushes the loser again and reopens it.
+        if (here && keepCloud && GameActivity.IsActive(game!, out var open))
+        {
+            var what = GameActivity.WhatIsOpen(game!, open);
+            return (false, what == "the game"
+                ? $"{game!.Name} is running, so the cloud's save cannot replace the save here yet. Close it, then choose again."
+                : $"{what} is open, so the cloud's save of {game!.Name} cannot replace the save here yet. Close {what}, then choose again.");
         }
 
         var (ok, error) = await _api.ResolveConflictAsync(conflict.Id, winningVersionId, keepBoth, ct);

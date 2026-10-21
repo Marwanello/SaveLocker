@@ -163,18 +163,7 @@ public static partial class XeniaLaunchProfile
         return false;
     }
 
-    private static readonly string[] XeniaNames = ["xenia", "xenia_canary", "xenia_edge", "xenia-canary"];
-
-    /// <summary>
-    /// Whether a process name is Xenia's. Linux keeps only 15 characters of a name (<c>/proc/&lt;pid&gt;/comm</c>), and
-    /// Wine names a process after its .exe, so under Proton Xenia Canary is <c>xenia_canary.ex</c> — .NET reads the full
-    /// name from the command line only when that starts with the short one, and Wine's is a Windows path.
-    /// </summary>
-    public static bool IsXeniaProcessName(string processName)
-    {
-        var name = processName.ToLowerInvariant();
-        var bare = name.EndsWith(".exe", StringComparison.Ordinal) ? name[..^4] : name;
-        if (XeniaNames.Contains(bare)) return true;
-        return name.Length == 15 && XeniaNames.Any(n => (n + ".exe").StartsWith(name, StringComparison.Ordinal));
-    }
+    /// <summary>Whether a process name is Xenia's, even cut short (<see cref="EmulatorProcesses"/>, which holds its names).</summary>
+    public static bool IsXeniaProcessName(string processName) =>
+        EmulatorProcesses.IsProcessOf(processName, XeniaSaves.EmulatorName);
 }

@@ -49,6 +49,8 @@
     <Compile Include="..\..\src\Agent.Linux\DesktopEntry.cs" Link="DesktopEntry.cs" />
     <EmbeddedResource Include="..\..\packaging\linux\savelocker.desktop"
                       LogicalName="SaveLocker.Agent.Linux.savelocker.desktop" />
+    <!-- A formatted 8 MB PCSX2 folder card superblock, captured from a real EmuDeck Deck (tasks/emulator-pull-safety Phase 1). -->
+    <EmbeddedResource Include="Fixtures\pcsx2-superblock-8mb.bin" LogicalName="pcsx2-superblock-8mb.bin" />
   </ItemGroup>
 
 </Project>

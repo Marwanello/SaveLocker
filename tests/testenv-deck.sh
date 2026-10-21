@@ -35,9 +35,13 @@ BIN="$PREFIX/savelocker"
 # directory"), so nothing here can touch a real registration, a real tracked game or a real save.
 # Test-rig commands in the agent binary (dev-shortcut-add/remove) refuse to run without
 # this — it must never be set by any shipped flow, only here.
+# SAVELOCKER_STATE_ROOT, not XDG_DATA_HOME: the emulator readers take XDG_DATA_HOME as the real
+# ~/.local/share (shadPS4, Azahar's states, Cemu's title cache…), so overriding it hid the Deck's
+# own saves from the test agent.
 export SAVELOCKER_ALLOW_TEST_COMMANDS=1
-export XDG_DATA_HOME="${PREFIX}-state"
-STATE="$XDG_DATA_HOME/SaveLocker"
+STATE_ROOT="${PREFIX}-state"
+export SAVELOCKER_STATE_ROOT="$STATE_ROOT"
+STATE="$STATE_ROOT/SaveLocker"
 # Desktop Mode's application menu entry for this test build. Its own file name, so the real install's
 # savelocker.desktop is never touched.
 TEST_DESKTOP_ENTRY="$HOME/.local/share/applications/savelocker-test.desktop"
@@ -80,7 +84,7 @@ show_real_game_mappings() {
   grep -o '"SaveDirectory": *"[^"]*"' "$cfg" | sed -E 's/.*"SaveDirectory": *"([^"]*)"/\1/' |
   while IFS= read -r dir; do
     case "$dir" in
-      ""|"$XDG_DATA_HOME"*) ;;
+      ""|"$STATE_ROOT"*) ;;
       *) echo "WARNING: the test agent maps a real folder: $dir" >&2
          echo "  a pull from the test console would restore over it." >&2 ;;
     esac
@@ -171,7 +175,7 @@ cmd_up() {
 Type=Application
 Name=SaveLocker Test
 Comment=SaveLocker test agent (testenv) - not your real install
-Exec=env XDG_DATA_HOME=$XDG_DATA_HOME $BIN open --port $PORT
+Exec=env SAVELOCKER_STATE_ROOT=$STATE_ROOT $BIN open --port $PORT
 Icon=$PREFIX/artwork/icon.png
 Terminal=false
 Categories=Utility;Game;
@@ -200,7 +204,7 @@ cmd_conflict() {
   cmd_down >/dev/null 2>&1
 
   echo "== seeding a conflicting save on the deck for 'Conflict Game' =="
-  local dir="$XDG_DATA_HOME/conflict-save"
+  local dir="$STATE_ROOT/conflict-save"
   mkdir -p "$dir"
   find "$dir" -mindepth 1 -delete
   # Validated numerically, not as strings: "0.0" must take the tiny path exactly like "0".
@@ -307,7 +311,7 @@ cmd_status() {
   pids=$(pgrep -f "$DAEMON_PATTERN" | tr '\n' ' ')
   echo "daemon pids: ${pids:-none}"
   echo "prefix:      $PREFIX"
-  echo "state dir:   $XDG_DATA_HOME"
+  echo "state dir:   $STATE_ROOT"
   if [ -n "$pids" ]; then
     local token out
     token=$( { tr -d '\r\n' < "$STATE/api-token"; } 2>/dev/null )
@@ -338,8 +342,8 @@ cmd_clean() {
   fi
   rm -f "$TARBALL"
   if [ -d "$PREFIX" ]; then rm -rf "$PREFIX"; echo "removed $PREFIX"; fi
-  # $XDG_DATA_HOME also holds cmd_conflict's own "conflict-save" folder — one rm -rf clears both.
-  if [ -d "$XDG_DATA_HOME" ]; then rm -rf "$XDG_DATA_HOME"; echo "removed $XDG_DATA_HOME"; fi
+  # $STATE_ROOT also holds cmd_conflict's own "conflict-save" folder — one rm -rf clears both.
+  if [ -d "$STATE_ROOT" ]; then rm -rf "$STATE_ROOT"; echo "removed $STATE_ROOT"; fi
   rm -f "$DAEMON_LOG"
 }
 

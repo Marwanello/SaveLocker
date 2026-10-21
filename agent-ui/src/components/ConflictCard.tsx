@@ -19,11 +19,6 @@ interface Props {
   statsA?: VersionStats
   statsB?: VersionStats
   resolving: boolean
-  /** 'confirm' (default): click a side to select it, then a separate Resolve button commits —
-   * used on the Conflicts page, where reviewing before committing is the point. 'immediate': a
-   * side's own button commits right away — used in the sync-time pop-up, where the point is to
-   * keep moving through a queue. */
-  mode?: 'confirm' | 'immediate'
   onResolve: (winningVersionId: string, keepBoth: boolean) => void
   /** Extra control rendered in the footer, beside the "keep both" checkbox — the sync pop-up's
    * "Decide later" button. */
@@ -39,7 +34,7 @@ interface Props {
  */
 export function ConflictCard({
   conflict, gameName, machineName, versionA, versionB, statsA, statsB,
-  resolving, mode = 'confirm', onResolve, footerExtra,
+  resolving, onResolve, footerExtra,
 }: Props) {
   // No default selection, deliberately — the version data this would key off loads
   // asynchronously after the version and stats fetches resolve, and a choice this consequential
@@ -67,7 +62,6 @@ export function ConflictCard({
   }
 
   function act(versionId: string) {
-    if (mode === 'immediate') { onResolve(versionId, keepBoth); return }
     setSelected(versionId)
   }
 
@@ -120,7 +114,7 @@ export function ConflictCard({
               role="button"
               tabIndex={-1}
               aria-disabled={resolving || undefined}
-              data-pad-label={mode === 'confirm' ? 'Pick this side' : 'Keep this side'}
+              data-pad-label="Pick this side"
               onClick={() => { if (!resolving) act(side.id) }}
               style={{
                 flex: '1 1 210px', minWidth: 210, cursor: resolving ? 'default' : 'pointer',
@@ -209,22 +203,20 @@ export function ConflictCard({
 
         {footerExtra}
 
-        {mode === 'confirm' && (
-          <button
-            disabled={!selected || resolving}
-            onClick={() => selected && onResolve(selected, keepBoth)}
-            style={{
-              padding: '7px 16px', borderRadius: 6, fontSize: 12, fontWeight: 700, border: 'none',
-              cursor: selected && !resolving ? 'pointer' : 'default',
-              background: selected ? 'var(--color-accent)' : 'var(--color-raise)',
-              color: selected ? 'var(--color-on-accent)' : 'var(--color-dim)',
-              display: 'inline-flex', alignItems: 'center', gap: 9,
-            }}
-          >
-            {selectedLabel ? `Resolve with ${selectedLabel}` : 'Resolve'}
-            <PadGlyph id="rt" />
-          </button>
-        )}
+        <button
+          disabled={!selected || resolving}
+          onClick={() => selected && onResolve(selected, keepBoth)}
+          style={{
+            padding: '7px 16px', borderRadius: 6, fontSize: 12, fontWeight: 700, border: 'none',
+            cursor: selected && !resolving ? 'pointer' : 'default',
+            background: selected ? 'var(--color-accent)' : 'var(--color-raise)',
+            color: selected ? 'var(--color-on-accent)' : 'var(--color-dim)',
+            display: 'inline-flex', alignItems: 'center', gap: 9,
+          }}
+        >
+          {selectedLabel ? `Resolve with ${selectedLabel}` : 'Resolve'}
+          <PadGlyph id="rt" />
+        </button>
       </div>
     </div>
   )

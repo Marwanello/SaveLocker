@@ -57,6 +57,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly OfflineQueueDrainer _drainer;
     private AgentWindow? _window;
     private readonly ProcessWatcher _processWatcher;
+    private readonly EmulatorWatcher _emulatorWatcher;
     // Rebuilt from an API request thread; read from watcher/poller threads. See Daemon._engine.
     private volatile SyncEngine _engine = null!;
     // Guards RebuildEngine's read-old/build-new/swap sequence: /api/config and /api/register can
@@ -120,6 +121,10 @@ internal sealed class TrayContext : ApplicationContext
 
         _processWatcher = BuildProcessWatcher();
         _processWatcher.Start();
+        // A settled save waits while its emulator runs (StartFolderWatchers); this is when it goes.
+        _emulatorWatcher = new EmulatorWatcher(() => _config.Games);
+        _emulatorWatcher.EmulatorClosed += OnEmulatorClosed;
+        _emulatorWatcher.Start();
 
         // Local HTTP server that drives the React agent UI.
         _apiServer = new AgentApiServer(
@@ -740,6 +745,12 @@ internal sealed class TrayContext : ApplicationContext
         });
     }
 
+    private void OnEmulatorClosed(string emulator)
+    {
+        foreach (var game in EmulatorWatcher.GamesOf(_config.Games, emulator).Where(g => Directory.Exists(g.SaveDirectory)))
+            if (!IsRunning(game)) FireAndForget(() => _engine.PushAsync(game, settle: true));
+    }
+
     private void OnExited(string gameId)
     {
         if (WatchedGame(gameId) is not { } game) return;
@@ -825,6 +836,7 @@ internal sealed class TrayContext : ApplicationContext
             _trayIcon?.Dispose();
             _commandPoller.Dispose();
             _processWatcher.Dispose();
+            _emulatorWatcher.Dispose();
             // Synchronous: Dispose cannot await, so a held lease expires rather than being released.
             // Exit is not a connection change — the same server is still the right one on restart.
             _engine?.Dispose();

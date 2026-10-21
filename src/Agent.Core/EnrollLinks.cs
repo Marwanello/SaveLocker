@@ -29,8 +29,15 @@ public static class EnrollLinks
         var auto = Enroller.ServerNameFor(server, c, extras);
         var joined = auto is null ? null : server.FirstOrDefault(g => Is(g, auto) && Enroller.SameFiles(g, c));
         var file = c.IncludeGlobs[0];
+        var revision = joined is null && !c.UntouchedSeed ? RevisionOf(server, c) : null;
+        var revisionPairs = revision is null ? null : RenamePairs(revision, c, out _);
 
-        if (c.UntouchedSeed && joined is null)
+        if (revision is not null && revisionPairs is not null)
+            options.Add(new LinkOption(Auto, LinkKind.Join, revision.Name, revision.Id,
+                $"Another revision of the same game: the server’s “{revision.Name}” keeps {revisionPairs[0].Server}. This device keeps " +
+                $"its own name, {revisionPairs[0].Local}, for it and its states. The first sync asks which of the two saves to keep.",
+                "Another revision"));
+        else if (c.UntouchedSeed && joined is null)
             options.Add(new LinkOption(Auto, LinkKind.Blocked, c.Name, null, SeedDetail, "Not played"));
         else if (auto is null)
             options.Add(new LinkOption(Auto, LinkKind.Blocked, c.Name, null,
@@ -42,9 +49,9 @@ public static class EnrollLinks
             options.Add(new LinkOption(Auto, LinkKind.New, auto, null,
                 $"No server game keeps {file} yet.", "New"));
 
-        if (joined is not null && !c.UntouchedSeed && SeparateName(server, c) is { } own)
+        if ((joined ?? revision) is { } kept && !c.UntouchedSeed && SeparateName(server, c) is { } own)
             options.Add(new LinkOption(Separate, LinkKind.New, own, null,
-                $"Creates “{own}”. It never syncs with “{joined.Name}”.", "New"));
+                $"Creates “{own}”. It never syncs with “{kept.Name}”.", "New"));
 
         foreach (var g in server.Where(g => g.Id != joined?.Id && Enroller.SameFiles(g, c))
                      .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase))
@@ -53,7 +60,7 @@ public static class EnrollLinks
 
         // Same title, other files: shown so the user sees why it is not linked, never pickable here.
         var names = Enroller.NamesFor(c);
-        foreach (var g in server.Where(g => !Enroller.SameFiles(g, c) && (SameTitle(g, c, names) || OtherEmulator(g, c)))
+        foreach (var g in server.Where(g => g.Id != revision?.Id && !Enroller.SameFiles(g, c) && (SameTitle(g, c, names) || OtherEmulator(g, c)))
                      .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase))
             options.Add(RenamePairs(g, c, out var why) is { } pairs
                 ? new LinkOption(Rename, LinkKind.Join, g.Name, g.Id,
@@ -76,6 +83,25 @@ public static class EnrollLinks
                         : "A game that keeps a whole save folder, like a PC game. Only another save of this game can be linked.",
                     g.IncludeGlobs is { Length: > 0 } ? "Different file names" : "Whole folder"));
         return options;
+    }
+
+    /// <summary>
+    /// The server game <paramref name="c"/> joins as another revision (tasks/emulator-pull-safety Phase 8, B), or null: no
+    /// game keeps its very files (D1 wins), and one game of the same emulator keeps the save of a ROM that is the same
+    /// release once revision, version and dump marks are taken off — same region, same everything else — with every file
+    /// of it paired with one here (<see cref="RenamePairs"/>). Another region, a beta, a hack or another emulator stays apart.
+    /// </summary>
+    public static GameDto? RevisionOf(IReadOnlyList<GameDto> server, ScanCandidate c)
+    {
+        if (c.Source != ScanSource.Emulator || c.EmulatorRom is not { Length: > 0 } rom || c.IncludeGlobs is not { Count: > 0 } ||
+            c.UntouchedSeed || server.Any(g => Enroller.SameFiles(g, c)))
+            return null;
+        return server
+            .Where(g => g.IncludeGlobs is { Length: > 0 } scope && Path.GetFileNameWithoutExtension(scope[0]) is var theirs &&
+                        !string.Equals(theirs, rom, StringComparison.OrdinalIgnoreCase) && RomNames.SameRelease(theirs, rom) &&
+                        RenamePairs(g, c, out _) is not null)
+            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
     }
 
     /// <summary>

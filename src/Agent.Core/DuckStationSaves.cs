@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
@@ -125,7 +126,7 @@ public static partial class DuckStationSaves
             EmulatorSystem: System,
             EmulatorRom: card,
             ViaEmuDeck: setup.EmuDeck,
-            IncludeGlobs: SaveGlobsFor(card),
+            IncludeGlobs: known is null ? SaveGlobsFor(card) : StatesOnlyCardGlobsFor(card),
             ExtraSaveDirs: [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(setup.States!), StateGlobsFor([serial]))],
             Release: ConsoleTitles.Release(System, [serial]),
             StatesOnly: true);
@@ -157,6 +158,66 @@ public static partial class DuckStationSaves
     /// <summary>A game's cards in both slots, each named exactly: <c>Crash_*.mcd</c> would take
     /// <c>Crash_Team_1.mcd</c>.</summary>
     public static IReadOnlyList<string> SaveGlobsFor(string title) => [$"{title}_1.mcd", $"{title}_2.mcd"];
+
+    /// <summary>
+    /// A states-only game's card under the bundled table's title, and under that title with what DuckStation's own game
+    /// database adds in brackets — its region, mostly: <c>Tomb Raider - The Last Revelation (Europe, Australia)_1.mcd</c>
+    /// (tasks/emulator-pull-safety Phase 6). The bracket keeps the next game of a series out: <c>Tomb Raider II_1.mcd</c>
+    /// is not <c>Tomb Raider (…)_1.mcd</c>.
+    /// </summary>
+    public static IReadOnlyList<string> StatesOnlyCardGlobsFor(string title) =>
+        [.. SaveGlobsFor(title), $"{title} (*)_1.mcd", $"{title} (*)_2.mcd"];
+
+    /// <summary>
+    /// The card patterns a DuckStation game enrolled states-only before Phase 6 still lacks: its scope names the title's
+    /// two cards exactly, neither is in <paramref name="saveDir"/>, and a card of that title with a bracket is. Null when
+    /// nothing is missing — a game whose card is named exactly, or one that was never states-only.
+    /// </summary>
+    public static IReadOnlyList<string>? MissingCardGlobs(IReadOnlyList<string> includeGlobs, string? saveDir)
+    {
+        if (OldCardTitle(includeGlobs) is not { } title || string.IsNullOrWhiteSpace(saveDir)) return null;
+        try
+        {
+            if (!Directory.Exists(saveDir) || includeGlobs.Any(g => File.Exists(Path.Combine(saveDir, g)))) return null;
+            var wider = StatesOnlyCardGlobsFor(title).Skip(2).ToList();
+            return wider.Any(g => Directory.EnumerateFiles(saveDir, g).Any()) ? wider : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>
+    /// The hash to count as synced when another machine took in the region-named card (<see cref="MissingCardGlobs"/>):
+    /// everything but that card is as it was last synced, so this machine's own copy of the card — never synced — is no
+    /// edit to push over the fleet's, and the pull brings the fleet's. Null when the scope is not that repair, nothing
+    /// changed, or anything else changed too.
+    /// </summary>
+    public static string? SyncedHashWithCard(TrackedGame game, string stateDir)
+    {
+        if (game.LastSyncedHash is null || game.IncludeGlobs.Count != 4 || OldCardTitle(game.IncludeGlobs.Take(2).ToList()) is not { } title ||
+            !game.IncludeGlobs.SequenceEqual(StatesOnlyCardGlobsFor(title), StringComparer.OrdinalIgnoreCase)) return null;
+        var roots = game.Roots(stateDir);
+        var full = SaveArchive.HashDirectory(roots, game.ExcludeGlobs);
+        if (full == game.LastSyncedHash) return null;
+        var withoutCard = roots.Select(r => r.IsPrimary ? r with { IncludeGlobs = SaveGlobsFor(title) } : r).ToList();
+        return SaveArchive.HashDirectory(withoutCard, game.ExcludeGlobs) == game.LastSyncedHash ? full : null;
+    }
+
+    /// <summary>
+    /// Does the fleet's head hold a region-named card of the scope's title (<see cref="SyncedHashWithCard"/>)? Only then is
+    /// this machine's own card replaced by a pull: until the machine that widened the scope has pushed its card, a pull
+    /// would delete the card here with nothing to put in its place.
+    /// </summary>
+    public static bool FleetHasCard(TrackedGame game, HeadFilesDto? head) =>
+        head is not null && game.IncludeGlobs.Count == 4 && OldCardTitle(game.IncludeGlobs.Take(2).ToList()) is { } title &&
+        head.Folders.Where(f => f.Key == SaveRoot.PrimaryKey).SelectMany(f => f.Files).Any(f =>
+            !f.Path.Contains('/') && f.Path.Length >= title.Length + 9 &&
+            f.Path.StartsWith(title + " (", StringComparison.OrdinalIgnoreCase) &&
+            (f.Path.EndsWith(")_1.mcd", StringComparison.OrdinalIgnoreCase) || f.Path.EndsWith(")_2.mcd", StringComparison.OrdinalIgnoreCase)));
+
+    private static string? OldCardTitle(IReadOnlyList<string> globs) =>
+        globs.Count == 2 && globs[0].EndsWith("_1.mcd", StringComparison.OrdinalIgnoreCase) && globs[0][..^6] is { Length: > 0 } title &&
+        !title.Contains('*') && !title.Contains('(') && globs.SequenceEqual(SaveGlobsFor(title), StringComparer.OrdinalIgnoreCase)
+            ? title : null;
 
     /// <summary>Every slot and the resume state of each of the game's product codes.</summary>
     public static IReadOnlyList<string> StateGlobsFor(IEnumerable<string> codes) => codes.Select(c => $"{c}_*.sav").ToList();
