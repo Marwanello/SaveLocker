@@ -8,7 +8,7 @@ import { Card } from './ui/Card'
 
 interface Props {
   gameId: string
-  /** Bumped by the page after a sync, so the tree shows what that sync just did. */
+  /** Bumped by the page after a sync and when the agent says the game's files changed, so the tree shows it. */
   refreshKey: number
 }
 
@@ -34,10 +34,10 @@ function look(f: LocalFile): Look {
 }
 
 /**
- * "Save files on this PC" (tasks/save-file-trees Phase 4, variant A): every folder of the game here as a
+ * "Save files on this device" (tasks/save-file-trees Phase 4, variant A): every folder of the game here as a
  * nested tree, each file marked in sync, changed here or only on the server, and the other files in a
  * shared folder folded into one line. The agent hashes every file to answer, so this loads when the
- * page opens, after a sync from it and on Refresh — never on a timer.
+ * page opens, on Refresh and whenever the page bumps `refreshKey` — never on a timer.
  */
 export function SaveFilesCard({ gameId, refreshKey }: Props) {
   const [files, setFiles] = useState<GameFiles | null>(null)
@@ -59,7 +59,7 @@ export function SaveFilesCard({ gameId, refreshKey }: Props) {
 
   return (
     <Card
-      title="Save files on this PC"
+      title="Save files on this device"
       flush
       headerRight={
         <div className="sl-files__head">

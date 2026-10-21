@@ -421,6 +421,7 @@ internal sealed class TrayContext : ApplicationContext
             var game = g;
             _folderWatchers.Add(new FolderWatcher(game.RealRoots(_config.StateDir).Select(r => r.Directory), () =>
             {
+                SaveFolderChanges.Touch(game.GameId);
                 if (!IsRunning(game)) FireAndForget(() => _engine.PushAsync(game, settle: true));
             }));
         }

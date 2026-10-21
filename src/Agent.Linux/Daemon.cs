@@ -394,7 +394,11 @@ public sealed class Daemon : IAsyncDisposable
             {
                 var game = g;
                 _folderWatchers.Add(new FolderWatcher(
-                    game.RealRoots(_config.StateDir).Select(r => r.Directory), () => _ = PushQuietlyAsync(game)));
+                    game.RealRoots(_config.StateDir).Select(r => r.Directory), () =>
+                    {
+                        SaveFolderChanges.Touch(game.GameId);
+                        _ = PushQuietlyAsync(game);
+                    }));
             }
         }
     }

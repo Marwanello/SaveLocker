@@ -314,7 +314,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             ReportContention(game, "push", ex);
             return null;
         }
-        finally { gate.Release(); _activity?.End(); }
+        finally { gate.Release(); _activity?.End(); SaveFolderChanges.Touch(game.GameId); }
     }
 
     // The last package list each game reported, so a pull that changed nothing sends nothing.
@@ -897,6 +897,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         {
             if (File.Exists(archive)) File.Delete(archive);
             _activity?.End();
+            SaveFolderChanges.Touch(game.GameId);
         }
     }
 

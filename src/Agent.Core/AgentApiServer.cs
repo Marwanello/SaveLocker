@@ -1082,7 +1082,8 @@ public sealed class AgentApiServer : IDisposable
                     current.GameName, current.Phase.ToString(), current.BytesDone, current.BytesTotal,
                     current.StartedAtUtc, current.Index, current.Total, current.CancelRequested),
                 recent,
-                run is null ? null : new SyncRunDto(
+                FilesChangedAt: SaveFolderChanges.Snapshot(),
+                LastRun: run is null ? null : new SyncRunDto(
                     run.FinishedAtUtc, run.Games, run.Uploaded, run.AlreadyCurrent, run.Conflicts,
                     run.Failed, run.BytesSent, run.Cancelled, run.Pulled, run.Queued, run.Unreachable, run.HeldForDlc,
                     run.HeldEmptied));
@@ -1765,7 +1766,7 @@ public sealed class AgentApiServer : IDisposable
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
 
-        // The game page's "Save files on this PC": every file of every folder here, each compared with
+        // The game page's "Save files on this device": every file of every folder here, each compared with
         // the server's head by SHA-256 (tasks/save-file-trees Phase 3). Hashes the whole save like
         // sync-status, off the request thread; asked for when the page opens or on Refresh, never polled.
         // An unreachable server is an answer (no states), not an error.
@@ -2712,8 +2713,11 @@ public sealed record ActivitySnapshotDto(
     int Index = 0, int Total = 0, bool CancelRequested = false);
 public sealed record ActivityLogEntryDto(DateTime TimestampUtc, string Message);
 /// <param name="LastRun">What the most recent Sync all did, until the next one begins; null before any.</param>
+/// <param name="FilesChangedAt">Per game, when its save files here last changed or were last synced (<see cref="SaveFolderChanges"/>):
+/// the game page reloads its file tree when its game's entry moves.</param>
 public sealed record ActivityDto(
-    ActivitySnapshotDto Current, ActivityLogEntryDto[] Recent, SyncRunDto? LastRun = null);
+    ActivitySnapshotDto Current, ActivityLogEntryDto[] Recent, SyncRunDto? LastRun = null,
+    IReadOnlyDictionary<Guid, DateTime>? FilesChangedAt = null);
 /// <param name="Failed">Pushes that were refused or could not run. A save waiting in the offline queue
 /// is <paramref name="Queued"/>, and a game the server could not be asked about is <paramref name="Unreachable"/>.</param>
 /// <param name="HeldForDlc">Games whose newer save was not pulled because it needs DLC this machine lacks.</param>

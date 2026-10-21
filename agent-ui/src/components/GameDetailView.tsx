@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import type { Conflict, DlcCheck, EmptiedHold, GameState, GameSyncMode, SaveVersion, SyncStatus, TrackedGame, View } from '../types'
 import { api } from '../api'
 import { formatAgo, formatBytes, formatDateTime } from '../format'
-import { refreshActivity, useActivityBusy } from '../useActivity'
+import { refreshActivity, useActivityBusy, useFilesChangedAt } from '../useActivity'
 import { PadGlyph } from '../gamepad/PadGlyph'
 import { GameArt } from './GameArt'
 import { GameManagement } from './GameManagement'
@@ -91,6 +91,17 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   }, [game.id])
 
   useEffect(() => { setState(null); setCheck(null); setEmuTab(null); load() }, [load])
+
+  // The agent's word that this game's files here changed, or that a push, pull or hold ran for it from anywhere (the
+  // folder watcher, Sync all, the launch gate, another surface): everything a sync from this page refreshes follows.
+  const changedAt = useFilesChangedAt(game.id)
+  const seenChange = useRef(changedAt)
+  useEffect(() => {
+    if (changedAt === seenChange.current) return
+    seenChange.current = changedAt
+    setSyncCount(n => n + 1)
+    load()
+  }, [changedAt, load])
 
   // What the page needs to point at Emulator settings: packs missing here, and other machines asking for this one's.
   useEffect(() => {

@@ -37,9 +37,11 @@ async function fetchOnce() {
       current: prev && same(prev.current, next.current) ? prev.current : next.current,
       recent: prev && same(prev.recent, next.recent) ? prev.recent : next.recent,
       lastRun: prev && same(prev.lastRun, next.lastRun) ? prev.lastRun : next.lastRun,
+      filesChangedAt: prev && same(prev.filesChangedAt, next.filesChangedAt) ? prev.filesChangedAt : next.filesChangedAt,
     }
     snapshot = merged
-    if (!prev || merged.current !== prev.current || merged.recent !== prev.recent || merged.lastRun !== prev.lastRun) {
+    if (!prev || merged.current !== prev.current || merged.recent !== prev.recent || merged.lastRun !== prev.lastRun
+        || merged.filesChangedAt !== prev.filesChangedAt) {
       listeners.forEach(l => l())
     }
   } catch {
@@ -104,4 +106,10 @@ export function useActivityLastRun(): Activity['lastRun'] {
 /** The rolling history, newest first. Unchanged by a progress tick. */
 export function useActivityRecent(): Activity['recent'] | undefined {
   return useSyncExternalStore(subscribe, () => snapshot?.recent)
+}
+
+/** When this game's save files here last changed or were last synced — a string, so only a move of THIS game's
+ *  entry re-renders the caller. */
+export function useFilesChangedAt(gameId: string): string | undefined {
+  return useSyncExternalStore(subscribe, () => snapshot?.filesChangedAt?.[gameId] ?? undefined)
 }

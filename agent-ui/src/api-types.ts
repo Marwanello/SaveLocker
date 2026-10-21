@@ -3815,6 +3815,9 @@ export interface components {
             current: components["schemas"]["ActivitySnapshotDto"];
             recent: components["schemas"]["ActivityLogEntryDto"][];
             lastRun?: null | components["schemas"]["SyncRunDto"];
+            filesChangedAt?: null | {
+                [key: string]: string;
+            };
         };
         ActivityLogEntryDto: {
             /** Format: date-time */
