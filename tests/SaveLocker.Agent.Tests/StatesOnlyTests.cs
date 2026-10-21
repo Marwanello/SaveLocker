@@ -284,4 +284,22 @@ public sealed class StatesOnlyTests : IDisposable
         Touch("cards/SLES-02238_1.sav", "played");
         Assert.Null(DuckStationSaves.SyncedHashWithCard(game, _root));
     }
+
+    [Fact]
+    public void The_card_here_is_written_off_only_once_the_fleets_head_holds_one()
+    {
+        const string t = "Tomb Raider - The Last Revelation";
+        var game = new TrackedGame { GameId = Guid.NewGuid(), Name = t, IncludeGlobs = [.. DuckStationSaves.StatesOnlyCardGlobsFor(t)] };
+        static HeadFilesDto Head(params string[] paths) =>
+            new(null, [new HeadFolderDto(SaveRoot.PrimaryKey, [.. paths.Select(p => new HeadFileDto(p, 1, "00"))])]);
+
+        // The machine that widened the scope has not pushed its card: a pull now would delete the only one here.
+        Assert.False(DuckStationSaves.FleetHasCard(game, null));
+        Assert.False(DuckStationSaves.FleetHasCard(game, Head()));
+        Assert.False(DuckStationSaves.FleetHasCard(game, Head("Tomb Raider II (Europe)_1.mcd", $"sub/{t} (Europe)_1.mcd")));
+
+        Assert.True(DuckStationSaves.FleetHasCard(game, Head($"{t} (Europe, Australia)_1.mcd")));
+        Assert.False(DuckStationSaves.FleetHasCard(
+            new TrackedGame { Name = t, IncludeGlobs = [.. DuckStationSaves.SaveGlobsFor(t)] }, Head($"{t} (Europe)_1.mcd")));
+    }
 }

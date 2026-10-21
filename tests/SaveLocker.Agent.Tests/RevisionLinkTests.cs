@@ -31,6 +31,7 @@ public sealed class RevisionLinkTests
     [InlineData(Usa, "Metroid Prime - Hunters (Europe)", false)]
     [InlineData(Usa, "Metroid Prime - Hunters (USA) (Beta)", false)]
     [InlineData(Usa, "Metroid Prime - Hunters - First Hunt (USA)", false)]
+    [InlineData(Usa, "Metroid Prime - Hunters (USA) (Revenge)", false)]
     public void A_revision_is_the_same_release_and_a_region_or_beta_is_not(string a, string b, bool same) =>
         Assert.Equal(same, RomNames.SameRelease(a, b));
 

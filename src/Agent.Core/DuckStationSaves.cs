@@ -202,6 +202,18 @@ public static partial class DuckStationSaves
         return SaveArchive.HashDirectory(withoutCard, game.ExcludeGlobs) == game.LastSyncedHash ? full : null;
     }
 
+    /// <summary>
+    /// Does the fleet's head hold a region-named card of the scope's title (<see cref="SyncedHashWithCard"/>)? Only then is
+    /// this machine's own card replaced by a pull: until the machine that widened the scope has pushed its card, a pull
+    /// would delete the card here with nothing to put in its place.
+    /// </summary>
+    public static bool FleetHasCard(TrackedGame game, HeadFilesDto? head) =>
+        head is not null && game.IncludeGlobs.Count == 4 && OldCardTitle(game.IncludeGlobs.Take(2).ToList()) is { } title &&
+        head.Folders.Where(f => f.Key == SaveRoot.PrimaryKey).SelectMany(f => f.Files).Any(f =>
+            !f.Path.Contains('/') && f.Path.Length >= title.Length + 9 &&
+            f.Path.StartsWith(title + " (", StringComparison.OrdinalIgnoreCase) &&
+            (f.Path.EndsWith(")_1.mcd", StringComparison.OrdinalIgnoreCase) || f.Path.EndsWith(")_2.mcd", StringComparison.OrdinalIgnoreCase)));
+
     private static string? OldCardTitle(IReadOnlyList<string> globs) =>
         globs.Count == 2 && globs[0].EndsWith("_1.mcd", StringComparison.OrdinalIgnoreCase) && globs[0][..^6] is { Length: > 0 } title &&
         !title.Contains('*') && !title.Contains('(') && globs.SequenceEqual(SaveGlobsFor(title), StringComparer.OrdinalIgnoreCase)

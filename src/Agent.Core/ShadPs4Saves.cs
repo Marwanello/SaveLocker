@@ -83,7 +83,7 @@ public static partial class ShadPs4Saves
     private static string Marks(string title) =>
         Regex.Replace(title.Replace("™", "").Replace("®", "").Replace("©", ""), @"\s+", " ").Trim();
 
-    [GeneratedRegex(@"[\s\-:]*(?:\((?:EU|US|USA|JP|JPN|ASIA|EUR)\)|save\s*data|savedata)$",
+    [GeneratedRegex(@"[\s\-:]*(?:\((?:EU|US|USA|JP|JPN|ASIA|EUR)\)|save\s*data)$",
         RegexOptions.IgnoreCase)]
     private static partial Regex SaveLabel();
 

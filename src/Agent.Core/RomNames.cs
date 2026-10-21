@@ -79,7 +79,8 @@ public static partial class RomNames
     [GeneratedRegex(@"\[[^\]]*\]")]
     private static partial Regex Brackets();
 
-    [GeneratedRegex(@"^(?:Rev\s*[\w.]+|v\d[\w.]*)$", RegexOptions.IgnoreCase)]
+    // "Rev 1", "Rev A" — the space keeps a word out ("(Revenge)").
+    [GeneratedRegex(@"^(?:Rev\s+[\w.]+|v\d[\w.]*)$", RegexOptions.IgnoreCase)]
     private static partial Regex Revision();
 
     [GeneratedRegex(@"^(?:Beta|Proto|Demo|Sample|Prototype)(?:\s*\d+)?$", RegexOptions.IgnoreCase)]

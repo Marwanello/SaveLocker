@@ -487,13 +487,19 @@ public sealed class CommandPoller : IDisposable
         }
 
         // Another machine took in a DuckStation card the scope had missed, and pushes it. This machine's own copy of that
-        // card was never synced, so it is not an edit to push over it: the pull brings the fleet's. Checked once per scope.
-        if (!_cardPushes.Contains(local.GameId) && _cardChecked.Add(local.GameId) &&
-            DuckStationSaves.SyncedHashWithCard(local, _config.StateDir) is { } synced)
+        // card was never synced, so it is not an edit to push over it: the pull brings the fleet's — once the fleet has one.
+        // Until then it is asked again each poll; the answer is final once it is no repair or the head holds the card.
+        if (!_cardPushes.Contains(local.GameId) && !_cardChecked.Contains(local.GameId))
         {
-            local.LastSyncedHash = synced;
-            _config.SaveGameSyncState(local);
-            AgentLogger.Log($"[{local.Name}] its scope now takes DuckStation's region-named card; the fleet's copy will be pulled.");
+            if (DuckStationSaves.SyncedHashWithCard(local, _config.StateDir) is not { } synced)
+                _cardChecked.Add(local.GameId);
+            else if (DuckStationSaves.FleetHasCard(local, await HeadFilesOrNullAsync(local.GameId)))
+            {
+                _cardChecked.Add(local.GameId);
+                local.LastSyncedHash = synced;
+                _config.SaveGameSyncState(local);
+                AgentLogger.Log($"[{local.Name}] its scope now takes DuckStation's region-named card; the fleet's copy will be pulled.");
+            }
         }
 
         var serverPaths = sg.ExtraPaths ?? Array.Empty<SavePathDto>();
@@ -835,8 +841,9 @@ public sealed class CommandPoller : IDisposable
                     : $"Mapped '{row.Name}' to {row.SuggestedSaveDir}, where this machine saved it.");
             _onGamesChanged();
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        catch (Exception ex)
         {
+            // Never thrown on to the tick: it would skip the dashboard's commands that follow, once a minute for good.
             AgentLogger.LogException("CommandPoller.SetUpEmulatorGames", ex);
         }
     }
@@ -849,9 +856,18 @@ public sealed class CommandPoller : IDisposable
     private readonly HashSet<Guid> _cardPushes = [];
     private readonly HashSet<Guid> _cardChecked = [];
 
+    private readonly HashSet<Guid> _cardRefused = [];
+
+    private async Task<HeadFilesDto?> HeadFilesOrNullAsync(Guid gameId)
+    {
+        try { return await _api().GetHeadFilesAsync(gameId); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return null; }
+    }
+
     private async Task RepairDuckStationCardsAsync()
     {
-        foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && EmulatorProcesses.EmulatorsOf(g).Contains("DuckStation")).ToList())
+        foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && !_cardRefused.Contains(g.GameId) &&
+                     EmulatorProcesses.EmulatorsOf(g).Contains(DuckStationSaves.EmulatorName, StringComparer.OrdinalIgnoreCase)).ToList())
         {
             if (DuckStationSaves.MissingCardGlobs(game.IncludeGlobs, game.SaveDirectory) is not { } missing) continue;
             try
@@ -864,8 +880,11 @@ public sealed class CommandPoller : IDisposable
                 AgentLogger.Log($"[{game.Name}] its scope now takes DuckStation's region-named card ({string.Join(", ", added)}); pushing it.");
                 await _engine().PushAsync(game);
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+            catch (Exception ex)
             {
+                // A scope the server refuses stays refused: asking again every poll only fills the log.
+                if (ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.BadRequest }) _cardRefused.Add(game.GameId);
+                // Never thrown on to the tick: it would skip the dashboard's commands that follow.
                 AgentLogger.LogException($"CommandPoller.RepairDuckStationCards '{game.Name}'", ex);
             }
         }

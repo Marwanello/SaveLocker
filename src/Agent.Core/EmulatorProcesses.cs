@@ -15,10 +15,15 @@ namespace SaveLocker.Agent;
 /// (<c>Eden.AppImage</c>), a build (<c>pcsx2-qtx64-avx2</c>, <c>duckstation-qt-x64-ReleaseLTCG</c>), a front end
 /// (<c>yuzu-cmd</c>) — never a longer word (<c>EdenSync</c>, <c>xenia_manager</c> for Xenia, whose row is exact).
 /// </para>
+/// <para>
+/// <see cref="Row.WindowsNames"/> are a Windows program's, too common a word to take bare off Windows: KDE's file manager
+/// is <c>dolphin</c> and the Android SDK's is <c>emulator</c>. Elsewhere they match only as the <c>.exe</c> Wine or Proton
+/// runs, or its first 15 characters.
+/// </para>
 /// </summary>
 public static class EmulatorProcesses
 {
-    public sealed record Row(string Emulator, IReadOnlyList<string> Names, bool Suffixed = true);
+    public sealed record Row(string Emulator, IReadOnlyList<string> Names, bool Suffixed = true, IReadOnlyList<string>? WindowsNames = null);
 
     public static readonly IReadOnlyList<Row> Rows =
     [
@@ -26,13 +31,13 @@ public static class EmulatorProcesses
         new(MelonDsSaves.EmulatorName, ["melonds"]),
         new(SupermodelSaves.EmulatorName, ["supermodel"]),
         // Model 2 Emulator is emulator.exe (or emulator_multicpu.exe) on Windows, and the same under Proton on the Deck.
-        new(Model2Saves.EmulatorName, ["emulator", "emulator_multicpu"], Suffixed: false),
+        new(Model2Saves.EmulatorName, [], Suffixed: false, WindowsNames: ["emulator", "emulator_multicpu"]),
         new(ScummVmSaves.EmulatorName, ["scummvm"]),
         new(Pcsx2Saves.EmulatorName, ["pcsx2"]),
         new(DuckStationSaves.EmulatorName, ["duckstation"]),
         // EmuDeck runs Dolphin.exe on Windows and the dolphin-emu Flatpak on Linux; its PrimeHack is a Dolphin.exe too.
-        new(DolphinSaves.EmulatorName, ["dolphin", "dolphin-emu"]),
-        new(DolphinSaves.PrimeHackName, ["primehack", "dolphin", "dolphin-emu"]),
+        new(DolphinSaves.EmulatorName, ["dolphin-emu"], WindowsNames: ["dolphin"]),
+        new(DolphinSaves.PrimeHackName, ["primehack", "dolphin-emu"], WindowsNames: ["dolphin"]),
         new(PpssppSaves.EmulatorName, ["ppsspp", "ppssppwindows64", "ppssppwindows", "ppssppsdl", "ppssppqt"]),
         new(Rpcs3Saves.EmulatorName, ["rpcs3"]),
         new(Vita3KSaves.EmulatorName, ["vita3k"]),
@@ -45,19 +50,28 @@ public static class EmulatorProcesses
     ];
 
     /// <summary>Is <paramref name="process"/> (a process name as .NET reads it) one of <paramref name="emulator"/>'s?</summary>
-    public static bool IsProcessOf(string process, string emulator) =>
-        Rows.Where(r => r.Emulator.Equals(emulator, StringComparison.OrdinalIgnoreCase))
-            .Any(r => r.Names.Any(n => Matches(process, n, r.Suffixed)));
+    public static bool IsProcessOf(string process, string emulator) => IsProcessOf(process, emulator, OperatingSystem.IsWindows());
 
-    /// <summary>Does <paramref name="process"/> match the process name <paramref name="name"/> (lower case, no <c>.exe</c>)?</summary>
-    public static bool Matches(string process, string name, bool suffixed)
+    /// <summary><see cref="IsProcessOf(string, string)"/> as it reads on Windows, or off it.</summary>
+    internal static bool IsProcessOf(string process, string emulator, bool windows) =>
+        Rows.Where(r => r.Emulator.Equals(emulator, StringComparison.OrdinalIgnoreCase))
+            .Any(r => r.Names.Any(n => Matches(process, n, r.Suffixed)) ||
+                      (r.WindowsNames ?? []).Any(n => Matches(process, n, r.Suffixed, exeOnly: !windows)));
+
+    /// <summary>Does <paramref name="process"/> match the process name <paramref name="name"/> (lower case, no <c>.exe</c>)?
+    /// <paramref name="exeOnly"/>: only as <c>&lt;name&gt;.exe</c>, or its first 15 characters.</summary>
+    public static bool Matches(string process, string name, bool suffixed, bool exeOnly = false)
     {
         var p = process.ToLowerInvariant();
-        var bare = p.EndsWith(".exe", StringComparison.Ordinal) ? p[..^4] : p;
-        if (bare == name) return true;
-        if (suffixed && bare.Length > name.Length && bare.StartsWith(name, StringComparison.Ordinal) && bare[name.Length] is '.' or '-' or '_')
-            return true;
-        return p.Length == 15 && ((name + ".exe").StartsWith(p, StringComparison.Ordinal) || name.StartsWith(p, StringComparison.Ordinal));
+        var exe = p.EndsWith(".exe", StringComparison.Ordinal);
+        var bare = exe ? p[..^4] : p;
+        if (!exeOnly || exe)
+        {
+            if (bare == name) return true;
+            if (suffixed && bare.Length > name.Length && bare.StartsWith(name, StringComparison.Ordinal) && bare[name.Length] is '.' or '-' or '_')
+                return true;
+        }
+        return p.Length == 15 && ((name + ".exe").StartsWith(p, StringComparison.Ordinal) || (!exeOnly && name.StartsWith(p, StringComparison.Ordinal)));
     }
 
     /// <summary>The emulators a game's saves come from: how this machine found it, and every emulator the server says

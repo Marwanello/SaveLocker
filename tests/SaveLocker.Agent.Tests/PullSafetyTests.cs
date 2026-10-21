@@ -172,8 +172,22 @@ public sealed class PullSafetyTests : IDisposable
     [InlineData("xenia_manager", "Xenia", false)]
     [InlineData("eden.AppImage", "Eden", true)]
     [InlineData("EdenSync", "Eden", false)]
-    public void An_emulator_is_known_by_its_process_on_either_os(string process, string emulator, bool its) =>
-        Assert.Equal(its, EmulatorProcesses.IsProcessOf(process, emulator));
+    public void An_emulator_is_known_by_its_process_on_either_os(string process, string emulator, bool its)
+    {
+        Assert.Equal(its, EmulatorProcesses.IsProcessOf(process, emulator, windows: true));
+        Assert.Equal(its, EmulatorProcesses.IsProcessOf(process, emulator, windows: false));
+    }
+
+    [Theory]
+    [InlineData("dolphin", "Dolphin")]            // KDE's file manager
+    [InlineData("dolphin", "PrimeHack")]
+    [InlineData("emulator", "Model 2")]           // the Android SDK's emulator
+    public void A_common_word_is_an_emulator_off_windows_only_as_its_exe(string process, string emulator)
+    {
+        Assert.True(EmulatorProcesses.IsProcessOf(process, emulator, windows: true));
+        Assert.False(EmulatorProcesses.IsProcessOf(process, emulator, windows: false));
+        Assert.True(EmulatorProcesses.IsProcessOf(process + ".exe", emulator, windows: false));
+    }
 
     [Fact]
     public void A_pull_waits_while_the_games_emulator_runs_and_only_that_emulator()
