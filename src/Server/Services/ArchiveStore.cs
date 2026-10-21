@@ -41,6 +41,14 @@ public sealed class CorruptUploadException(Guid sessionId, string detail)
                 "Nothing was published; the agent's next attempt starts a fresh session.");
 
 /// <summary>
+/// An unforced push carried no files while the head still has some. The archive is never published.
+/// </summary>
+public sealed class EmptySaveRefusedException(string gameName)
+    : Exception($"Refused an empty save of '{gameName}': every file is gone from that machine's save folder, " +
+                "while the latest version still has files. Nothing was published. To delete the saves on every " +
+                "machine, force-push it.");
+
+/// <summary>
 /// Stores save-game archive files on disk (an unRAID share volume in production).
 /// Layout: {root}/{gameId}/{versionId}.zip
 /// <para>

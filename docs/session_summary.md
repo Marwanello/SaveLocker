@@ -1,88 +1,75 @@
-# Session summary — 2026-10-18/19 — Emulator saves Groups G, I and J (PR #78)
+# Session summary — 2026-10-20/21 — Save safety (PR #82) and the Decky hold UI (Decky PR #8)
 
 Standalone: the facts below do not need the rest of the vault.
 
-**PR:** [#78 on `Marwanello/SaveLocker`](https://github.com/Marwanello/SaveLocker/pull/78), branch `emulator-saves-group-.g-i-j`,
-base `main`. One commit per phase: `d07d43d` Phase 19, `06dd0b6` Phase 20, `c3fde8f` Phase 17 (+ merge), `d2f3802` Phase 21,
-then a testenv fixture commit and this Docs commit. Agent tests **721, all passing**; `web` and `agent-ui` build and lint clean.
+**PRs:**
+- [Marwanello/SaveLocker#82](https://github.com/Marwanello/SaveLocker/pull/82), branch `save-safety-empty-hold-and-excludes`,
+  base `main`. Commits: `a0b6472` excluded files kept on pull, `36c86d8` emptied-folder hold, `2e2abee` Docs, `8aa4c38` merge
+  of `main`, `6b4844d` the game page follows its save files.
+- [Marwanello/SaveLocker-Decky#8](https://github.com/Marwanello/SaveLocker-Decky/pull/8), branch `empty-save-hold`, base `main`.
+  Commit `ae4ab9f`. Needs #82's agent (the two local API routes below).
 
-## Decisions taken with the maintainer before building
-- Phase 17: **same emulator only**; a **file-by-file name list** per machine that **grows by itself** for new files; links made
-  **from the agent only**; a **clash refuses the link**; the **server merge built now**, from the **console only**.
-- Phase 20: a shortcut is the emulator's game when it starts a **known emulator/launcher with a ROM path** (SRM's records count
-  too); a ROM with no save is **listed as "No save here yet"** where its save's place is known; the Deck was captured read-only.
-- Decided here: Cemu, RPCS3 and ScummVM use their console's glyph until their logos' terms are checked; PrimeHack uses Dolphin's.
+Tasks done: `tasks/empty-save-hold/summary.md` and `tasks/keep-excluded-files-on-pull/summary.md` (moved to `logs/` with a
+`2026-10-20_` prefix).
+
+## Decisions taken with the maintainer
+- A held game blocks **both** push and pull.
+- Where the hold shows: agent UI, `doctor`, the OS notification, the console's bell, and the Decky plugin. Not Game Mode.
+- The server refuses an empty upload too (a backstop for older agents).
+- An old archive that still holds files now excluded: those files are skipped on restore; the archive is not rewritten.
 
 ## What was built — in plain terms
-- **States-only games (Group I).** If you've only ever used save states in RetroArch, melonDS, PCSX2, DuckStation, Dolphin,
-  PrimeHack or Azahar, the game now shows in Add games ("Save states only so far"). Adding it syncs the states now and the
-  real save later, as soon as the game makes one.
-- **Steam ROM Manager shortcuts (Group G, Phase 20).** EmuDeck puts every ROM into Steam as a shortcut; SaveLocker used to
-  list those as separate games (Forza Horizon twice on the Deck). Now the shortcut is recognised as the emulator's game: it
-  isn't listed on its own, and launching the game from Steam syncs it before and after you play. A game you already track
-  twice gets a "Same game as …" notice with **Stop tracking this copy**.
-- **Different file names (Group G, Phase 17).** If one machine has a different dump of a ROM (e.g. "(Rev 1)"), you can now
-  link its save to the same server game: Add games → **Change** → *Different file names*. Each machine keeps its own file
-  names; SaveLocker renames on the way to and from the server. The first sync asks which save to keep.
-- **Merging two games (Group G).** On a game's console page, **Merge** folds a duplicate into another game after a preview
-  and typing its name. Its old saves are kept as read-only history; machines move over by themselves where possible.
-- **Icons (Group J).** Every emulator and console now has a small icon in the console, the agent's pages and the Deck's
-  Add games list.
+- **Your own files survive a pull.** If a game excludes `settings.ini` or `*.bak`, pulling the cloud's save used to delete
+  those files here, because they weren't in the archive. A pull now leaves every excluded file alone.
+- **An emptied save folder is held, not synced.** If every save file disappears from a folder that had them (an uninstaller,
+  a game reset, the wrong folder cleared), SaveLocker used to push that empty folder, and every other machine's next pull
+  deleted its saves. Now the game stops syncing on that machine and asks: **Restore here** (bring the cloud's save back) or
+  **Delete everywhere** (asks twice). Other machines keep their saves meanwhile. If the files come back by themselves, the
+  hold lifts.
+- **The server double-checks.** An older agent that doesn't know about the hold still can't replace a save that has files
+  with an empty one: the server refuses it.
+- **On the Deck (Decky).** Each held game gets a row in the Quick Access Menu that opens the two choices; the full-screen page
+  lists them under *Save files gone*.
+- **The game page updates by itself.** In the agent, a game's page now follows changes on disk and syncs that happen in the
+  background (deleted or new files, the automatic push, a hold) within seconds, without going back to the game list. The
+  card is renamed *Save files on this device*.
 
-## What was built — technically
-- **Phase 19:** `RomSaveRules.StateRom` (RetroArch `<rom>.state*`, melonDS `.ml1–8`, per-core state folders) in `RomSaves`;
-  `Pcsx2Saves` (`<serial> (<CRC>).NN.p2s`, first folder card, `SavePrefix` BA/BE/BI); `DuckStationSaves` (`<serial>_N.sav`,
-  card under the bundled table's title or the serial); `DolphinSaves.ForGameId` (GC Slot A region folder / Wii `title`);
-  `AzaharSaves` (`<program ID>.NN.cst`). Candidates carry `StatesOnly`. Tests: `StatesOnlyTests`, `GroupISyncTests`.
-- **Phase 20:** `SrmShortcuts` — `Recognize` (raw `Exe` + launch options, nested quotes, Xenia `Z:` paths; emulator by
-  launcher/Flatpak name, never the ROM's), `SrmAppIds` (`userdata/*/config/addedItemsV2.json`, app ID = key >> 32), `Apply`
-  (drops the shortcut row, puts `ShortcutAppIds`/`SteamAppId` on the emulator row, matched by Switch title ID, NCCH program ID,
-  GC/Wii disc ID incl. `.wbfs`/`.rvz` headers, ROM name, else cleaned name), `NoSaveYet`, `Backfill`. `SteamShortcut` keeps
-  `RawExe`/`LaunchOptions`/`Tags`. `TrackedGame.ShortcutAppIds` + `LaunchesUnder` (launch wrapper, launch-option rows).
-  `TrackedGameDto.SameGameAs`, `doctor` check. Tests: `SrmShortcutTests` (the Deck's shapes verbatim + gated full capture).
-- **Phase 17:** `Shared/FileNames` (`FileNameDto`, `ToServer`/`ToLocal`/`Derive`/`Validate`); `SaveRoot.Names`; `SaveArchive`
-  swaps in `EnumerateItems` (scope/hash/manifest/archive under server names), delta subsets and restore (local names written,
-  delete pass mapped back). Agent: `TrackedGame.OwnFileNames`, `OwnFileNames.Grow` on every push/pull, `EnrollLinks.RenamePairs`
-  + choice `rename`, `Enroller` join path + clash refusals, `TrackedFor` via server names. Server: `PUT
-  /api/agent/games/{id}/file-names` (`MachineSavePath.FileNames`); merge `GET /api/games/{id}/merge-preview?into=`, `POST
-  /api/games/{id}/merge` (`SyncService.MergeGamesAsync`: versions moved, protected, `SaveVersion.MergedFrom`, `SetHeadAsync`
-  refuses them; same-layout machines' paths/sources moved; `Game.MergedGameIds`), poller re-points and clears an opt-out
-  (`SetTracked`). Migration `AddFileNamesAndMerge`. UIs: agent game page lists own names; console machine rows list them,
-  `MergeCard`, merged versions labelled. Tests: `FileNamesTests`, `GroupGSyncTests` (mutation-checked).
-- **Phase 21:** `web/scripts/build-platform-icons.mjs` (`icons:build`/`icons:check`) → `platformIcons.generated.ts` in both
-  UIs + `src/Agent.Linux/Ui/EmulatorIcons.g.cs`; `PlatformIcon` component + `platformIcon.ts` helpers; `Icons.Emulator` on the
-  Deck; `SvgPath` gained S/Q/T and elliptical/rotated arcs. Credits `NOTICE-icons.md`.
+## What was built — technical
+- `SaveArchive.RestoreArchive(…, excludeGlobs)` (both overloads): staged files and the delete pass skip `FilterExcluded`
+  matches; `SyncEngine` passes `game.ExcludeGlobs` on pull and `CopyFolder`.
+- `EmptyFolderHold.cs` (`EmptyFolderHoldStore`, `emptied-holds.json`, `AgentStateLock`); `SyncEngine.HoldIfEmptied` in
+  `PushCoreAsync` and `PullAsync` (unforced only), cleared by `MarkSynced`; `IsEmptied`, `AnswerEmptiedAsync`;
+  `PullOutcome.HeldEmptied`, `SyncRunSummary.HeldEmptied`, event `savedir.emptied`, launch gate `ProceedSyncPaused`.
+- Local API: `GET /api/holds/emptied` → `EmptiedHoldDto[]`; `POST /api/games/{id}/emptied-hold` `{ action: "restore-here" |
+  "delete-everywhere" }`. CLI `emptied-hold`. `Doctor.ReportEmptiedHolds`. Notice in `Notifications`.
+- Server: `SyncService.IngestAsync` throws `EmptySaveRefusedException` for an unforced empty archive over a non-empty head →
+  409 on the upload and complete routes.
+- Agent UI: `EmptiedHoldBanner`, App badge/header, Conflicts and game page. Console: `NotificationsMenu` **Restore there**.
+- Live page: `SaveFolderChanges` (in memory) touched by the tray's and daemon's `FolderWatcher` callbacks and in `PushAsync`/
+  `PullAsync`'s `finally`; `ActivityDto.FilesChangedAt`; `useFilesChangedAt` in `useActivity.ts`; `GameDetailView` bumps its
+  refresh key and reloads state when its game's entry moves. `agent-ui/src/api-types.ts` regenerated (additions only).
+- Decky: `src/emptiedHolds.tsx` (`useEmptiedHolds` polled each minute, `EmptiedHoldModal`, `EmptiedHolds` section),
+  `main.py` `emptied_holds` / `answer_emptied_hold`, a QAM `NavRow` per hold in `index.tsx`, the section in `fullPage.tsx`.
 
-## How to verify with testenv (step by step)
-1. `.\tests\testenv.ps1 sync`, then `.\tests\testenv.ps1 build` (the WSL/Deck agents build from the WSL clone).
-2. **Start from a clean rig:** the Windows test agent still maps Animal Crossing to the real `D:\Emulation\...` from the
-   Group F check, and starting it could pull the test console's copy over it. Run `.\tests\testenv.ps1 clean` first (it
-   deletes only the rig's own state), then step 1's `build` again.
-3. `.\tests\testenv.ps1 emu-fixture` — from a normal PowerShell terminal (from the Claude app the WSL half never reaches WSL;
-   see Gotchas → testenv).
-4. `.\tests\testenv.ps1 up` (console :5080, Windows agent :5188, WSL agent :5187).
-5. **Group I:** on both agents, Add games → All → *Super Mario World* says "Save states only so far". Add it on Windows, Sync,
-   then add it on WSL: it joins the same game and WSL gets Windows' `.state1`.
-6. **Group G, own file names:** on Windows add *Earthbound* (`Earthbound (USA).srm`) and Sync. On WSL, Add games → *Earthbound*
-   → **Change** → pick Windows' "Earthbound" (*Different file names*) → Add. Sync on WSL: a conflict appears — keep the cloud's.
-   WSL's `Earthbound (USA) (Rev 1).srm` now has Windows' content; WSL's game page lists its own names; the console's game page
-   shows them under the WSL machine. Make a new state on WSL (`… (Rev 1).state3`), Sync, then Pull on Windows:
-   `Earthbound (USA).state3` appears.
-7. **Merge:** add *Zelda* on WSL with **Change → Keep it as its own game**, Sync. In the console open that copy → **Merge** →
-   pick the other Zelda → read the preview → type the name → Merge. Its version shows "From …" in the kept game's Versions
-   with no *Set as Latest*; WSL's agent shows the game under the kept name after its next poll.
-8. **Group J:** console Games → Group: Platform (console glyphs on headings, emulator icons on sub-headings), a game's source
-   and release chips, machine rows; agent Add games chips and rows, the Games wall (console badge), a Switch game's emulator
-   picker. `npm --prefix web run icons:check` → "54 icons, all drawn".
-9. **Group G, SRM shortcuts (Deck):** `.\tests\testenv.ps1 build -Only deck; up -Only deck` with the Deck awake. In Game Mode
-   Add games, *Forza Horizon* is listed once, as Xenia's game, with the Xenia icon. Add it, launch it from its Steam shortcut,
-   and check `agent.log` for `[run] launch: appid=2777482215` followed by the pull and, on exit, the push.
+## Verified
+- xUnit **792** passing. Hardening 45/45 (5 fail on `main`); health 51/51 (10 fail on `main`, where the other machine lost its
+  saves); local-api 131, agent 49, multipath 39, delta 33, concurrency 26, appearance 50.
+- Browser, scratch server + tray: the hold banner, header line, Restore here / Delete everywhere; the live page (files deleted
+  and added show within seconds, then *In sync* and a new Versions count after the watcher's push; the hold banner after
+  deleting every file, with nothing pushed).
 
-## Verified in this session
-Unit/integration tests (721); the Deck's real `shortcuts.vdf` through the recogniser; testenv console + WSL agent: the
-states-only row, icons in agent Add games and the console's grouped list/grid/source chips/machine rows, the merge preview.
-**Not verified here:** steps 6–7 between two agents (the Windows test agent was left down because of the real-save mapping),
-step 9 on the Deck (asleep), screenshots in the light theme.
+## Found in the maintainer's Deck test (2026-10-21)
+The Deck and WSL test agents were still on build `69b31f2` (Group H): both build from the WSL clone `~/SaveLocker`, which was
+never switched to this branch. The old Deck agent pushed the emptied folder; the new console refused it (409, shown only as
+"push failed"); its next sync pulled the three files back without a word. Nothing was lost, but the hold was never exercised.
+
+## Not verified
+`run-linux-tests`; the testenv pass with the Deck and WSL agents on this branch; the Decky plugin on a real Deck.
 
 ## Next
-Run steps 2–9, then merge PR #78. Group H (real-game checks) stays open.
+1. In WSL: `cd ~/SaveLocker && git fetch && git checkout save-safety-empty-hold-and-excludes && git pull`.
+2. `.\tests\testenv.ps1 build -Only linux; build -Only deck; build -Only windows`, then `up` for each; `status` shows the new
+   build on all three.
+3. Run PR #82's testenv steps (excluded files kept; emptied folder held; Restore here / Delete everywhere), including on the
+   Deck's QAM.
+4. Merge #82, then Decky #8.

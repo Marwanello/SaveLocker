@@ -1,8 +1,29 @@
 # A pull keeps this machine's excluded files — summary
 
-Seeded 2026-10-18 from the competitor gap analysis ([[logs/2026-10-18_competitor-gap-analysis]]). No plan
-file yet. **Priority: High** — files deleted without anyone asking; small fix. Found by reading the code;
-**not reproduced yet**, so step 1 is a test that should fail today.
+Seeded 2026-10-18 from the competitor gap analysis ([[logs/2026-10-18_competitor-gap-analysis]]).
+**Shipped 2026-10-20** on branch `save-safety-empty-hold-and-excludes` (commit `a0b6472`), with
+[[logs/2026-10-20_empty-save-hold/summary|empty-save-hold]].
+
+## Status
+
+| Phase | Status |
+|-------|--------|
+| 1. Test first (`run-hardening-tests` §10) | ✅ Shipped 2026-10-20 — reproduced: **5 checks fail on `main`**, 45/45 with the fix |
+| 2. Excludes into `RestoreArchive`, both `SyncEngine` call sites | ✅ Shipped 2026-10-20 |
+| 3. An old archive carrying a now-excluded file | ✅ Shipped 2026-10-20 — **skipped** (OpenSave's choice), recorded in [[Decisions]] |
+
+## Outcome
+
+- `SaveArchive.RestoreArchive` (both overloads) takes `excludeGlobs`. A file matching them is neither
+  deleted by the delete pass nor written from the archive. The matcher is `FilterExcluded`'s own
+  (`IsExcluded`, bare names match at any depth), applied to the archive name (`.savelocker/paths/<key>/`
+  prefix included), exactly what `EnumerateItems` filters on a push.
+- `SyncEngine` passes `game.ExcludeGlobs` (the server's effective list) at the pull and at `CopyFolder`
+  (an extra folder moved onto another). `SwitchCopies`' copy between two local emulator folders is
+  unchanged: it is not a pull.
+- The reverse case: in that one situation the pull sets the head's hash, the local hash (excludes
+  applied) differs, and the next push sends a version without the file. Intended, see [[Decisions]].
+- Not changed: `HasLocalData` (the pull's "un-pushed local changes" guard) still counts excluded files.
 
 ---
 
