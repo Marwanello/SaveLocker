@@ -389,6 +389,19 @@ session can judge an edge case, not to reopen the choice.
   (`Games.EmulatorKey`, `switch:<title ID>`, D2) and matches the key before the name; a same-named game of another
   title is never joined. On one machine with several Switch emulators, one copy syncs and the others are kept in
   step on request (the agent's Emulator settings), never silently.
+  <br>**Shown as one entry, 2026-10-20/21 (maintainer, tasks/multi-emulator-games):** a game saved with several
+  emulators is **one console and agent entry, with one tree (tab) per emulator**; sync still keeps the trees apart. This
+  changes how the rule above is displayed, not the rule. A console-side `GameTitle` groups the games (`Game.TitleId`)
+  and is never read by sync: existing pairs are grouped by a startup backfill and on every new emulator source, by the
+  name without its emulator suffix + console + region; a title takes its name and art from its oldest game; two trees
+  of one emulator may share a title (another dump). Split out by hand stays out (`Game.TitleLocked`).
+  <br>**Copying a save between emulators, 2026-10-21 (Phase 6, the mockup's defaults taken, open to revisit):** offered
+  only for pairs whose formats are known to match — a fixed table in code (`EmulatorSaveCopy`: melonDS `.sav` ⇄
+  RetroArch `.srm`, Dolphin ⇄ PrimeHack), not a manifest, so a pair is added only once someone has checked it. The copy
+  runs **on the server**: a new version of the target tree (target names, target's extra folders kept, hashed as an
+  agent hashes), made its Latest with the old Latest kept, then pulls queued. Server-side because it then needs no
+  device that has the target set up, and every device learns of it the way it learns of any new Latest. Offered from
+  both the agent and the console. Refused into an open conflict or a tree being played.
 - **A memory card every game of a console shares is never a game of its own** (2026-10-07, maintainer's choice,
   emulator-saves Group C). Restoring one game's version would restore every game on the card. Add games lists it
   greyed out with how to switch the emulator to a card per game (`ScanCandidate.NotSyncable`), the enroller refuses
