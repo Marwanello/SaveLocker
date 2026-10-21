@@ -1,3 +1,4 @@
+import { useTreeWord } from './treeContext';
 import { useEffect, useState } from 'react';
 import { api, errorText } from '../../api';
 import type { Conflict, Game, Version, VersionChanges } from '../../types';
@@ -37,6 +38,9 @@ type View = 'main' | 'backups';
  * (tasks/save-file-trees Phase 2, variant B). One request covers the whole list.
  */
 export function VersionsCard({ game, headId, versions, conflicts, loading, reloadVersions, onSetLatest, onRefresh }: Props) {
+  // Inside a title every action here is this emulator's tree only, and the confirm says so.
+  const tw = useTreeWord();
+  const only = tw ? ` Only the${tw} save changes; the other emulators’ are not touched.` : '';
   const [view, setView] = useState<View>('main');
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [changes, setChanges] = useState<Map<string, VersionChanges>>(new Map());
@@ -199,7 +203,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
                       <InlineConfirm
                         label="Set as Latest"
                         tone="primary"
-                        consequence={`Every machine that syncs ${game.name} is told to pull ${v.machineName}'s save from ${when(v.createdAt)}. One with unpushed local changes reports the pull as blocked instead of losing them.${conflicting.has(v.id) ? ' Its open conflict is resolved in its favour.' : ''}`}
+                        consequence={`Every machine that syncs ${game.name}${tw ? ` in${tw}` : ''} is told to pull ${v.machineName}'s save from ${when(v.createdAt)}. One with unpushed local changes reports the pull as blocked instead of losing them.${conflicting.has(v.id) ? ' Its open conflict is resolved in its favour.' : ''}${only}`}
                         confirmLabel={`Make ${shortId(v.id)} Latest`}
                         onConfirm={() => onSetLatest(v)}
                       />
@@ -219,7 +223,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
                       <InlineConfirm
                         label="Delete"
                         triggerVariant="quiet"
-                        consequence="Its archive is permanently removed from the server. Download it first if you might want it."
+                        consequence={`This${tw} version's archive is permanently removed from the server. Download it first if you might want it.`}
                         confirmLabel={`Delete ${shortId(v.id)}`}
                         onConfirm={() => remove(v)}
                       />

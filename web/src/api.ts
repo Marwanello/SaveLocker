@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, ArtSource, SgdbGame, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, ManifestRefreshSettings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MergePreview, MachineGameSource, GameContent, ContentTransfer, HandoverOverview, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
+import type { ArtKind, ArtOptionsPage, ArtSource, SgdbGame, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, ManifestRefreshSettings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MergePreview, TitleCandidate, MachineGameSource, GameContent, ContentTransfer, HandoverOverview, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -207,6 +207,13 @@ export const api = {
   setEnabled: (gameId: string, value: boolean) => request<void>(`/games/${gameId}/enabled?value=${value}`, { method: 'POST' }),
   deleteGame: (gameId: string) => request<void>(`/games/${gameId}`, { method: 'DELETE' }),
   /** What merging a game into another would do (tasks/emulator-saves Phase 17); nothing changes. */
+  /** Games "Group with" can add to this one's title (tasks/multi-emulator-games Phase 4). */
+  titleCandidates: (gameId: string) => request<TitleCandidate[]>(`/games/${gameId}/title/candidates`),
+  /** Group a game with another emulator's: one console entry, each keeping its own versions. */
+  joinTitle: (gameId: string, intoId: string) =>
+    request<void>(`/games/${gameId}/title/join?into=${encodeURIComponent(intoId)}`, { method: 'POST' }),
+  /** Take a game out of its title; it stays its own entry from then on. */
+  splitTitle: (gameId: string) => request<void>(`/games/${gameId}/title/split`, { method: 'POST' }),
   mergePreview: (gameId: string, intoId: string) =>
     request<MergePreview>(`/games/${gameId}/merge-preview?into=${encodeURIComponent(intoId)}`),
   /** Merge a game into another; `confirmName` is the merged game's name, typed. */

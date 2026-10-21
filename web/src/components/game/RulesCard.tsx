@@ -1,3 +1,4 @@
+import { useTreeWord } from './treeContext';
 import { useState } from 'react';
 import { api, errorText } from '../../api';
 import type { AgentHealth, Game, Machine } from '../../types';
@@ -46,6 +47,7 @@ const POLICY_OPTIONS = (['Manual', 'NewestWins', 'PreferMachine'] as const).map(
 /** plan.md Phase 10.5: Rules — the conflict policy and how many versions to keep, both edited in
  *  place; whether the game syncs at all; and deleting it, which names exactly what goes. */
 export function RulesCard({ game, machines, health, onRefresh }: Props) {
+  const tw = useTreeWord();
   const current = game.conflictPolicy ?? 'Manual';
   const currentPreferred = game.preferredMachineId ?? null;
   const currentKeep = game.retainVersions ?? null;
@@ -177,7 +179,7 @@ export function RulesCard({ game, machines, health, onRefresh }: Props) {
         <span className="text-[11.5px] text-dim">Removes it from the server, not from any machine.</span>
         <InlineConfirm
           label="Delete game"
-          consequence={`Deletes ${game.name}, every version of it and its history from the server. Each machine keeps its local save.`}
+          consequence={`Deletes ${game.name}, every version of it and its history from the server. Each machine keeps its local save.${tw ? ` Only the${tw} tree is deleted; the other emulators’ stay.` : ''}`}
           confirmLabel={`Delete ${game.name}`}
           onConfirm={remove}
         />
