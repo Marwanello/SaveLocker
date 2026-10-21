@@ -4332,3 +4332,51 @@ step 9 on the Deck (asleep), screenshots in the light theme.
 
 ### Next
 Run steps 2–9, then merge PR #78. Group H (real-game checks) stays open.
+
+## 2026-10-20/21 — Save safety: emptied-folder hold, excluded files kept on pull, a live game page (PR #82, Decky PR #8)
+
+**PRs:** [Marwanello/SaveLocker#82](https://github.com/Marwanello/SaveLocker/pull/82) (branch
+`save-safety-empty-hold-and-excludes`) and [Marwanello/SaveLocker-Decky#8](https://github.com/Marwanello/SaveLocker-Decky/pull/8)
+(branch `empty-save-hold`). Commits: `a0b6472` excludes, `36c86d8` hold, `2e2abee` Docs, `8aa4c38` merge of `main`,
+`6b4844d` live game page; Decky `ae4ab9f`.
+
+### Maintainer's calls
+- A held game blocks **both** push and pull (option A).
+- Surfaces: agent UI, `doctor`, the notification, and the Decky plugin (not Game Mode).
+- A server backstop: yes. Old archives that still hold now-excluded files: skipped on restore, not rewritten.
+
+### What was built
+- **Excluded files survive a pull.** `SaveArchive.RestoreArchive(…, excludeGlobs)` neither writes nor deletes a file the game's
+  exclude patterns match (bare names match at any depth); `SyncEngine` passes `game.ExcludeGlobs` on pull and on `CopyFolder`.
+- **Emptied-folder hold.** `EmptyFolderHoldStore` (`emptied-holds.json`, under `AgentStateLock`, the `DlcHoldStore` pattern):
+  when every save file vanishes from a folder that had them at its last sync, the game sits out every automatic push and pull
+  (`PullOutcome.HeldEmptied`, `SyncRunSummary.HeldEmptied`, event `savedir.emptied`, launch gate `ProceedSyncPaused`) until
+  **Restore here** (a forced pull) or **Delete everywhere** (a forced push), or the files come back. Local API
+  `GET /api/holds/emptied`, `POST /api/games/{id}/emptied-hold`; CLI `emptied-hold`; `doctor` lists holds; a notice.
+- **Server backstop.** `SyncService.IngestAsync` refuses (409, `EmptySaveRefusedException`) an unforced upload of an empty
+  archive over a head that has files — for agents that predate the hold.
+- **UIs.** Agent: `EmptiedHoldBanner` on Conflicts and the game page, the header's "held: save files gone", a badge. Console:
+  the notification with **Restore there** (a forced Pull command). Decky: `src/emptiedHolds.tsx` — a QAM row per hold opening
+  a modal (Restore here / Delete everywhere with a second confirm), a *Save files gone* section on the full page; `main.py`
+  `emptied_holds` / `answer_emptied_hold`.
+- **Live game page (2026-10-21, `6b4844d`).** Found in the maintainer's testenv pass: the game page loaded once and after its
+  own syncs, so files deleted on disk or a watcher push stayed stale until the page was reopened. `SaveFolderChanges` (in
+  memory) is touched by both hosts' folder watchers (after the 5 s quiet) and when any push or pull finishes; `/api/activity`
+  carries `filesChangedAt`, and `GameDetailView` reloads its state, versions, size and file tree when its game's entry moves.
+  The card is renamed **Save files on this device**.
+
+### The maintainer's Deck test (2026-10-21) — why it did not hold
+The Deck and WSL test agents were still on `69b31f2` (Group H): they build from the WSL clone, which was never switched to
+this branch. The old Deck agent pushed the emptied folder, the new console refused it (409, "push failed"), and its next sync
+pulled the three files back silently. Redeploy: check out the branch in `~/SaveLocker`, then `testenv build/up -Only linux`
+and `-Only deck`.
+
+### Verified
+xUnit **792**; hardening 45/45 (5 fail on `main`), health 51/51 (10 fail on `main`, and the other machine lost its saves),
+local-api 131, agent 49, multipath 39, delta 33, concurrency 26, appearance 50. Agent UI checked in the browser against a
+scratch server + tray: banner, header, Restore/Delete; the live page (delete/add files → *Deleted here*/*New here* within
+seconds, *In sync* and the Versions count after the watcher's push, the hold banner after deleting everything).
+**Not verified:** `run-linux-tests`, the testenv pass with the Deck/WSL agents on this branch, Decky on a real Deck.
+
+### Next
+Redeploy the WSL clone and the Deck on this branch, run the testenv steps (PR #82's description), then merge #82 and Decky #8.
