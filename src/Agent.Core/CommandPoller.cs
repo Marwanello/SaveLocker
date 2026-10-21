@@ -94,6 +94,8 @@ public sealed class CommandPoller : IDisposable
             _notices?.ObserveServer(true);
             await AnnounceFolderSuggestionsAsync();
             await UpdatePathCandidatesAsync();
+            await SetUpEmulatorGamesAsync();
+            await RepairDuckStationCardsAsync();
             // Independent of each other — RunCommandsAsync executes dashboard commands,
             // CheckConflictsAsync only reads _config.Games and hits its own endpoint — so run them
             // concurrently rather than paying their two round-trips back to back.
@@ -321,6 +323,12 @@ public sealed class CommandPoller : IDisposable
                     local.EmulatorKey = key;
                     changed = true;
                 }
+                var emulators = (sg.Emulators ?? []).ToList();
+                if (!emulators.SequenceEqual(local.Emulators, StringComparer.OrdinalIgnoreCase))
+                {
+                    local.Emulators = emulators;
+                    changed = true;
+                }
                 if (local.EmulatorProfile != sg.EmulatorProfile)
                 {
                     local.EmulatorProfile = sg.EmulatorProfile;
@@ -436,6 +444,7 @@ public sealed class CommandPoller : IDisposable
                 Release = sg.Release,
                 EmulatorKey = sg.EmulatorKey,
                 EmulatorProfile = sg.EmulatorProfile,
+                Emulators = (sg.Emulators ?? []).ToList(),
                 SaveDirectory = dir ?? "",
                 ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
             };
@@ -473,7 +482,24 @@ public sealed class CommandPoller : IDisposable
         if (!include.SequenceEqual(local.IncludeGlobs))
         {
             local.IncludeGlobs = include;
+            _cardChecked.Remove(local.GameId);
             changed = true;
+        }
+
+        // Another machine took in a DuckStation card the scope had missed, and pushes it. This machine's own copy of that
+        // card was never synced, so it is not an edit to push over it: the pull brings the fleet's — once the fleet has one.
+        // Until then it is asked again each poll; the answer is final once it is no repair or the head holds the card.
+        if (!_cardPushes.Contains(local.GameId) && !_cardChecked.Contains(local.GameId))
+        {
+            if (DuckStationSaves.SyncedHashWithCard(local, _config.StateDir) is not { } synced)
+                _cardChecked.Add(local.GameId);
+            else if (DuckStationSaves.FleetHasCard(local, await HeadFilesOrNullAsync(local.GameId)))
+            {
+                _cardChecked.Add(local.GameId);
+                local.LastSyncedHash = synced;
+                _config.SaveGameSyncState(local);
+                AgentLogger.Log($"[{local.Name}] its scope now takes DuckStation's region-named card; the fleet's copy will be pulled.");
+            }
         }
 
         var serverPaths = sg.ExtraPaths ?? Array.Empty<SavePathDto>();
@@ -767,6 +793,7 @@ public sealed class CommandPoller : IDisposable
             AgentLogger.LogException("CommandPoller.UpdatePathCandidates", ex);
             return;
         }
+        _lastScan = found;
 
         var reports = new List<ScanPathCandidate>();
         foreach (var game in unmapped)
@@ -780,6 +807,99 @@ public sealed class CommandPoller : IDisposable
 
         _health.SetPathCandidates(reports);
     }
+
+    /// <summary>The last scan <see cref="UpdatePathCandidatesAsync"/> made, for <see cref="SetUpEmulatorGamesAsync"/>.</summary>
+    private IReadOnlyList<ScanCandidate>? _lastScan;
+    private DateTime _lastEmulatorSetUp = DateTime.MinValue;
+    private static readonly TimeSpan EmulatorSetUpInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Sets up the emulator games this machine tracks without a folder (tasks/emulator-pull-safety Phase 5): ones taken
+    /// from the server before their first save here, and ones never played here at all. Each is enrolled from the row
+    /// <see cref="SetUpRowFor"/> finds, the way Add games would, so it joins the server game by its files. At most once a
+    /// minute: a ROM copied in is picked up on the next pass.
+    /// </summary>
+    private async Task SetUpEmulatorGamesAsync()
+    {
+        var waiting = _config.Games.Where(g => !g.IsEnrolledHere && g.Emulators.Count > 0).ToList();
+        if (waiting.Count == 0 || DateTime.UtcNow - _lastEmulatorSetUp < EmulatorSetUpInterval) return;
+        _lastEmulatorSetUp = DateTime.UtcNow;
+
+        var pairs = new List<(Guid GameId, ScanCandidate Row)>();
+        foreach (var game in waiting)
+            if (_serverGames.GetValueOrDefault(game.GameId) is { } sg && SetUpRowFor(sg, _lastScan, g => EmulatorPlaces.CandidateFor(g)) is { } row)
+                pairs.Add((game.GameId, row));
+        if (pairs.Count == 0) return;
+        var rows = pairs.Select(p => p.Row).ToList();
+        try
+        {
+            var (enrolled, _) = await Enroller.EnrollAsync(_config, rows, Enumerable.Range(0, rows.Count).ToArray(), showProgress: false);
+            if (enrolled == 0) return;
+            foreach (var (_, row) in pairs.Where(p => _config.Games.Any(g => g.GameId == p.GameId && g.IsEnrolledHere)))
+                _notify(row.NoSaveYet
+                    ? $"Set up '{row.Name}' here: its ROM is on this machine, so its save will be pulled into {row.SuggestedSaveDir}."
+                    : $"Mapped '{row.Name}' to {row.SuggestedSaveDir}, where this machine saved it.");
+            _onGamesChanged();
+        }
+        catch (Exception ex)
+        {
+            // Never thrown on to the tick: it would skip the dashboard's commands that follow, once a minute for good.
+            AgentLogger.LogException("CommandPoller.SetUpEmulatorGames", ex);
+        }
+    }
+
+    /// <summary>
+    /// A DuckStation game enrolled states-only before tasks/emulator-pull-safety Phase 6 names its card without the
+    /// region DuckStation puts in it, so the card never synced. The first machine that finds that card adds the wider
+    /// patterns on the server and pushes its card; the others take it from there (<see cref="ReconcileFoldersAsync"/>).
+    /// </summary>
+    private readonly HashSet<Guid> _cardPushes = [];
+    private readonly HashSet<Guid> _cardChecked = [];
+
+    private readonly HashSet<Guid> _cardRefused = [];
+
+    private async Task<HeadFilesDto?> HeadFilesOrNullAsync(Guid gameId)
+    {
+        try { return await _api().GetHeadFilesAsync(gameId); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return null; }
+    }
+
+    private async Task RepairDuckStationCardsAsync()
+    {
+        foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && !_cardRefused.Contains(g.GameId) &&
+                     EmulatorProcesses.EmulatorsOf(g).Contains(DuckStationSaves.EmulatorName, StringComparer.OrdinalIgnoreCase)).ToList())
+        {
+            if (DuckStationSaves.MissingCardGlobs(game.IncludeGlobs, game.SaveDirectory) is not { } missing) continue;
+            try
+            {
+                var added = await _api().AddIncludeGlobsAsync(game.GameId, missing);
+                if (added.Length == 0) continue;
+                game.IncludeGlobs = [.. game.IncludeGlobs, .. added];
+                _cardPushes.Add(game.GameId);
+                _config.Save();
+                AgentLogger.Log($"[{game.Name}] its scope now takes DuckStation's region-named card ({string.Join(", ", added)}); pushing it.");
+                await _engine().PushAsync(game);
+            }
+            catch (Exception ex)
+            {
+                // A scope the server refuses stays refused: asking again every poll only fills the log.
+                if (ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.BadRequest }) _cardRefused.Add(game.GameId);
+                // Never thrown on to the tick: it would skip the dashboard's commands that follow.
+                AgentLogger.LogException($"CommandPoller.RepairDuckStationCards '{game.Name}'", ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The row that sets up <paramref name="sg"/> here: first a scan row of a save this machine has — the same files
+    /// from the same emulator (<see cref="Enroller.SameFiles"/>, D1), whatever it is named — else the emulator's place for a
+    /// game whose ROM is here (<paramref name="place"/>, <see cref="EmulatorPlaces.CandidateFor"/>). Null leaves it unmapped.
+    /// </summary>
+    internal static ScanCandidate? SetUpRowFor(GameDto sg, IEnumerable<ScanCandidate>? found, Func<GameDto, ScanCandidate?> place) =>
+        (found ?? []).FirstOrDefault(c => c.Source == ScanSource.Emulator && !c.UntouchedSeed && c.NotSyncable is null &&
+                                         !string.IsNullOrWhiteSpace(c.SuggestedSaveDir) && Enroller.SameFiles(sg, c) &&
+                                         sg.Emulators is { Length: > 0 })
+        ?? place(sg);
 
     /// <summary>
     /// Once per start, after the first reconcile: if any tracked game has folders the manifest knows

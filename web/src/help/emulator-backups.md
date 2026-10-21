@@ -10,7 +10,7 @@ Add games lists one game per save for RetroArch, melonDS, Supermodel, Model 2, S
 
 **A memory card every game shares is never added as one game.** PCSX2's card file (`Mcd001.ps2`, 8–64 MB), Dolphin's `MemoryCardA.USA.raw` and DuckStation's `shared_card_1.mcd` hold every game's saves, so restoring one game's save would restore them all. Add games shows such a card greyed out, with how to switch the emulator to a card per game:
 
-- **PCSX2:** Settings > Memory Cards, right-click the card > Convert > Folder, then right-click the new card > Use for Slot 1. The saves are kept.
+- **PCSX2:** Settings > Memory Cards, right-click the card > Convert > Folder, then right-click the new card > Use for Slot 1. The saves are kept. A new folder card works too: PCSX2 doesn't show the saves on a folder card until a game formats it, so SaveLocker formats it when it pulls a save onto it.
 - **Dolphin:** Options > Configuration > GameCube, set Slot A to GCI Folder. Dolphin copies the old card's saves into the folder by itself.
 - **DuckStation:** Settings > Memory Cards, set Card 1 to Separate Card Per Game (Title). The new cards start empty; copy the saves over with Tools > Memory Card Editor.
 
@@ -23,6 +23,12 @@ Add games lists one game per save for RetroArch, melonDS, Supermodel, Model 2, S
 - **Wii U (Cemu):** from Cemu's own game list, or the installed game's `meta.xml`. Otherwise it's named `Wii U <title ID>`.
 
 The name only matters to the first machine that adds the game. Another machine joins it by its save folder, whatever it calls it. Only the save syncs: a 3DS game's `data` folder, never the installed game beside it; an Xbox 360 game's saved games, never its DLC or updates. Xenia keeps saves per profile, and each machine syncs into its own profile's folder. Saves a game keeps for the device rather than a player (Rock Band's calibration, some games' options and high scores) sync with the game too. Cemu keeps them per account inside the game's folder (`user/80000001` is the first account), so use the same Cemu account on every machine.
+
+**A game played on another machine is set up here by itself** when this machine has the emulator and the game's ROM (in EmuDeck's `Emulation/roms/<system>` folder). Its save goes where the emulator looks for it, and the first sync pulls the fleet's save there, so you can pick up where you left off without saving first. This works for PCSX2, DuckStation, PPSSPP, melonDS and Supermodel; for the other emulators, play and save once, then add the game in Add games.
+
+**Close the emulator before you sync.** SaveLocker doesn't pull a save while the game's emulator is open: PCSX2, Dolphin and DuckStation keep the memory card in memory, so a save restored under them isn't seen and is overwritten when they write the card back. The sync tells you which emulator to close.
+
+**Another revision of the same ROM joins by itself.** A save from `Metroid Prime - Hunters (USA).nds` joins the game a machine made from `Metroid Prime - Hunters (USA) (Rev 1).nds` in the same emulator, under each machine's own file names. Add games marks it *Another revision*, and **Change** can still keep it as a game of its own. Another region, a beta or a hack stays its own game, named by what sets it apart: *Metroid Prime - Hunters (RetroArch, Europe)*.
 
 **A save from one emulator never joins another emulator's game**, even for the same title: Metroid Prime Trilogy saved in Dolphin and in PrimeHack are two games, and never sync with each other.
 

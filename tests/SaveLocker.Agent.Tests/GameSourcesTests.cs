@@ -64,8 +64,13 @@ public sealed class GameSourcesTests : IDisposable
     public void An_emulated_games_names_come_from_its_save_file_alone()
     {
         var japan = Emulated("Chrono Trigger") with { EmulatorRom = "Chrono Trigger (Japan)" };
-        Assert.Equal(new[] { "Chrono Trigger", "Chrono Trigger (RetroArch)", "Chrono Trigger (Japan) (RetroArch)" },
+        // The edition before the whole file name (tasks/emulator-pull-safety Phase 8): what sets this dump apart, and
+        // "Rev 0" for a first release when that is not enough. The old name stays last, for games made under it.
+        Assert.Equal(new[] { "Chrono Trigger", "Chrono Trigger (RetroArch)", "Chrono Trigger (RetroArch, Japan)",
+                "Chrono Trigger (RetroArch, Japan, Rev 0)", "Chrono Trigger (Japan) (RetroArch)" },
             Enroller.NamesFor(japan));
+        Assert.Equal("Chrono Trigger (RetroArch, USA, Rev 1)",
+            Enroller.NamesFor(japan with { EmulatorRom = "Chrono Trigger (USA) (Rev 1) (En,Fr) [!]" })[2]);
         Assert.Equal(new[] { "Tetris", "Tetris (RetroArch)" }, Enroller.NamesFor(Emulated("Tetris") with { EmulatorRom = "Tetris" }));
         Assert.Equal(new[] { "Hades II" }, Enroller.NamesFor(new ScanCandidate("Hades II", "/x", ScanSource.Heroic, false)));
     }

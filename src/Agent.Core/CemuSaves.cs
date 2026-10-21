@@ -11,9 +11,11 @@ namespace SaveLocker.Agent;
 /// <c>00050010</c> (system apps, found on the Deck), <c>0005000e</c> (updates) and <c>0005000c</c> (DLC) are no game's
 /// saves. Cemu has no states to sync (D3).
 /// <para>
-/// Nothing in the save names the game, and no title table we may bundle covers the Wii U, so the name is machine-local
-/// (D1 joins the server's game by its folder whatever the name): Cemu's <c>title_list_cache.xml</c> (<c>&lt;title
-/// titleId=…&gt;&lt;name&gt;</c>, <c>TitleList.cpp</c>), else an installed game's <c>usr/title/00050000/&lt;low&gt;/meta/meta.xml</c>
+/// No title table we may bundle covers the Wii U. The name comes first from the save itself: the game writes its own
+/// <c>meta/meta.xml</c> into the save folder (<c>title_id</c>, <c>longname_en</c>), the same on every machine (seen on the
+/// Deck 2026-10-19, a packed <c>.wua</c> game Cemu had not listed yet). Else it is machine-local (D1 joins the server's
+/// game by its folder whatever the name): Cemu's <c>title_list_cache.xml</c> (<c>&lt;title titleId=…&gt;&lt;name&gt;</c>,
+/// <c>TitleList.cpp</c>, written only once Cemu has run and listed the game), else an installed game's <c>usr/title/00050000/&lt;low&gt;/meta/meta.xml</c>
 /// <c>longname_en</c>, else the <c>meta/meta.xml</c> of a game folder (the extracted <c>code/content/meta</c> layout) in
 /// the ROM folders — EmuDeck's <c>roms/wiiu</c> and a standalone Cemu's <c>&lt;GamePaths&gt;</c> — matched by its
 /// <c>title_id</c>, else <c>Wii U &lt;low&gt;</c>. The region comes from the same place (Cemu's <c>CafeConsoleRegion</c>
@@ -48,7 +50,8 @@ public static class CemuSaves
             var roms = new Lazy<IReadOnlyDictionary<string, WiiUTitle>>(() => RomTitles(setup.RomFolders ?? []));
             foreach (var game in TitleFolders.Find(Path.Combine(setup.Saves, GameTitles), TitleIdLow))
             {
-                var known = titles.GetValueOrDefault(game.Id) ?? MetaXml(setup.Mlc, game.Id) ?? roms.Value.GetValueOrDefault(game.Id);
+                var known = SaveMetaXml(game.Dirs, game.Id) ?? titles.GetValueOrDefault(game.Id) ?? MetaXml(setup.Mlc, game.Id)
+                    ?? roms.Value.GetValueOrDefault(game.Id);
                 found.Add((new ScanCandidate(
                     Name: known?.Name ?? $"Wii U {game.Id.ToUpperInvariant()}",
                     SuggestedSaveDir: EmuDeckRoots.RealPath(Path.Combine(setup.Saves, GameTitles)),
@@ -105,6 +108,13 @@ public static class CemuSaves
     /// <c>region</c> (hex bits); null when the game is not installed there.</summary>
     public static WiiUTitle? MetaXml(string? mlc, string low) =>
         mlc is null ? null : ReadMeta(Path.Combine(mlc, "usr", "title", GameTitles, low, "meta", "meta.xml"))?.Title;
+
+    /// <summary>The game's own <c>meta/meta.xml</c> in its save folder, when its <c>title_id</c> is this game's (or it has
+    /// none); null otherwise.</summary>
+    public static WiiUTitle? SaveMetaXml(IEnumerable<DirectoryInfo> saveDirs, string low) =>
+        saveDirs.Select(d => ReadMeta(Path.Combine(d.FullName, "meta", "meta.xml")))
+            .FirstOrDefault(m => m is { Title: not null } && (m.Value.TitleId.Length == 0
+                || m.Value.TitleId.Equals(GameTitles + low, StringComparison.OrdinalIgnoreCase)))?.Title;
 
     /// <summary>
     /// Game titles in the ROM folders by title ID low half: each game folder's <c>meta/meta.xml</c> (<c>title_id</c>,

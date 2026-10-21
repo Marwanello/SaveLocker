@@ -1,3 +1,4 @@
+using SaveLocker.Shared;
 using Xunit;
 using F = SaveLocker.Agent.Tests.ConsoleSaveFixtures;
 
@@ -160,6 +161,21 @@ public sealed class StatesOnlyTests : IDisposable
     }
 
     [Fact]
+    public void DuckStation_a_known_title_also_takes_the_card_duckstation_names_with_its_region()
+    {
+        Directory.CreateDirectory(P("ds/memcards"));
+        Touch("ds/savestates/SCUS-94163_1.sav");
+
+        var game = Assert.Single(DuckStationSaves.Scan([new RomSaveFolders(P("ds/memcards"), P("ds/savestates"))]));
+
+        Assert.Equal(["Final Fantasy VII_1.mcd", "Final Fantasy VII_2.mcd", "Final Fantasy VII (*)_1.mcd", "Final Fantasy VII (*)_2.mcd"],
+            game.IncludeGlobs);
+        Touch("ds/memcards/Final Fantasy VII (USA)_1.mcd");
+        Touch("ds/memcards/Final Fantasy VIII_1.mcd");
+        Assert.Equal(["Final Fantasy VII (USA)_1.mcd"], SaveArchive.ListFiles(P("ds/memcards"), includeGlobs: game.IncludeGlobs!.ToArray()));
+    }
+
+    [Fact]
     public void DuckStation_a_card_carrying_the_code_wins_over_its_states()
     {
         var code = $"SCUS-{F.UnknownSerial("psx", "SCUS-")}";
@@ -222,5 +238,68 @@ public sealed class StatesOnlyTests : IDisposable
         Assert.Equal("00040000000AB000", game.EmulatorRom);
         Assert.Equal(["000ab000/data/**"], game.IncludeGlobs);
         Assert.Equal(AzaharSaves.StateGlobsFor("00040000000AB000"), game.ExtraSaveDirs![0].IncludeGlobs);
+    }
+
+    [Fact]
+    public void A_game_enrolled_before_its_region_card_was_taken_asks_for_it()
+    {
+        const string t = "Tomb Raider - The Last Revelation";
+        var old = DuckStationSaves.SaveGlobsFor(t);
+        Touch($"cards/{t} (Europe, Australia)_1.mcd");
+        Assert.Equal([$"{t} (*)_1.mcd", $"{t} (*)_2.mcd"], DuckStationSaves.MissingCardGlobs(old, P("cards")));
+
+        // Nothing is missing once the scope has them, or when the card is named exactly.
+        Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.StatesOnlyCardGlobsFor(t), P("cards")));
+        Touch($"cards/{t}_1.mcd");
+        Assert.Null(DuckStationSaves.MissingCardGlobs(old, P("cards")));
+    }
+
+    [Fact]
+    public void Only_a_title_scope_with_a_bracketed_card_beside_it_is_repaired()
+    {
+        Touch("cards/Tomb Raider II (USA)_1.mcd");
+        Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.SaveGlobsFor("Tomb Raider"), P("cards")));
+        Assert.Null(DuckStationSaves.MissingCardGlobs(["*.mcd"], P("cards")));
+        Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.SaveGlobsFor("Tomb Raider II (USA)"), P("cards")));
+        Assert.Null(DuckStationSaves.MissingCardGlobs(DuckStationSaves.SaveGlobsFor("Tomb Raider II"), P("missing")));
+    }
+
+    [Fact]
+    public void A_card_taken_in_elsewhere_is_no_edit_here_but_another_change_still_is()
+    {
+        const string t = "Tomb Raider - The Last Revelation";
+        Touch("cards/SLES-02238_1.sav", "state");
+        // Synced before the card was in the scope: only the state counted.
+        var game = new TrackedGame { GameId = Guid.NewGuid(), Name = t, SaveDirectory = P("cards"), IncludeGlobs = [.. DuckStationSaves.SaveGlobsFor(t)] };
+        game.ExtraPaths = [new TrackedSavePath { Key = RomSaves.StatesKey, Directory = P("cards"), IncludeGlobs = ["SLES-02238_*.sav"] }];
+        game.LastSyncedHash = game.LocalHash(_root);
+        Touch($"cards/{t} (Europe, Australia)_1.mcd", "card");
+
+        Assert.Null(DuckStationSaves.SyncedHashWithCard(game, _root));   // the old scope: nothing to do
+        game.IncludeGlobs = [.. DuckStationSaves.StatesOnlyCardGlobsFor(t)];
+        var synced = DuckStationSaves.SyncedHashWithCard(game, _root);
+        Assert.Equal(game.LocalHash(_root), synced);
+
+        // A state played here since is an edit, so it is still pushed or refused, never written off.
+        Touch("cards/SLES-02238_1.sav", "played");
+        Assert.Null(DuckStationSaves.SyncedHashWithCard(game, _root));
+    }
+
+    [Fact]
+    public void The_card_here_is_written_off_only_once_the_fleets_head_holds_one()
+    {
+        const string t = "Tomb Raider - The Last Revelation";
+        var game = new TrackedGame { GameId = Guid.NewGuid(), Name = t, IncludeGlobs = [.. DuckStationSaves.StatesOnlyCardGlobsFor(t)] };
+        static HeadFilesDto Head(params string[] paths) =>
+            new(null, [new HeadFolderDto(SaveRoot.PrimaryKey, [.. paths.Select(p => new HeadFileDto(p, 1, "00"))])]);
+
+        // The machine that widened the scope has not pushed its card: a pull now would delete the only one here.
+        Assert.False(DuckStationSaves.FleetHasCard(game, null));
+        Assert.False(DuckStationSaves.FleetHasCard(game, Head()));
+        Assert.False(DuckStationSaves.FleetHasCard(game, Head("Tomb Raider II (Europe)_1.mcd", $"sub/{t} (Europe)_1.mcd")));
+
+        Assert.True(DuckStationSaves.FleetHasCard(game, Head($"{t} (Europe, Australia)_1.mcd")));
+        Assert.False(DuckStationSaves.FleetHasCard(
+            new TrackedGame { Name = t, IncludeGlobs = [.. DuckStationSaves.SaveGlobsFor(t)] }, Head($"{t} (Europe)_1.mcd")));
     }
 }

@@ -23,10 +23,11 @@ type Kind = 'cloud' | 'local'
 /**
  * Pauses on each conflict "Sync all" surfaced, one at a time, over the WHOLE app shell — sidebar
  * included — not just the content pane, so there's no way to click around it by accident. Reuses
- * `ConflictCard` in 'immediate' mode: pressing a side resolves it right away and the queue advances,
- * matching the tray's own "one conflict at a time" bulk-resolve queue (Phase 7) rather than a
- * batched list of independent judgment calls. "Decide later" always has somewhere to go — it never
- * just closes this and drops back to a spinner with no trace.
+ * `ConflictCard` as the Conflicts page does: pick a side, then Resolve, and the queue advances — a
+ * click on a side alone commits nothing (the maintainer's call, 2026-10-21). This matches the
+ * tray's own "one conflict at a time" bulk-resolve queue (Phase 7) rather than a batched list of
+ * independent judgment calls. "Decide later" always has somewhere to go — it never just closes this
+ * and drops back to a spinner with no trace.
  * <p>
  * After the FIRST resolve in a multi-conflict queue, offers to apply that same choice — keep this
  * device's save, or keep the cloud's — to every remaining conflict in one step (plan.md Phase 7 item
@@ -135,7 +136,6 @@ export function SyncConflictModal({ queue, games, machineName, onResolved, onRes
             statsA={stats[conflict.versionAId]}
             statsB={stats[conflict.versionBId]}
             resolving={resolving}
-            mode="immediate"
             onResolve={handleResolve}
             footerExtra={
               <button

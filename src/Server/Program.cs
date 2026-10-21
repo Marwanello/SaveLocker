@@ -743,6 +743,13 @@ agent.MapPut("/agent/games/{id:guid}/file-names", async (Guid id, HttpContext ht
 }).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
   .Produces(StatusCodes.Status404NotFound);
 
+// Adds to the primary include scope, never removes: the patterns that were new come back.
+agent.MapPost("/agent/games/{id:guid}/include-globs", async (Guid id, HttpContext http, string[] patterns, SyncService sync) =>
+{
+    var (found, error, added) = await sync.AddIncludeGlobsAsync(http.CurrentMachine().Id, id, patterns);
+    return !found ? Results.NotFound() : error is not null ? Results.BadRequest(error) : Results.Ok(added);
+}).Produces<string[]>().Produces<string>(StatusCodes.Status400BadRequest).Produces(StatusCodes.Status404NotFound);
+
 agent.MapPut("/agent/games/{id:guid}/launch-profile", async (Guid id, HttpContext http, LaunchProfileReport req, SyncService sync) =>
 {
     if (!LaunchProfileReport.Actions.Contains(req.Action) || req.GameXuid is not { Length: > 0 and <= 32 }

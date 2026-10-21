@@ -33,13 +33,16 @@ public static class Enroller
     /// missing from it adds none.</param>
     /// <param name="links">Per candidate id, which server game an emulator save joins when the user chose by
     /// hand (<see cref="EnrollLinks"/>). A candidate missing from it is linked automatically.</param>
+    /// <param name="showProgress">False for the poller setting up a game this machine never saved (pull-safety Phase 5):
+    /// Add games' progress belongs to the batch the person started.</param>
     public static async Task<(int enrolled, int skipped)> EnrollAsync(
         AgentConfig config,
         IReadOnlyList<ScanCandidate> candidates,
         int[] ids,
         CancellationToken ct = default,
         IReadOnlyDictionary<int, string[]>? alsoSync = null,
-        IReadOnlyDictionary<int, LinkChoice>? links = null)
+        IReadOnlyDictionary<int, LinkChoice>? links = null,
+        bool showProgress = true)
     {
         if (string.IsNullOrEmpty(config.ApiKey))
             throw new InvalidOperationException("Not registered yet. Open Settings and click Register first.");
@@ -54,8 +57,10 @@ public static class Enroller
         // The fleet's games, read once for the batch and kept current as it creates more: an emulator
         // game's name is decided against it (ServerNameFor).
         List<GameDto>? serverGames = null;
-        void Step(string? game, string step) =>
-            Report(new EnrollProgress(true, index, total, game, step, enrolled, skipped, notes.ToArray(), info.ToArray()));
+        void Step(string? game, string step)
+        {
+            if (showProgress) Report(new EnrollProgress(true, index, total, game, step, enrolled, skipped, notes.ToArray(), info.ToArray()));
+        }
         void Refuse(string game, string why)
         {
             AgentLogger.Log($"Enrollment skipped '{game}': {why}");
@@ -121,6 +126,12 @@ public static class Enroller
                     // D2: the server's game of this title, whatever it is called and whichever emulator made it.
                     var keyed = c.EmulatorKey is { } key
                         ? serverGames.FirstOrDefault(g => string.Equals(g.EmulatorKey, key, StringComparison.OrdinalIgnoreCase)) : null;
+                    // Another revision of a game this emulator already saves joins it under this machine's own file names,
+                    // unless the user chose otherwise (tasks/emulator-pull-safety Phase 8, B).
+                    if (keyed is null && (link is null || link.Choice == EnrollLinks.Auto) &&
+                        EnrollLinks.RevisionOf(serverGames, c) is { } revision &&
+                        !config.Games.Any(g => g.GameId == revision.Id && g.IsEnrolledHere))
+                        link = new LinkChoice(EnrollLinks.Rename, revision.Id);
                     var (named, refusal) = keyed is not null ? (KeyedName(serverGames, keyed, c), null) : EnrollLinks.Resolve(serverGames, c, extras, link);
                     if (named is null)
                     {
@@ -349,7 +360,7 @@ public static class Enroller
         }
         finally
         {
-            Report(new EnrollProgress(false, index, total, null, "Done", enrolled, skipped, notes.ToArray(), info.ToArray()));
+            if (showProgress) Report(new EnrollProgress(false, index, total, null, "Done", enrolled, skipped, notes.ToArray(), info.ToArray()));
         }
 
         return (enrolled, skipped);
@@ -545,8 +556,10 @@ public static class Enroller
     /// <summary>
     /// The names a candidate may hold on the server, preferred first. A PC game has one: its manifest's
     /// spelling. An emulator save is named by its cleaned title ("Chrono Trigger"), then that title with
-    /// its emulator ("Chrono Trigger (RetroArch)"), then the save file's own name with it ("Chrono Trigger
-    /// (Japan) (RetroArch)"). Every one of them comes from the save file alone, so every machine walks the
+    /// its emulator ("Chrono Trigger (RetroArch)"), then that with the dump's edition — its region, revision or
+    /// pre-release, the tags that tell one dump from another ("Chrono Trigger (RetroArch, Japan)", then with "Rev 0" when
+    /// the ROM names no revision; tasks/emulator-pull-safety Phase 8) — and last the save file's own name with it
+    /// ("Chrono Trigger (Japan) (RetroArch)", what earlier agents named it). Every one of them comes from the save file alone, so every machine walks the
     /// same list — which of them it takes is then decided by the server (<see cref="ServerNameFor"/>), the
     /// one thing every machine sees alike. Deciding it from what else a machine has installed split one ROM
     /// into two games across a Deck and a PC (a Steam ROM Manager shortcut on one, nothing on the other).
@@ -559,7 +572,14 @@ public static class Enroller
             ? "Switch" : c.EmulatorName ?? "Emulator";
         var names = new List<string> { c.Name, $"{c.Name} ({by})" };
         if (c.EmulatorRom is { Length: > 0 } rom && !string.Equals(rom, c.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            if (RomNames.EditionTags(rom) is { Count: > 0 } edition)
+            {
+                names.Add($"{c.Name} ({by}, {string.Join(", ", edition)})");
+                if (!edition.Any(RomNames.IsRevision)) names.Add($"{c.Name} ({by}, {string.Join(", ", edition)}, Rev 0)");
+            }
             names.Add($"{rom} ({by})");
+        }
         return names;
     }
 

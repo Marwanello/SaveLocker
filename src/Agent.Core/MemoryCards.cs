@@ -26,7 +26,8 @@ public static partial class MemoryCards
 
     public const string Pcsx2Fix =
         "In PCSX2, open Settings > Memory Cards, right-click the card and choose Convert > Folder, then right-click the " +
-        "new card and choose Use for Slot 1. Each game's saves then sync on their own.";
+        "new card and choose Use for Slot 1. Each game's saves then sync on their own. A new folder card works too: " +
+        "SaveLocker formats it when it pulls a save onto it.";
     public const string DolphinFix =
         "In Dolphin, open Options > Configuration > GameCube and set Slot A to GCI Folder. Dolphin copies the card's saves into the " +
         "folder the first time it starts a game, and each game's saves then sync on their own.";
@@ -91,6 +92,24 @@ public static partial class MemoryCards
     /// <summary>A PCSX2 folder card (<c>Mcd001.ps2/</c> as a folder): it holds the superblock file.</summary>
     public static bool IsFolderCard(string dir) =>
         File.Exists(Path.Combine(dir, FolderCardSuperblock));
+
+    /// <summary>
+    /// A folder card PCSX2 will read the saves of: its superblock is a formatted card's (<see cref="Ps2Superblock.IsFormatted"/>).
+    /// A new card's is empty until a game formats it, and PCSX2 ignores every save folder on it until then.
+    /// </summary>
+    public static bool FolderCardFormatted(string dir)
+    {
+        try
+        {
+            var file = new FileInfo(Path.Combine(dir, FolderCardSuperblock));
+            if (!file.Exists || file.Length <= Ps2Superblock.FormattedMarkOffset) return false;
+            var head = new byte[Ps2CardMagic.Length];
+            using var stream = file.OpenRead();
+            stream.ReadExactly(head);
+            return Ps2Superblock.IsFormatted(head);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+    }
 
     /// <summary>What a raw PS1 card holds: how many saves, and their product codes (<c>SLUS-00067</c>), distinct, in
     /// card order. DuckStation names save states by the same code.</summary>

@@ -913,6 +913,11 @@ session can judge an edge case, not to reopen the choice.
   machine keeps one pair per file (server name ⇄ its own), and new files whose names follow a listed one join the list by
   themselves. A link is made in Add games and undone by stopping tracking it there; the console only shows the names. A clash
   (a file of the server's name already here) refuses the link.
+  <br>**Amended 2026-10-20 (maintainer; tasks/emulator-pull-safety Phase 8): another revision links by itself.** A save
+  whose ROM is the same release as a game of the same emulator once revision, version and dump marks are taken off
+  (`… (USA)` and `… (USA) (Rev 1)`), in the same region, with every file paired, joins it under this machine's own names
+  without **Change**; Add games shows it as *Another revision* and can still keep it apart. Every other dump stays by hand.
+  A dump kept apart is named by its edition (`Metroid Prime - Hunters (RetroArch, Europe)`), not its whole file name.
 - **Two server games can be merged, from the console only** (2026-10-18, maintainer). Preview first, the merged game's name
   typed; its versions become protected, read-only history of the other (never Latest); machines with the same folders move.
 - **A Steam shortcut is an emulator's game when it starts an emulator SaveLocker reads with a ROM** (2026-10-18, maintainer;

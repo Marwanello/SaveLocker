@@ -120,9 +120,9 @@ public sealed class GroupISyncTests : IClassFixture<ServerProcess>, IDisposable
     {
         var serial = $"SLUS-{_id}";
         var save = $"BA{serial}";
-        Write("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/_pcsx2_superblock", "deck-superblock");
+        Write("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/_pcsx2_superblock", "Sony PS2 Memory Card Format (deck)");
         Write("deck", $"Emulation/saves/pcsx2/states/{serial} (ABCD1234).01.p2s", "deck-state");
-        Write("win", "pcsx2/memcards/MC1.ps2/_pcsx2_superblock", "win-superblock");
+        Write("win", "pcsx2/memcards/MC1.ps2/_pcsx2_superblock", "Sony PS2 Memory Card Format (win)");
         Write("win", $"pcsx2/memcards/MC1.ps2/{save}SYS/data", "win-save");
         Directory.CreateDirectory(P("win", "pcsx2/sstates"));
 
@@ -140,7 +140,7 @@ public sealed class GroupISyncTests : IClassFixture<ServerProcess>, IDisposable
         await engineDeck.PullAsync(deckGame, force: true);
 
         Assert.Equal("win-save", Read("deck", $"Emulation/saves/pcsx2/saves/Mcd001.ps2/{save}SYS/data"));
-        Assert.Equal("deck-superblock", Read("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/_pcsx2_superblock"));
+        Assert.Equal("Sony PS2 Memory Card Format (deck)", Read("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/_pcsx2_superblock"));
     }
 
     [Fact]

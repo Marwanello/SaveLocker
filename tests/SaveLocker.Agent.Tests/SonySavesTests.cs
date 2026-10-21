@@ -306,6 +306,41 @@ public sealed class SonySavesTests : IDisposable
     }
 
     [Fact]
+    public void A_shadps4_game_is_named_by_its_installed_title_before_its_saves_label()
+    {
+        // tasks/emulator-pull-safety Phase 7: Dark Souls Remastered writes "…Savedata (EU)" into its save's MAINTITLE.
+        Sfo("user/home/1000/savedata/CUSA08495/DRKS0005/sce_sys/param.sfo", ("MAINTITLE", "DARK SOULS: REMASTERED Savedata (EU)"));
+        Text("user/home/1000/savedata/CUSA08495/DRKS0005/userdata0000", "ds");
+        Sfo("user/home/1000/savedata/CUSA15884/SAVE0/sce_sys/param.sfo", ("MAINTITLE", "Career"));
+        Text("user/home/1000/savedata/CUSA15884/SAVE0/data.bin", "c");
+        var folders = ShadPs4Saves.Folders([], [P("user")]);
+
+        // No install found: the save's label without "Savedata (EU)".
+        Assert.Equal(new[] { "Career", "DARK SOULS: REMASTERED" }, ShadPs4Saves.Scan(folders).Select(c => c.Name));
+
+        // Installed where config.toml says, and an update beside it that names nothing.
+        Sfo("games/CUSA08495/sce_sys/param.sfo", ("TITLE", "DARK SOULS™: REMASTERED"), ("TITLE_ID", "CUSA08495"));
+        Sfo("games/CUSA15884-patch/sce_sys/param.sfo", ("TITLE", "Patch 1.05"));
+        Text("user/config.toml", $"[GUI]\ninstallDirs = [\"{P("games").Replace('\\', '/')}\"]\ntheme = 0\n");
+        var installed = ShadPs4Saves.InstalledTitles(ShadPs4Saves.InstallDirs([], [P("user")]));
+
+        Assert.Equal(new Dictionary<string, string> { ["CUSA08495"] = "DARK SOULS: REMASTERED" }, installed);
+        Assert.Equal(new[] { "Career", "DARK SOULS: REMASTERED" }, ShadPs4Saves.Scan(folders, installed).Select(c => c.Name));
+        // The installed title wins over the save's, whatever the save says.
+        Assert.Contains("Dark Souls Remastered",
+            ShadPs4Saves.Scan(folders, new Dictionary<string, string> { ["CUSA08495"] = "Dark Souls Remastered" }).Select(c => c.Name));
+    }
+
+    [Theory]
+    [InlineData("DARK SOULS: REMASTERED Savedata (EU)", "DARK SOULS: REMASTERED")]
+    [InlineData("Bloodborne", "Bloodborne")]
+    [InlineData("Persona 5 SAVE DATA", "Persona 5")]
+    [InlineData("Gran Turismo Sport (US)", "Gran Turismo Sport")]
+    [InlineData("Savedata", "Savedata")]
+    public void A_saves_label_and_region_come_off_its_title(string maintitle, string name) =>
+        Assert.Equal(name, ShadPs4Saves.CleanSaveTitle(maintitle));
+
+    [Fact]
     public void A_shadps4_game_in_both_layouts_is_the_copy_written_last()
     {
         Sfo("user/savedata/1/CUSA00900/SPRJ0005/sce_sys/param.sfo", ("MAINTITLE", "Bloodborne"));

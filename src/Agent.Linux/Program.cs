@@ -150,22 +150,25 @@ static class Program
                 try
                 {
                     // The Deck entries must open the TEST agent: its daemon port, and its state directory
-                    // (config, api token) via XDG_DATA_HOME — without both, the launched command reads the
+                    // (config, api token) via SAVELOCKER_STATE_ROOT — without both, the launched command reads the
                     // real install and talks to :5178. `ui` is the SDL Deck UI; `app` is the controller-era
-                    // `open`, the same command a real install's shortcut runs.
+                    // `open`, the same command a real install's shortcut runs. Not XDG_DATA_HOME: the emulator
+                    // readers take it as the real ~/.local/share. An older rig's XDG_DATA_HOME is still accepted.
                     string? uiArgs = null, uiLaunch = null;
                     if (addKind == SteamShortcutWriter.DeckUi || addKind == SteamShortcutWriter.DeckAppTest)
                     {
-                        var state = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+                        var stateVar = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAVELOCKER_STATE_ROOT"))
+                            ? "XDG_DATA_HOME" : "SAVELOCKER_STATE_ROOT";
+                        var state = Environment.GetEnvironmentVariable(stateVar);
                         // Parsed here rather than with ParsePort, whose fallback is the real agent's own port.
                         if (string.IsNullOrEmpty(state) || state.IndexOf('"') >= 0 ||
                             !int.TryParse(opts.GetValueOrDefault("port"), out var uiPort) || uiPort is < 1 or > 65535)
                         {
-                            Console.Error.WriteLine("dev-shortcut-add --kind ui|app needs --port <n> and XDG_DATA_HOME set to the test state directory.");
+                            Console.Error.WriteLine("dev-shortcut-add --kind ui|app needs --port <n> and SAVELOCKER_STATE_ROOT set to the test state directory.");
                             return 2;
                         }
                         uiArgs = $"--port {uiPort}";
-                        uiLaunch = $"XDG_DATA_HOME=\"{state}\" %command%";
+                        uiLaunch = $"{stateVar}=\"{state}\" %command%";
                     }
                     var appId = SteamShortcutWriter.Add(prefix, opts.ContainsKey("with-launch-command"), addKind, uiArgs, uiLaunch);
                     if (appId is null) return 1;

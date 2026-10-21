@@ -95,10 +95,10 @@ public sealed class GroupGSyncTests : IClassFixture<ServerProcess>, IDisposable
         var (pc, deck, pcGame, server) = await TwoDumps();
 
         var found = Scan("deck");
-        var option = Assert.Single(EnrollLinks.For([server], found[0]), o => o.Choice == EnrollLinks.Rename);
-        Assert.Equal(LinkKind.Join, option.Kind);
-        Assert.Equal((1, 0), await Enroller.EnrollAsync(deck, found, [0],
-            links: new Dictionary<int, LinkChoice> { [0] = new(EnrollLinks.Rename, server.Id) }));
+        // Another revision of the same release joins by itself (tasks/emulator-pull-safety Phase 8, B): no Change needed.
+        var option = EnrollLinks.For([server], found[0])[0];
+        Assert.Equal((EnrollLinks.Auto, LinkKind.Join, server.Id, "Another revision"), (option.Choice, option.Kind, option.GameId, option.Badge));
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(deck, found, [0]));
 
         deck = AgentConfig.Load(deck.ConfigPath);
         var deckGame = Assert.Single(deck.Games, g => g.IsEnrolledHere);
