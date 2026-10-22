@@ -614,10 +614,13 @@ public static class Enroller
         return matches.FirstOrDefault(g => g.IsEnrolledHere) ?? matches.FirstOrDefault();
     }
 
+    // An unscoped game (a PC game's whole folder) names no files either: ServerNames is empty for it, and empty would
+    // equal empty, making every scoped save "tracked" as the first PC game (v0.8.0 on the Deck).
     private static IEnumerable<TrackedGame> ByFiles(AgentConfig config, ScanCandidate c) =>
         c.IncludeGlobs is not { Count: > 0 }
             ? []
-            : config.Games.Where(g => (SameScope(g.IncludeGlobs, c.IncludeGlobs) || SameScope(g.IncludeGlobs, ServerNames(g, c.IncludeGlobs))) &&
+            : config.Games.Where(g => g.IncludeGlobs.Count > 0 &&
+                                      (SameScope(g.IncludeGlobs, c.IncludeGlobs) || SameScope(g.IncludeGlobs, ServerNames(g, c.IncludeGlobs))) &&
                                       SameEmulator(g, c) && !OtherRegion(g.Release, c))
                 .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
 
@@ -721,11 +724,19 @@ public static class Enroller
         game.Emulators.Contains(c.EmulatorName, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The same for a game this machine tracks, by how it found it: one set up here from another
-    /// emulator's save is not this candidate's game.</summary>
+    /// emulator's save is not this candidate's game, and neither is a store's PC game of the same name (its own server
+    /// game, <see cref="ServerNameFor"/>). A game with no source yet, or a folder mapped by hand, is open to any.</summary>
     private static bool SameEmulator(TrackedGame game, ScanCandidate c) =>
-        c.Source != ScanSource.Emulator || c.EmulatorName is null ||
-        game.Source is not { Kind: GameSourceKinds.Emulator } source ||
-        string.Equals(source.Detail, c.EmulatorName, StringComparison.OrdinalIgnoreCase);
+        c.Source != ScanSource.Emulator || c.EmulatorName is null || game.Source switch
+        {
+            { Kind: GameSourceKinds.Emulator } source => string.Equals(source.Detail, c.EmulatorName, StringComparison.OrdinalIgnoreCase),
+            { } source => !IsStoreKind(source.Kind),
+            null => true,
+        };
+
+    /// <summary>A store's own PC game: never an emulator's game, and never started by an emulator's Steam shortcut.</summary>
+    internal static bool IsStoreKind(string kind) =>
+        kind is GameSourceKinds.Steam or GameSourceKinds.Heroic or GameSourceKinds.Playnite;
 
     /// <summary>The emulators a game created or joined by <paramref name="c"/> is known by from now on, for the rest
     /// of a batch that read the server's games before it existed.</summary>

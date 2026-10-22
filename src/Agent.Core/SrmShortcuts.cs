@@ -394,16 +394,34 @@ public static class SrmShortcuts
     public static IReadOnlyList<TrackedGame> Backfill(AgentConfig config, IEnumerable<ScanCandidate> candidates)
     {
         var changed = new List<TrackedGame>();
+        var matched = new HashSet<Guid>();
         foreach (var c in candidates)
         {
             if (c.ShortcutAppIds is not { Count: > 0 } ids) continue;
             if (Enroller.TrackedFor(config, c) is not { IsEnrolledHere: true } game) continue;
+            matched.Add(game.GameId);
             if (ids.ToHashSet(StringComparer.Ordinal).SetEquals(game.ShortcutAppIds) && !string.IsNullOrWhiteSpace(game.SteamAppId)) continue;
             config.SaveGameShortcuts(game.GameId, ids);
             changed.Add(game);
         }
+        // v0.8.0 matched emulator saves to PC games and recorded their shortcuts there, so a launch of the emulator's shortcut
+        // synced the PC game. Such a game is never an emulator's, so its shortcuts go (and an app ID taken from one with them).
+        foreach (var game in config.Games.Where(g => g.ShortcutAppIds.Count > 0 && !matched.Contains(g.GameId) && NeverAnEmulatorGame(g)).ToList())
+        {
+            config.SaveGameShortcuts(game.GameId, []);
+            changed.Add(game);
+        }
         return changed;
     }
+
+    /// <summary>A store's PC game, or one with no source that names no save files and no emulator title: what the v0.8.0 match
+    /// put shortcuts on. An emulator game added before sources were recorded has a scope or a key, so it keeps its own.</summary>
+    private static bool NeverAnEmulatorGame(TrackedGame g) => g.Source switch
+    {
+        { Kind: GameSourceKinds.Emulator } => false,
+        { } source => Enroller.IsStoreKind(source.Kind),
+        null => g.IncludeGlobs.Count == 0 && g.EmulatorKey is null,
+    };
 
     /// <summary>
     /// Every emulator shortcut in the Steam installs under <paramref name="steamRoots"/>, read from their <c>shortcuts.vdf</c>

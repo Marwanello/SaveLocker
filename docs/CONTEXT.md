@@ -2067,6 +2067,18 @@ program word (or what `flatpak run` starts) names an emulator; merge also refuse
 testenv and hardware pass (Groups A–J), played Ryujinx and Xenia (launched from EmulationStation) against real games. Left by
 choice: Model 2's real-game check (no game) and the items each plan lists as not built or *Deferred*. The testenv PCSX2 fixture
 with a 0-byte superblock was added afterwards (WSL `Mcd000.ps2`). The next action lines below are history.
+<br>**2026-10-22: v0.8.0 hid every scoped emulator save on a machine that also tracks PC games (branch
+`emulator-saves-hidden-by-pc-games`, not released).** `Enroller.ByFiles` compared a scoped save with `ServerNames(g, …)`,
+which is empty for a game with no own file names, so every PC game (no include patterns) "kept" it: on the real Deck all 101
+non-Switch emulator saves read `enrolled: true` and Add games showed only the Switch ones (unscoped, never matched by files).
+`SrmShortcuts.Backfill` rode the same match and put Super Smash Bros. 3DS's shortcut (`2599779049`) on *Alba* as its
+shortcut and Steam app ID — removed by hand from the Deck's `config.json` (backup `config.json.bak-alba-20261022`); a v0.8.0
+rescan (opening Add games) puts it back until this ships. Fix: an unscoped tracked game never matches by files.
+<br>Same branch, from a review of the other callers: a Steam/Heroic/Playnite game never matches an emulator save by name
+either (a Steam *Undertale* made Yuzu's read as tracked; no source or a hand-mapped folder still matches), and every rescan
+now drops shortcut IDs from a game that is never an emulator's — a store game, or a sourceless one with no scope and no key
+— with an app ID taken from one, so other machines heal themselves once updated. Unit **797**.
+**Next:** release it; nothing to clean by hand on the Windows PC — its rescan does it.
 <br>**Next action for this item:** the testenv pass with the Windows agent (Phase 17 Earthbound link Windows ⇄ WSL — the Windows
 test agent still maps a real `D:\Emulation` Animal Crossing save; unmap it first), the Deck pass (Forza Horizon listed once;
 launching it from Steam syncs), then merge PR #78. Group H stays open.
