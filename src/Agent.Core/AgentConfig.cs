@@ -27,6 +27,11 @@ public sealed class AgentConfig
     /// for agents registered before enrollment existed. See <see cref="ServerTrust"/>.
     /// </summary>
     public string? ServerPin { get; set; }
+    /// <summary>
+    /// How the pinned cert was vouched for — decides whether a new key is a renewal or a warning.
+    /// Null for a pin recorded before this existed. See <see cref="ServerTrust.Judge"/>.
+    /// </summary>
+    public ServerCertTrust? ServerPinTrust { get; set; }
     public string ManifestCachePath { get; set; } =
         Path.Combine(DefaultDir, "manifest.yaml");
     /// <summary>Set once the first-run welcome prompt has been shown/dismissed so we don't nag.</summary>
@@ -303,10 +308,11 @@ public sealed class AgentConfig
     }
 
     /// <summary>The identity fields a server issued, captured so a failed transition can restore them.</summary>
-    public readonly record struct ServerIdentity(string ServerUrl, string? ApiKey, Guid? MachineId, string? ServerPin);
+    public readonly record struct ServerIdentity(
+        string ServerUrl, string? ApiKey, Guid? MachineId, string? ServerPin, ServerCertTrust? ServerPinTrust);
 
     /// <summary>A snapshot of the current connection identity, for rollback.</summary>
-    public ServerIdentity CaptureIdentity() => new(ServerUrl, ApiKey, MachineId, ServerPin);
+    public ServerIdentity CaptureIdentity() => new(ServerUrl, ApiKey, MachineId, ServerPin, ServerPinTrust);
 
     /// <summary>Put back a captured identity, in memory only — the caller decides whether to persist.</summary>
     public void RestoreIdentity(ServerIdentity id)
@@ -315,6 +321,34 @@ public sealed class AgentConfig
         ApiKey = id.ApiKey;
         MachineId = id.MachineId;
         ServerPin = id.ServerPin;
+        ServerPinTrust = id.ServerPinTrust;
+    }
+
+    /// <summary>Record the pin a connection observed, with how its cert was vouched for.</summary>
+    public void SetPin(ObservedCert? seen)
+    {
+        if (seen is not { } cert) return;
+        ServerPin = cert.Pin;
+        ServerPinTrust = cert.Trust;
+    }
+
+    /// <summary>
+    /// Persist a pin <see cref="ServerTrust"/> re-pinned after a renewal, touching nothing else. It runs
+    /// inside a TLS handshake, so the lock wait is short — on contention the next process re-pins — and
+    /// the write is skipped when the file no longer holds <paramref name="pinned"/> for this origin: a
+    /// re-enroll or <c>trust --accept</c> in between is newer than this.
+    /// </summary>
+    public void RecordRenewedPin(string pinned, string renewed, ServerCertTrust trust)
+    {
+        using var guard = AgentStateLock.TryAcquire("config", StateDir, TimeSpan.FromSeconds(2));
+        if (guard is null) return;
+
+        var onDisk = ReadOnDisk();
+        if (onDisk is null || !ServerOrigin.Same(onDisk.ServerUrl, ServerUrl) || onDisk.ServerPin != pinned) return;
+        onDisk.ServerPin = renewed;
+        onDisk.ServerPinTrust = trust;
+        AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(onDisk, JsonOpts),
+            restrictPermissions: true);
     }
 
     /// <summary>
@@ -339,6 +373,7 @@ public sealed class AgentConfig
             ApiKey = null;
             MachineId = null;
             ServerPin = null;
+            ServerPinTrust = null;
             // The console's manifest guidance is also the previous server's: a window it pushed
             // and a request it may have issued mean nothing here, and a stale handled stamp would
             // silently swallow the first press on the new server.
@@ -391,6 +426,7 @@ public sealed class AgentConfig
         ApiKey = fresh.ApiKey;
         MachineId = fresh.MachineId;
         ServerPin = fresh.ServerPin;
+        ServerPinTrust = fresh.ServerPinTrust;
         FirstRunCompleted = fresh.FirstRunCompleted;
         SettleQuietSeconds = fresh.SettleQuietSeconds;
         SettleMaxWaitSeconds = fresh.SettleMaxWaitSeconds;

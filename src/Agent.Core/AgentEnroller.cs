@@ -83,11 +83,11 @@ public static class AgentEnroller
         config.MachineId = reg.MachineId;
         if (policy.SettleQuietSeconds is { } quiet) config.SettleQuietSeconds = quiet;
         if (policy.SettleMaxWaitSeconds is { } max) config.SettleMaxWaitSeconds = max;
-        if (api.ObservedPin is { } pin) config.ServerPin = pin;
+        config.SetPin(api.Observed);
 
         log($"Enrolled '{reg.MachineName}' (id {reg.MachineId}) with {serverUrl}.");
         if (config.ServerPin is not null)
-            log($"Pinned the server's TLS key: {config.ServerPin}");
+            log($"Pinned the server's TLS key: {config.ServerPin} ({ServerTrust.Describe(config)})");
 
         // From here on the agent has an identity and a pin, so it talks to the server as itself —
         // the enroll client above was built before either existed and carries no key.

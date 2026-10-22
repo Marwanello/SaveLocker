@@ -1,4 +1,4 @@
-# TOFU server pinning over real TLS (Linux agent Phase 4) - 6 checks. Windows + Linux.
+# TOFU server pinning over real TLS (Linux agent Phase 4) - 9 checks. Windows + Linux.
 #
 # The plain-http harness in run-enrollment-tests.ps1 CANNOT test pinning: http has no server
 # identity to pin, so it can only assert that the agent records nothing. This script starts the
@@ -95,12 +95,16 @@ try {
     Check "enroll over https succeeds"        ($LASTEXITCODE -eq 0)
     Check "enroll recorded a TLS pin"         ($saved.ServerPin -and $saved.ServerPin.Length -eq 44)
     Check "enroll reported the pin"           ("$out" -match "Pinned the server's TLS key")
+    # The dev cert carries no Certificate Transparency SCTs, so it is private: a new key must warn
+    # rather than re-pin quietly the way a publicly-logged renewal does (Decisions.md §4).
+    Check "enroll recorded a private cert"    ($saved.ServerPinTrust -eq "Private")
 
     $realPin = $saved.ServerPin
 
     # ---- 2. `trust` shows the pin it recorded ----
     $trustOut = Agent trust --config $cfg
     Check "trust prints the pinned key"       ("$trustOut" -match [regex]::Escape($realPin))
+    Check "trust says a new key warns"        ("$trustOut" -match "private certificate")
 
     # ---- 3. A CHANGED server identity warns. This is the whole point of the pin. ----
     # Simulate the server's key changing by pinning a different one, which is indistinguishable to
@@ -115,6 +119,7 @@ try {
     Agent trust --accept --config $cfg | Out-Null
     $repinned = Get-Content $cfg -Raw | ConvertFrom-Json
     Check "trust --accept re-pins the server"  ($repinned.ServerPin -eq $realPin)
+    Check "trust --accept records the trust"   ($repinned.ServerPinTrust -eq "Private")
 }
 finally {
     if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
