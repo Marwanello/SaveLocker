@@ -53,6 +53,7 @@ public static class Updater
     private static string PreviousDir(AgentConfig c) => Path.Combine(UpdateRoot(c), "previous");
     private static string StagedMarker(AgentConfig c) => Path.Combine(UpdateRoot(c), "apply.json");
     private static string AppliedMarker(AgentConfig c) => Path.Combine(UpdateRoot(c), "applied.json");
+    private static string InstallingMarker(AgentConfig c) => Path.Combine(UpdateRoot(c), "installing.json");
 
     /// <summary>Written by <see cref="StageAsync"/>; read by <see cref="Apply"/>.</summary>
     private sealed record StagedPayload(string Version, string PayloadDir, DateTime StagedAt);
@@ -165,6 +166,11 @@ public static class Updater
             var staged = StagedDir(config);
             Directory.CreateDirectory(staged);
             Extract(tarball, staged);
+            // The staged tree is what an interrupted install is finished from, so it has to survive
+            // the same power cut the install might not.
+            foreach (var dir in Directory.EnumerateDirectories(staged, "*", SearchOption.AllDirectories)
+                         .Append(staged).Append(root))
+                Durable.FlushDirectory(dir);
 
             var payload = ResolvePayloadRoot(staged);
             var binary = Path.Combine(payload, "savelocker");
@@ -259,6 +265,7 @@ public static class Updater
                         $"The package expanded past {MaxBytes / (1024 * 1024)} MB. Refusing to continue.");
                 outFile.Write(buffer, 0, read);
             }
+            outFile.Flush(flushToDisk: true);
             outFile.Dispose();
 
             // The execute bit is the only mode that matters here, and tar carries it.
@@ -394,13 +401,22 @@ public static class Updater
 
         var prefix = InstallPrefix;
         var previous = PreviousDir(config);
-        DeleteDirectory(previous);
+
+        // Present only if an earlier install of this update was cut off part-way. Then previous/
+        // holds the genuine old files it had already moved aside, and the prefix holds whatever
+        // half-written copies replaced them. Those old files are the only copy left, so keep them.
+        // Otherwise previous/ is leftover from an install that was committed or rolled back, and
+        // would restore the wrong version.
+        var resuming = File.Exists(InstallingMarker(config));
+        if (!resuming) DeleteDirectory(previous);
         Directory.CreateDirectory(previous);
+        WriteJson(InstallingMarker(config), staged);
 
         var from = UpdateChecker.CurrentVersionText;
         var moved = 0;
         var copied = 0;
         var added = new List<string>();
+        var touched = new HashSet<string>(StringComparer.Ordinal) { UpdateRoot(config) };
 
         foreach (var src in Directory.EnumerateFiles(payload, "*", SearchOption.AllDirectories))
         {
@@ -416,19 +432,34 @@ public static class Updater
             if (File.Exists(dst))
             {
                 var keep = Path.Combine(previous, rel);
-                Directory.CreateDirectory(Path.GetDirectoryName(keep)!);
-                File.Move(dst, keep);
+                if (File.Exists(keep))
+                {
+                    File.Delete(dst);   // resuming: keep already holds the real old version
+                }
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(keep)!);
+                    File.Move(dst, keep);
+                    touched.UnionWith(Durable.UpTo(Path.GetDirectoryName(keep)!, previous));
+                }
                 moved++;
             }
             else added.Add(rel);
 
-            File.Copy(src, dst);
+            Durable.CopyFile(src, dst);
             CopyExecutableBit(src, dst);
+            touched.UnionWith(Durable.UpTo(Path.GetDirectoryName(dst)!, prefix));
             copied++;
         }
 
+        // Every new file's data and name is on the disk BEFORE applied.json exists. Only then can
+        // the daemon commit the install and release previous/. Without this a power cut in the next
+        // ~30 s left a Deck with 0-byte binaries and its rollback copy already deleted.
+        foreach (var dir in touched) Durable.FlushDirectory(dir);
+
         WriteJson(AppliedMarker(config),
             new AppliedUpdate(staged.Version, from, DateTime.UtcNow, [.. added]));
+        TryDelete(InstallingMarker(config));
         TryDelete(StagedMarker(config));
         DeleteDirectory(StagedDir(config));
 
@@ -469,6 +500,7 @@ public static class Updater
                     Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
                     if (File.Exists(dst)) File.Delete(dst);   // unlink: the replacement gets no say
                     File.Move(src, dst);
+                    Durable.FlushDirectory(Path.GetDirectoryName(dst)!);
                     restored++;
                 }
                 catch (Exception ex)
@@ -496,6 +528,11 @@ public static class Updater
     /// <summary>
     /// Called once the agent is genuinely up. This is what turns "installed" into "kept": until it
     /// runs, the next start treats the applied version as suspect and reverts it.
+    /// <para>
+    /// Releasing previous/ here is safe only because <see cref="InstallStaged"/> flushed every new
+    /// file to disk before writing the marker this reads. A running daemon proves the files are in
+    /// memory, not on the disk.
+    /// </para>
     /// </summary>
     public static void Commit(AgentConfig config, Action<string> log)
     {
@@ -617,8 +654,13 @@ public static class Updater
     private static void WriteJson<T>(string path, T value)
     {
         var tmp = path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(value, _json));
+        using (var file = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            JsonSerializer.Serialize(file, value, _json);
+            file.Flush(flushToDisk: true);
+        }
         File.Move(tmp, path, overwrite: true);
+        Durable.FlushDirectory(Path.GetDirectoryName(path)!);
     }
 
     private static void TryDelete(string path)

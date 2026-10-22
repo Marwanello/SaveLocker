@@ -89,6 +89,42 @@ public sealed class SystemdAutoStart : IAutoStart
     }
 
     /// <summary>
+    /// The daemon's call: bring an existing unit up to this version's. An agent that updates itself
+    /// never runs install.sh, so without this a self-updated Deck keeps the unit it was first
+    /// installed with, and the update hook in it, forever. Only for the installed agent (as
+    /// <see cref="DesktopEntry.OfferForInstalledAgent"/>), and only when a unit is already there:
+    /// whether auto-start is on is the user's choice. Takes effect at the next start.
+    /// </summary>
+    public static void RefreshForInstalledAgent(AgentConfig config, Action<string> log)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var prefix = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
+        var installed = Path.TrimEndingDirectorySeparator(AgentConfig.DefaultDir);
+        if (!string.Equals(prefix, installed, StringComparison.Ordinal) ||
+            !string.Equals(Path.TrimEndingDirectorySeparator(config.StateDir), installed, StringComparison.Ordinal))
+            return;
+
+        try
+        {
+            if (!File.Exists(UnitPath)) return;
+            var current = File.ReadAllText(UnitPath).Replace("\r\n", "\n");
+            // install.sh writes the packaged text as-is (%h paths); this class writes it with the
+            // path filled in. Either one is current.
+            if (current == ReadTemplate() || current == UnitFile()) return;
+
+            var tmp = UnitPath + ".tmp";
+            File.WriteAllText(tmp, UnitFile());
+            File.Move(tmp, UnitPath, overwrite: true);
+            ProcessRunner.Run("systemctl", "--user", "daemon-reload");
+            log("Updated savelocker.service to this version's unit. It takes effect at the next start.");
+        }
+        catch (Exception ex)
+        {
+            log($"Could not update savelocker.service: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// A reason the user can act on. Exit -1 is <see cref="ProcessRunner.Run(string, string[])"/>'s
     /// "could not even start systemctl", which on a Deck reached over SSH means no user bus rather
     /// than a broken unit —

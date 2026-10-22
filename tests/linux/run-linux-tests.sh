@@ -1144,6 +1144,83 @@ d=json.load(open(sys.argv[1]))
 ev=[e for e in d.get("Events",[]) if e.get("Code")=="update.rolled_back"]
 sys.exit(0 if ev and ev[0].get("Severity") in (2,"Error") else 1)' "${fake_prefix}/health-events.json" && echo 0 || echo 1)"
 
+# ── An update whose files never reached the disk ────────────────────────────────────────────
+# A real Deck, 2026-10-07: the update installed, the new agent started and committed, and the device
+# went down within ~30 s. ext4 had not written the copies yet, so every one came back at 0 bytes and
+# previous/ was already gone. The rollback lives in the emptied binary, so the unit failed with
+# "Exec format error" on every boot for two weeks. The fsyncs that prevent it cannot be observed
+# from here. What can be checked is the safety net: the plain-sh preflight restoring previous/ when
+# the binary is empty, which is exactly the state the crash leaves.
+echo
+echo "==> Update: an install whose files never reached the disk"
+preflight="${fake_prefix}/savelocker-preflight.sh"
+check "the build output carries the preflight script"   "$([ -s "${preflight}" ] && echo 0 || echo 1)"
+check "the unit runs the preflight as ExecStartPre" \
+  "$(grep -qx 'ExecStartPre=-%h/.local/share/SaveLocker/savelocker-preflight.sh' "${repo_root}/packaging/linux/savelocker.service" && echo 0 || echo 1)"
+check "the tarball ships the preflight script" \
+  "$(grep -qF 'packaging/linux/savelocker-preflight.sh' "${repo_root}/packaging/linux/build-linux.sh" && echo 0 || echo 1)"
+check "install.sh flushes the copies to disk"           "$(grep -qx 'sync' "${repo_root}/packaging/linux/install.sh" && echo 0 || echo 1)"
+# Through sh rather than its execute bit, which a dotnet build copy does not promise. DOTNET_ROOT for
+# the same reason as the wrapper above: the restored binary is the dev tree's apphost.
+run_preflight() { DOTNET_ROOT="${dotnet_root}" sh "${preflight}" --config "${prefix_cfg}" 2>&1; }
+stage_again() {
+  dotnet "${fake_prefix}/savelocker.dll" daemon --config "${prefix_cfg}" --port 5187 \
+    >"${scratch}/$1.log" 2>&1 &
+  local pid=$!
+  for _ in $(seq 1 40); do
+    [ -f "${fake_prefix}/update/apply.json" ] && break
+    sleep 0.5
+  done
+  kill "${pid}" 2>/dev/null; wait "${pid}" 2>/dev/null
+}
+
+# The real apphost is the version being replaced, so a restore is visible as its checksum.
+cp "${agent_dir}/bin/Debug/net10.0/savelocker" "${fake_prefix}/savelocker"
+rm -rf "${fake_prefix}/update" "${fake_prefix}/health-events.json"
+
+out="$(run_preflight)"
+check "preflight leaves a healthy agent alone"          "$(grep -qF 'preflight:' <<<"${out}" && echo 1 || echo 0)"
+check "the healthy agent is untouched"                  "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+
+stage_again crash-stage
+out="$(prefix_agent apply-update)"
+check "the update is installed"                         "$(contains "${out}" "installed (")"
+check "no interrupted-install marker is left behind"    "$([ ! -f "${fake_prefix}/update/installing.json" ] && echo 0 || echo 1)"
+
+# What the power cut leaves: names and sizes of zero, the rollback copy still there.
+: >"${fake_prefix}/savelocker"
+: >"${fake_prefix}/newfile.txt"
+out="$(run_preflight)"
+check "preflight sees the agent cannot start"           "$(contains "${out}" "cannot start. Restoring the previous version")"
+check "the previous agent binary is restored"           "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+check "the restored agent finishes the rollback"        "$(contains "${out}" "rolled back")"
+check "the rollback cleared the unconfirmed marker"     "$([ ! -f "${fake_prefix}/update/applied.json" ] && echo 0 || echo 1)"
+events="$(cat "${fake_prefix}/health-events.json" 2>/dev/null || echo '{}')"
+check "the console hears about the rollback"            "$(contains "${events}" "update.rolled_back")"
+
+# Nothing to restore: say what to do, and still never fail the unit.
+cp "${fake_prefix}/savelocker" "${scratch}/apphost.bak"
+: >"${fake_prefix}/savelocker"
+out="$(run_preflight)"
+check "an empty agent with no rollback copy is reported" "$(contains "${out}" "no previous version to restore")"
+check "the report says how to reinstall"                "$(contains "${out}" "install.sh")"
+check "the report reaches agent.log"                    "$(grep -qF "no previous version to restore" "${fake_prefix}/agent.log" && echo 0 || echo 1)"
+cp "${scratch}/apphost.bak" "${fake_prefix}/savelocker"
+
+# An install cut off part-way. The old files it had already moved into previous/ are the only copy
+# left, so finishing the install must keep them rather than wipe previous/ and start again, which
+# used to leave a rollback set holding the half-written copies.
+stage_again resume-stage
+mkdir -p "${fake_prefix}/update/previous"
+mv "${fake_prefix}/savelocker" "${fake_prefix}/update/previous/savelocker"
+: >"${fake_prefix}/savelocker"
+echo '{}' >"${fake_prefix}/update/installing.json"
+out="$(prefix_agent apply-update)"
+check "an interrupted install is finished"              "$(contains "${out}" "installed (")"
+check "the real old binary is still the rollback copy"  "$([ "$(md5sum "${fake_prefix}/update/previous/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+out="$(prefix_agent apply-update)"
+check "and rolling that back restores the real one"     "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+
 # ---- A package that cannot be prepared is reported too ----
 # The machine keeps working, so nothing else looks wrong; it simply stops updating. That is exactly
 # the failure a headless device never surfaces on its own.

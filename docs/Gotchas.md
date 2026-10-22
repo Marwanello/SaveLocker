@@ -893,6 +893,29 @@ documentation that was found. Read before touching the presenter.
 - **The Linux install prefix IS the state directory** (`~/.local/share/SaveLocker`), so
   `config.json` — this machine's server API key — sits inside the tree an update replaces. Anything
   that "replaces the install" must copy file-by-file, never swap or rename the directory.
+- **An update's files came back empty: fsync anything you install.** Seen on a real Deck. The v0.7.0
+  self-update copied its files at boot (2026-10-07 02:20:13), the new agent started and committed,
+  and the Deck went down within ~30 s. Every copied file came back at **0 bytes**, and the agent
+  failed with `Exec format error` on every start for two weeks. ext4's delayed allocation writes a new
+  file's name and size to the journal within 5 s and its data up to ~30 s later, and a crash in
+  between leaves the file empty. The signature is unmistakable:
+  - every file the updater wrote was empty;
+  - the agent log held 619 zero bytes where that boot's lines should be;
+  - the artwork the daemon repainted in the same second was intact. It is written to a temp file
+    and renamed over the old one, which ext4 flushes promptly on its own (`auto_da_alloc`).
+
+  The updater cannot use that rename pattern: it moves the old file aside so a running wrapper keeps
+  its inode. Three things made it unrecoverable: `Commit` deleted `previous/` as soon as the daemon ran
+  (a running daemon proves the files are in memory, not on disk); the rollback lives in the binary
+  that was emptied; and a dead agent cannot tell the console. Fixed: `Durable.CopyFile`/`FlushDirectory`
+  fsync every copied file and every directory touched *before* `applied.json` exists. Staged files and
+  the update markers are flushed too. `installing.json` marks an install in progress, so a cut-off one
+  resumes and keeps the genuine old files in `previous/`. `ExecStartPre` is now
+  `savelocker-preflight.sh`, plain sh, which puts `previous/` back if the binary is empty or will not
+  run, then execs `savelocker apply-update`. The daemon rewrites a stale installed unit
+  (`SystemdAutoStart.RefreshForInstalledAgent`), because a self-updated Deck never runs install.sh.
+  install.sh now runs `sync` after copying. A Deck already in this state needs one manual reinstall.
+  Covered in `run-linux-tests.sh` ("an install whose files never reached the disk").
 - **The daemon never has the desktop session's environment — so a notification click must borrow it.**
   Confirmed on a real Deck 2026-09-27. `savelocker.service`'s `[Install]` is `WantedBy=default.target`,
   which `systemd --user` reaches before SteamOS's desktop session imports its variables into the

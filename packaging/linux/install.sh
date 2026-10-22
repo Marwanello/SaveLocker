@@ -76,7 +76,11 @@ if [ "${copy_failed}" -ne 0 ]; then
   exit 1
 fi
 
-chmod +x "${prefix}/savelocker"
+chmod +x "${prefix}/savelocker" "${prefix}/savelocker-preflight.sh"
+
+# On the disk before anything starts the new agent. Without this, a power cut in the next ~30 s can
+# leave every file just copied at 0 bytes, and the agent then fails to start on every boot.
+sync
 
 ln -sf "${prefix}/savelocker" "${bindir}/savelocker"
 echo "==> Linked ${bindir}/savelocker"
