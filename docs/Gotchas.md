@@ -645,6 +645,10 @@ documentation that was found. Read before touching the presenter.
   `savelocker trust` (and Linux `doctor`'s `tls:` line) says which rule a machine is on. To see what a
   server presents: `openssl s_client -connect host:443 -servername host | openssl x509 -noout -text`
   (look for "CT Precertificate SCTs"), and crt.sh / Cert Spotter to match a pin to a logged cert.
+- **`AgentConfig.Save()` used to write a long-lived host's boot-time `ServerPin` back** — so `trust --accept`
+  from the CLI only stuck after `systemctl --user restart savelocker` (hit on the Deck 2026-10-22). `Save()`
+  now keeps the on-disk pin unless this process changed its own (`_pinOnDisk`); a renewal another process
+  recorded survives the same way. Any new field another process writes needs the same treatment.
 
 ## Testing
 
