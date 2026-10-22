@@ -148,6 +148,50 @@ public sealed class ServerTrustTests : IDisposable
 
         Assert.Equal(PinVerdict.Renewed, Handshake(config, Cert(publiclyLogged: true)));
         Assert.Equal("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=", OnDisk().ServerPin);
+        // And this process adopts it, so its own next Save() cannot write the renewal over it.
+        Assert.Equal("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=", config.ServerPin);
+        config.Save();
+        Assert.Equal("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=", OnDisk().ServerPin);
+    }
+
+    [Fact]
+    public void A_stale_hosts_save_keeps_a_pin_another_process_accepted()
+    {
+        // Found on the Deck: the daemon's next Save() wrote its boot-time pin back over `trust --accept`.
+        var daemon = Enrolled(Cert(publiclyLogged: false), ServerCertTrust.Private);
+        var cli = OnDisk();
+        var accepted = Cert(publiclyLogged: false);
+        cli.SetPin(ServerTrust.Observe(accepted, SslPolicyErrors.None));
+        cli.Save();
+
+        daemon.SettleQuietSeconds += 1;   // any unrelated setting the daemon persists
+        daemon.Save();
+
+        Assert.Equal(ServerTrust.Fingerprint(accepted), OnDisk().ServerPin);
+        Assert.Equal(ServerTrust.Fingerprint(accepted), daemon.ServerPin);
+    }
+
+    [Fact]
+    public void A_stale_hosts_save_keeps_a_renewal_another_process_recorded()
+    {
+        var daemon = Enrolled(Cert(publiclyLogged: true), ServerCertTrust.Public);
+        var ui = OnDisk();
+        var renewed = Cert(publiclyLogged: true);
+
+        Assert.Equal(PinVerdict.Renewed, Handshake(daemon, renewed));
+        ui.Save();
+
+        Assert.Equal(ServerTrust.Fingerprint(renewed), OnDisk().ServerPin);
+    }
+
+    [Fact]
+    public void A_pin_changed_in_this_process_is_what_its_save_writes()
+    {
+        var config = Enrolled(Cert(publiclyLogged: false), ServerCertTrust.Private);
+        var repinned = Cert(publiclyLogged: false);
+        config.SetPin(ServerTrust.Observe(repinned, SslPolicyErrors.None));
+        config.Save();
+        Assert.Equal(ServerTrust.Fingerprint(repinned), OnDisk().ServerPin);
     }
 
     [Fact]
