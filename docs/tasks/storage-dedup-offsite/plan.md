@@ -29,6 +29,28 @@ them.
 | 10 — Chunking for large single-file saves | ⏳ Not started — measurement decides |
 | testenv pass | ⏳ Not run |
 
+## Mockups
+
+Clickable mockups, three variants per feature (rebuilt on the real UI 2026-10-22): <https://claude.ai/artifact/MCmZGmK6Bacjhm7zhgzmw3>.
+The page lists this task's features and opens each in the agent, the console, or the Decky and Playnite page. Each
+mockup has a strip at the top to pick the feature and variant, with notes, a “Mock only” switch for the failure cases,
+and my pick.
+
+The agent and console mockups are **the real apps** with a mock backend and the planned features built into copies
+of the real components. Source: `agent-ui/mockup-features/` and `web/mockup-features/` (each has `overrides/` = copied
+real components plus the feature, `features/` = the new pieces, `store.ts` = the feature list and variants). Run one
+with `npx vite --config mockup-features/vite.config.ts` in `agent-ui/` or `web/`. Decky and Playnite can't run
+outside Steam and Playnite, so those two screens are rebuilt by hand and are close, not exact. *Proposed* is my pick;
+*Decision* is the maintainer's, filled in when made, and the build follows it.
+
+| Feature | Where | Phases | A | B | C | Proposed | Decision |
+|---|---|---|---|---|---|---|---|
+| Set up off-site | Configuration | 1–3 | Wizard dialog | One long card | Provider tiles + summary | A | ⏳ Pending |
+| Off-site status | Configuration | 4, 5 | Compact card + dialogs | Dashboard numbers + games table | Activity log with tabs | A | ⏳ Pending |
+| Remote full / pause and ask | Every page | 6 | Banner + Resolve dialog | Banner + panel | Make-room card | A | ⏳ Pending |
+| Restore a lost server | First run / Backups / sign-in | 7 | First-run screen | On Backups | Link on sign-in | A | ⏳ Pending |
+| Converting to save space | Configuration | 9 | Popup + progress card | Notice + per-game table | Stacked storage bar | A | ⏳ Pending |
+
 ---
 
 ## Why rclone is off-site only (research, 2026-10-22)

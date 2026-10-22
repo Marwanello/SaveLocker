@@ -20,6 +20,27 @@ groups them into sessions.
 | 5 — Single-file restore (agent UI, console, CLI) | ⏳ Not started |
 | testenv pass | ⏳ Not run |
 
+## Mockups
+
+Clickable mockups, three variants per feature (rebuilt on the real UI 2026-10-22): <https://claude.ai/artifact/8VkXiktxDYXL929DVrj4qo>.
+The page lists this task's features and opens each in the agent, the console, or the Decky and Playnite page. Each
+mockup has a strip at the top to pick the feature and variant, with notes, a “Mock only” switch for the failure cases,
+and my pick.
+
+The agent and console mockups are **the real apps** with a mock backend and the planned features built into copies
+of the real components. Source: `agent-ui/mockup-features/` and `web/mockup-features/` (each has `overrides/` = copied
+real components plus the feature, `features/` = the new pieces, `store.ts` = the feature list and variants). Run one
+with `npx vite --config mockup-features/vite.config.ts` in `agent-ui/` or `web/`. Decky and Playnite can't run
+outside Steam and Playnite, so those two screens are rebuilt by hand and are close, not exact. *Proposed* is my pick;
+*Decision* is the maintainer's, filled in when made, and the build follows it.
+
+| Feature | Where | Phase | A | B | C | Proposed | Decision |
+|---|---|---|---|---|---|---|---|
+| Trash | Console | 1 | Trash card on Backups | “Deleted” segment in the game’s Versions | Recently deleted panel from Configuration › Storage | A | ⏳ Pending |
+| Name a version | Agent + console Versions | 2 | Inline edit | Name dialog with suggestions | Named-saves strip | B | ⏳ Pending |
+| How much to keep | Console game page | 3, 4 | Presets + preview line | Timeline of kept / removed | One slider + Advanced | B | ⏳ Pending |
+| Restore one file | Agent + console version files | 5 | Per file | Tick several | Compare with this device / the latest | Agent C, console A | ⏳ Pending |
+
 ---
 
 ## What already exists (don't re-derive)

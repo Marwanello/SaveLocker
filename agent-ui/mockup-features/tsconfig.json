@@ -1,0 +1,1 @@
+{ "extends": "../tsconfig.app.json", "compilerOptions": { "noEmit": true, "noUnusedLocals": false, "noUnusedParameters": false, "tsBuildInfoFile": null }, "include": ["./**/*.ts", "./**/*.tsx", "../src/**/*"], "exclude": ["vite.config.ts"] }
