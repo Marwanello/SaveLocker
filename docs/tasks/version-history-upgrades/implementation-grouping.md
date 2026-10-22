@@ -1,38 +1,40 @@
 # Implementation grouping — Version history upgrades
 
-Written 2026-10-22 on top of `plan.md`. Each phase is small and mostly independent. Sessions are grouped by shared
-code (`PruneVersionsAsync`, the Versions cards), and ordered by the cross-task dependency on
-[[tasks/save-playthroughs/implementation-grouping|Playthroughs]].
+Written 2026-10-22 on top of `plan.md`, then cut down to **two groups of similar size**. They're split where the
+dependency on [[tasks/save-playthroughs/implementation-grouping|Playthroughs]] falls: Group 1 needs nothing from it,
+and Group 2 needs its server and agent work.
 
 | Group | Contents | Status |
 |---|---|---|
-| A | Phase 1 (trash) | ⏳ Not started — can go before Playthroughs |
-| B | Phases 2, 3 | ⏳ Not started — after Playthroughs Group A |
-| C | Phase 4 | ⏳ Not started |
-| D | Phase 5 | ⏳ Not started — after Playthroughs Group B |
+| 1 | Phases 1, 2 — trash, labels | ⏳ Not started — can go any time, before Playthroughs if wanted |
+| 2 | Phases 3, 4, 5 — retention planner + preview, thinning, single-file restore | ⏳ Not started — after Playthroughs Groups 1 and 2 |
 
 ## Groups
 
-**Group A — trash (medium, fully verifiable here).** No playthrough dependency. It changes the delete path that
-every later prune uses, so it lands first and on its own. Playthroughs Group G waits on it.
+**Group 1 — what happens to a version (medium-large).** Trash changes the delete path every later prune uses.
+Labels add the second "never prune this" rule beside `Protected`. Both touch the version row, the Versions cards
+and `PruneVersionsAsync`'s skip list, so they share a review. Neither has a playthrough dependency (a label belongs
+to a version). Playthroughs Group 3's delete waits on this group.
+*Test:* prune → trash → restore → purge round trip, labelled versions surviving a prune, *Empty trash*, and the
+trash size on health. `run-delta-upload-tests` unchanged.
 
-**Group B — labels + planner + preview (medium).** Both touch the Versions cards and `PruneVersionsAsync`, which
-the planner rewrites as "plan, then trash", so they share a review. Must come after Playthroughs Group A so the
-planner is written per playthrough from day one.
+**Group 2 — which versions are kept, and getting one file back (medium-large).**
+- **The planner** (Phase 3) is the function the previews and thinning (Phase 4) are built on, so they come
+  together. Both need Playthroughs Group 1 so they're written per playthrough from day one.
+- **Single-file restore** (Phase 5) needs Playthroughs Group 2 (the pull guards and the local store it uses for
+  undo). It's in this group so both groups are a similar size, and it's tested in the same pass.
 
-**Group C — thinning (small-medium).** Only a new policy inside Group B's planner, plus the console control.
-Mostly unit tests.
-
-**Group D — single-file restore (medium).** Server route, agent engine, both UIs and the CLI. Needs Playthroughs
-Group B (the switch's guards and the local store it reuses for undo).
+*Test:* unit tests for the planner (gaps of weeks, a minute with many pushes, DST, a week crossing a year boundary,
+pinned versions beyond the cap). The preview must equal the prune on a seeded 90-day history. A single-file restore
+must be refused while the game runs and from outside the root. Then a testenv pass: thin from the console, restore
+one slot file to the Windows tray from the console, and undo it.
 
 ```
-Group A (trash)  ──────────────►  Playthroughs Group G
-Playthroughs A  →  Group B (2, 3)  →  Group C (4)
-Playthroughs B  →  Group D (5)
+Group 1 (trash, labels)  ──────────────►  Playthroughs Group 3 (delete)
+Playthroughs Groups 1, 2  →  Group 2 (planner, thinning, file restore)
 ```
 
 ## Re-evaluate before each new group
 
-Check Playthroughs' Status table: if its Group A slipped, Group B here waits too. Writing the planner against a
-single head and then reworking it is exactly what this ordering avoids.
+Before Group 2, check Playthroughs' Status table. If its Group 2 slipped, Phases 3–4 can still go ahead and
+Phase 5 waits.
