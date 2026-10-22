@@ -94,7 +94,8 @@ SaveLocker/
 │   │   │                               #   is the one every caller uses — it carries the TOFU pin
 │   │   ├── ServerHttp.cs                # The single HttpClient factory, so TLS policy cannot differ
 │   │   │                               #   between callers
-│   │   ├── ServerTrust.cs               # TOFU pin of the server's TLS key: warn, never block
+│   │   ├── ServerTrust.cs               # TOFU pin of the server's TLS key: warn, never block. A CA-valid,
+│   │   │                               #   CT-logged renewal re-pins by itself; a private cert's new key warns
 │   │   ├── ServerReachability.cs        # "Did the SERVER answer?" — a proxy's 502/503/504 or Cloudflare's 52x is the
 │   │   │                               #   server missing, not refusing. The poller's unreachable clock and the push
 │   │   │                               #   path's queue-vs-report choice both ask it
