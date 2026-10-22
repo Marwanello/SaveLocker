@@ -50,6 +50,7 @@ public static class Doctor
         Console.WriteLine();
         Section("Server");
         Info("url", config.ServerUrl);
+        Info("tls", ServerTrust.Describe(config));
         if (string.IsNullOrEmpty(config.ApiKey))
             Problem("this machine is not registered. Run: savelocker register --name <name>");
         else

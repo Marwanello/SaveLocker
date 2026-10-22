@@ -27,6 +27,13 @@ public sealed class AgentConfig
     /// for agents registered before enrollment existed. See <see cref="ServerTrust"/>.
     /// </summary>
     public string? ServerPin { get; set; }
+    /// <summary>
+    /// How the pinned cert was vouched for — decides whether a new key is a renewal or a warning.
+    /// Null for a pin recorded before this existed. See <see cref="ServerTrust.Judge"/>.
+    /// </summary>
+    public ServerCertTrust? ServerPinTrust { get; set; }
+    // The pin as this process last read or wrote it — how Save() tells "changed here" from "stale".
+    private (string? Pin, ServerCertTrust? Trust) _pinOnDisk;
     public string ManifestCachePath { get; set; } =
         Path.Combine(DefaultDir, "manifest.yaml");
     /// <summary>Set once the first-run welcome prompt has been shown/dismissed so we don't nag.</summary>
@@ -201,6 +208,7 @@ public sealed class AgentConfig
         var cfg = JsonSerializer.Deserialize<AgentConfig>(File.ReadAllText(path), JsonOpts)
                   ?? new AgentConfig();
         cfg.ConfigPath = path;
+        cfg._pinOnDisk = (cfg.ServerPin, cfg.ServerPinTrust);
         return cfg;
     }
 
@@ -289,6 +297,14 @@ public sealed class AgentConfig
             DlcSend = onDisk.DlcSend;
             SwitchSharedUser = onDisk.SwitchSharedUser;
             SwitchSharedUserDeclined = onDisk.SwitchSharedUserDeclined;
+            // And for the pin, which another process re-pins (`trust --accept`, a renewal): the daemon
+            // writing its boot-time pin back undid `trust --accept` until it was restarted. This
+            // process's pin wins only when it changed it here — enroll, register, its own renewal.
+            if ((ServerPin, ServerPinTrust) == _pinOnDisk && ServerOrigin.Same(onDisk.ServerUrl, ServerUrl))
+            {
+                ServerPin = onDisk.ServerPin;
+                ServerPinTrust = onDisk.ServerPinTrust;
+            }
 
             // And the opt-out has to be ENFORCED here, not just carried. A long-lived host loaded
             // its game list at boot and holds it for the process lifetime, so after another process
@@ -300,13 +316,15 @@ public sealed class AgentConfig
 
         AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, JsonOpts),
             restrictPermissions: true);
+        _pinOnDisk = (ServerPin, ServerPinTrust);
     }
 
     /// <summary>The identity fields a server issued, captured so a failed transition can restore them.</summary>
-    public readonly record struct ServerIdentity(string ServerUrl, string? ApiKey, Guid? MachineId, string? ServerPin);
+    public readonly record struct ServerIdentity(
+        string ServerUrl, string? ApiKey, Guid? MachineId, string? ServerPin, ServerCertTrust? ServerPinTrust);
 
     /// <summary>A snapshot of the current connection identity, for rollback.</summary>
-    public ServerIdentity CaptureIdentity() => new(ServerUrl, ApiKey, MachineId, ServerPin);
+    public ServerIdentity CaptureIdentity() => new(ServerUrl, ApiKey, MachineId, ServerPin, ServerPinTrust);
 
     /// <summary>Put back a captured identity, in memory only — the caller decides whether to persist.</summary>
     public void RestoreIdentity(ServerIdentity id)
@@ -315,6 +333,43 @@ public sealed class AgentConfig
         ApiKey = id.ApiKey;
         MachineId = id.MachineId;
         ServerPin = id.ServerPin;
+        ServerPinTrust = id.ServerPinTrust;
+    }
+
+    /// <summary>Record the pin a connection observed, with how its cert was vouched for.</summary>
+    public void SetPin(ObservedCert? seen)
+    {
+        if (seen is not { } cert) return;
+        ServerPin = cert.Pin;
+        ServerPinTrust = cert.Trust;
+    }
+
+    /// <summary>
+    /// Persist a pin <see cref="ServerTrust"/> re-pinned after a renewal, touching nothing else. It runs
+    /// inside a TLS handshake, so the lock wait is short — on contention the next process re-pins — and
+    /// the write is skipped when the file no longer holds <paramref name="pinned"/> for this origin: a
+    /// re-enroll or <c>trust --accept</c> in between is newer than this.
+    /// </summary>
+    public void RecordRenewedPin(string pinned, string renewed, ServerCertTrust trust)
+    {
+        using var guard = AgentStateLock.TryAcquire("config", StateDir, TimeSpan.FromSeconds(2));
+        if (guard is null) return;
+
+        var onDisk = ReadOnDisk();
+        if (onDisk is null || !ServerOrigin.Same(onDisk.ServerUrl, ServerUrl)) return;
+        if (onDisk.ServerPin != pinned)
+        {
+            // Newer than this renewal: adopt it, or this process's next Save() would write ours over it.
+            ServerPin = onDisk.ServerPin;
+            ServerPinTrust = onDisk.ServerPinTrust;
+            _pinOnDisk = (ServerPin, ServerPinTrust);
+            return;
+        }
+        onDisk.ServerPin = renewed;
+        onDisk.ServerPinTrust = trust;
+        AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(onDisk, JsonOpts),
+            restrictPermissions: true);
+        _pinOnDisk = (renewed, trust);
     }
 
     /// <summary>
@@ -339,6 +394,7 @@ public sealed class AgentConfig
             ApiKey = null;
             MachineId = null;
             ServerPin = null;
+            ServerPinTrust = null;
             // The console's manifest guidance is also the previous server's: a window it pushed
             // and a request it may have issued mean nothing here, and a stale handled stamp would
             // silently swallow the first press on the new server.
@@ -377,6 +433,7 @@ public sealed class AgentConfig
             apply(this);
             AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, JsonOpts),
                 restrictPermissions: true);
+            _pinOnDisk = (ServerPin, ServerPinTrust);
             return;
         }
 
@@ -391,6 +448,8 @@ public sealed class AgentConfig
         ApiKey = fresh.ApiKey;
         MachineId = fresh.MachineId;
         ServerPin = fresh.ServerPin;
+        ServerPinTrust = fresh.ServerPinTrust;
+        _pinOnDisk = (ServerPin, ServerPinTrust);
         FirstRunCompleted = fresh.FirstRunCompleted;
         SettleQuietSeconds = fresh.SettleQuietSeconds;
         SettleMaxWaitSeconds = fresh.SettleMaxWaitSeconds;

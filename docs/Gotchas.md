@@ -636,6 +636,19 @@ documentation that was found. Read before touching the presenter.
   `SyncEngine`'s push catch both use it — before it (found in the PR #50 review), a Cloudflare outage never raised
   the notice and each game's push became a sticky "push failed" toast instead of being queued. A 500 from the server
   itself is still a real refusal.
+- **Behind Cloudflare (or any Let's Encrypt-style renewal) the server's TLS key changes every ~60 days —
+  that is not an attack.** The agent pins the edge's key, so before 2026-10-22 every renewal raised "the
+  server's TLS identity has CHANGED" on every machine. A CA-valid, CT-logged renewal now re-pins by itself
+  ([[Decisions]] → *Plain HTTP is the default*, amendment). If the warning still appears for a public
+  server, read its reason line: "not publicly logged" means something on the path (a corporate/AV TLS
+  inspector, a captive portal) is minting certs with a root this machine trusts — check before syncing.
+  `savelocker trust` (and Linux `doctor`'s `tls:` line) says which rule a machine is on. To see what a
+  server presents: `openssl s_client -connect host:443 -servername host | openssl x509 -noout -text`
+  (look for "CT Precertificate SCTs"), and crt.sh / Cert Spotter to match a pin to a logged cert.
+- **`AgentConfig.Save()` used to write a long-lived host's boot-time `ServerPin` back** — so `trust --accept`
+  from the CLI only stuck after `systemctl --user restart savelocker` (hit on the Deck 2026-10-22). `Save()`
+  now keeps the on-disk pin unless this process changed its own (`_pinOnDisk`); a renewal another process
+  recorded survives the same way. Any new field another process writes needs the same treatment.
 
 ## Testing
 

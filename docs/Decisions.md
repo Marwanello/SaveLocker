@@ -308,6 +308,24 @@ session can judge an edge case, not to reopen the choice.
   be carried in the payload's own verification (a digest published in the update metadata, and
   Authenticode once releases are signed), and that check is then the *only* control, not a
   belt-and-braces addition to a secure channel. See WA-05.
+  <br>**Amended 2026-10-22: the pin only judges a private certificate; a publicly-logged renewal re-pins
+  by itself.** Found on a real Deck behind Cloudflare: "TLS identity has CHANGED" for nine days with no
+  certificate touched. Behind Cloudflare the pin is Cloudflare's edge key, which rotates with every
+  Universal SSL renewal (~60 days, Google Trust Services plus SSL.com backups) — so the warning fired on
+  every machine, forever, and trained users to ignore it. Every connection already has to pass normal CA
+  validation for the configured host, and a CA-valid renewal from any public CA is no riskier than the
+  first cert the agent trusted. Rule (`ServerTrust.Judge`): a new key re-pins quietly (one info log line,
+  written straight to `config.json`) only when the chain validates (`SslPolicyErrors.None`), the leaf
+  carries **embedded Certificate Transparency SCTs**, and the pin was not recorded as private. Anything
+  else warns: a self-signed or home-CA cert's new key, a public server suddenly presenting an *unlogged*
+  cert (what a TLS-intercepting proxy with a planted root looks like), or a cert that fails validation.
+  The kind is recorded with the pin (`ServerPinTrust`: `Public`/`Private`) at enroll, register and
+  `trust --accept`; a pin from before it existed is judged by what the server presents now, which is what
+  lets already-enrolled agents stop warning. SCT presence is a classifier, not verified against the logs'
+  keys — forging one takes a root this machine already trusts, which is game over regardless. Rejected:
+  dropping the pin (it is the only check left for a private cert); re-pinning on any CA-valid cert (a
+  private CA re-issuing is exactly the case the pin exists for); telling public from private by the root
+  store (no portable API, and Linux's bundle mixes user-added roots in).
   <br>Be honest about the limit: a digest delivered over the same unauthenticated channel as the
   artifact does not stop an attacker who can rewrite both. It does stop a corrupted, truncated,
   wrong, or substituted-at-the-download-host payload, and combined with restricting downloads to the

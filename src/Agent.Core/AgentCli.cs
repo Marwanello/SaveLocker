@@ -110,7 +110,8 @@ public static class AgentCli
                 case "trust":
                 {
                     // The pin is recorded at enrollment; this is how a user inspects it, and how they
-                    // accept a new one after a legitimate certificate renewal.
+                    // accept a new key a renewal does not explain — a private certificate they replaced.
+                    // A publicly-logged renewal re-pins by itself (ServerTrust.Judge).
                     if (!ServerTrust.IsPinnable(config.ServerUrl))
                     {
                         Console.WriteLine($"Server {config.ServerUrl} is plain http — there is no TLS identity to pin.");
@@ -121,6 +122,7 @@ public static class AgentCli
                     {
                         Console.WriteLine($"Server:     {config.ServerUrl}");
                         Console.WriteLine($"Pinned key: {config.ServerPin ?? "(not pinned — enroll, or run: trust --accept)"}");
+                        Console.WriteLine($"Trust:      {ServerTrust.Describe(config)}");
                         break;
                     }
 
@@ -133,11 +135,12 @@ public static class AgentCli
                         return 1;
                     }
                     var was = config.ServerPin;
-                    config.ServerPin = freshPin;
+                    config.SetPin(probe.Observed);
                     config.Save();
                     Console.WriteLine(was is null
                         ? $"Pinned {config.ServerUrl}: {freshPin}"
                         : $"Re-pinned {config.ServerUrl}\n  was: {was}\n  now: {freshPin}");
+                    Console.WriteLine($"Trust: {ServerTrust.Describe(config)}");
                     break;
                 }
 
