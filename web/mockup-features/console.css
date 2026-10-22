@@ -1,0 +1,21 @@
+@import "../src/index.css";
+/* The mockup's Vite root is this folder, so Tailwind is pointed at the real sources and at the mockup's own files. */
+@source "../src";
+@source "./";
+
+/* Mockup chrome (not the console): the feature and variant strip above the real app. */
+.mockc { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.mockc-bar { flex: none; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 6px 16px; background: #141416; border-bottom: 1px solid #26262a; font-size: 12px; color: #a09d97; }
+.mockc-bar h1 { font-size: 13px; font-weight: 700; color: #f0eee9; margin: 0; }
+.mockc-bar h1 small { margin-left: 8px; font-weight: 400; color: #817e78; }
+.mockc-group { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.mockc-label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #817e78; margin-right: 2px; }
+.mockc-btn { font: inherit; font-size: 11.5px; padding: 4px 10px; border-radius: 99px; border: 1px solid #303034; background: #1d1d20; color: #f0eee9; cursor: pointer; text-decoration: none; }
+.mockc-btn:hover { background: #25252a; }
+.mockc-btn[aria-pressed="true"] { background: #e0533c; border-color: #e0533c; color: #160f0e; font-weight: 600; }
+.mockc-spacer { flex: 1; }
+.mockc-notes { flex: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 24px; padding: 8px 16px 10px; background: #141416; border-bottom: 1px solid #26262a; font-size: 12px; color: #a09d97; }
+.mockc-notes p { margin: 0; line-height: 1.5; }
+.mockc-notes b { color: #f0eee9; }
+.mockc-app { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
+.mockc-app > div { height: 100%; }
