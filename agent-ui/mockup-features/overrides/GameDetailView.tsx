@@ -20,7 +20,8 @@ import { Card } from '../../src/components/ui/Card'
 import { Chip } from '../../src/components/ui/Chip'
 import { Stat } from '../../src/components/ui/Stat'
 import { Toast } from '../../src/components/ui/Toast'
-import { DEMO_GAME, ptById, useMock } from '../store'
+import { DEMO_TREES, HUNTERS_NAME, HUNTERS_TREES, enterTree, ptById, useMock } from '../store'
+import { EmulatorTabs } from '../features/emulatorTabs'
 import { PlaythroughChipB, PlaythroughTabsC, PlaythroughsCardA } from '../features/playthroughs'
 
 interface Props {
@@ -90,7 +91,15 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   const variant = useMock(s => s.variant)
   const selectedPt = useMock(s => s.selected)
   const [viewingPt, setViewingPt] = useState<string | null>(null)
-  const demo = game.id === DEMO_GAME
+  const demo = DEMO_TREES.includes(game.id)
+  const treeId = useMock(s => s.treeId)
+  useEffect(() => { if (demo && treeId !== game.id) enterTree(game.id) }, [demo, treeId, game.id])
+  useEffect(() => { setViewingPt(null) }, [game.id])
+  // Metroid Prime - Hunters: one title, a save tree per emulator (multi-emulator-games). Its trees are two games here.
+  const titled = HUNTERS_TREES.includes(game.id)
+  const [trees, setTrees] = useState<TrackedGame[]>([])
+  useEffect(() => { if (titled) void api.games().then(gs => setTrees(gs.filter(g => HUNTERS_TREES.includes(g.id)))) }, [titled])
+  const treeName = titled ? game.source?.detail ?? null : null
   const ptFeature = demo && feature.startsWith('pt-')
   const ptUi = demo && feature === 'pt-switch' ? variant : null
   const historyFeature = demo && feature.startsWith('vh-')
@@ -200,7 +209,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       <div className="sl-gamehead">
         <div className="sl-gamehead__cover"><GameArt id={game.id} name={game.name} kind="grid" w={192} console={game.release?.console} /></div>
         <div className="sl-gamehead__main">
-          <h2 className="sl-gamehead__title">{game.name}</h2>
+          <h2 className="sl-gamehead__title">{titled ? HUNTERS_NAME : game.name}</h2>
           {(enrolled || game.release) && (
             <div className="sl-gamehead__source">
               {enrolled && <SourceChip source={game.source} />}
@@ -217,6 +226,8 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
           </div>
         </div>
       </div>
+
+      {titled && trees.length > 1 && <EmulatorTabs trees={trees} current={game.id} />}
 
       {inConflict && (
         <Banner
@@ -281,7 +292,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       {enrolled ? (
         <div className="sl-actions">
           <Button variant="primary" data-pad-action="sync-this-game" disabled={locked} onClick={() => void run('sync')}>
-            {pending === 'sync' ? 'Syncing…' : 'Sync this game'}
+            {pending === 'sync' ? 'Syncing…' : treeName ? `Sync ${treeName} save` : 'Sync this game'}
             <PadGlyph id="x" />
           </Button>
           <Button data-pad-action="push-now" disabled={locked} onClick={() => void run('push')}>
@@ -310,7 +321,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
         />
       )}
 
-      {ptUi === 'C' && <PlaythroughTabsC viewing={viewingPt ?? selectedPt} onView={setViewingPt} />}
+      {ptUi === 'C' && <PlaythroughTabsC viewing={viewingPt && ptById(viewingPt) ? viewingPt : selectedPt} onView={setViewingPt} scope={treeName} />}
 
       {enrolled && <div className="sl-grid4">
         <Stat

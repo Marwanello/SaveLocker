@@ -1,14 +1,13 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
 import { Button } from '../../src/components/ui/Button'
 import { Chip } from '../../src/components/ui/Chip'
-import { Select } from '../../src/components/ui/Select'
 import { when } from '../../src/format'
 import { toast } from '../../src/toast'
 import type { Version } from '../../src/types'
-import { M, MACHINE_NAMES, endFlow, getState, runFlow, useMock } from '../store'
+import { M, MACHINE_NAMES, endFlow, getState, runFlow, useMock, type Variant } from '../store'
 import { Dialog, Steps } from './common'
 
-interface Ctx { variant: 'A' | 'B' | 'C'; version: Version; isLatest: boolean; picked: Set<string>; toggle: (p: string) => void; ask: (paths: string[]) => void }
+interface Ctx { variant: Variant; version: Version; isLatest: boolean; picked: Set<string>; toggle: (p: string) => void; ask: (paths: string[]) => void }
 const RestoreCtx = createContext<Ctx | null>(null)
 
 /** Wraps an opened version's file tree with the planned single-file restore, in the variant on show. */
@@ -25,7 +24,7 @@ export function RestoreProvider({ version, isLatest, children }: { version: Vers
         <div className="flex items-center justify-between gap-2 flex-wrap rounded-xl border border-line bg-raise px-3.5 py-2 text-[12px] text-dim">
           <span>{picked.size} file{picked.size === 1 ? '' : 's'} picked</span>
           <span className="flex gap-1.5"><Button size="sm" variant="quiet" onClick={() => setPicked(new Set())}>Clear</Button>
-            <Button size="sm" variant="primary" onClick={() => setAsked([...picked])}>Restore {picked.size} to a device…</Button></span>
+            <Button size="sm" variant="primary" onClick={() => setAsked([...picked])}>Restore {picked.size} file{picked.size === 1 ? '' : 's'}…</Button></span>
         </div>
       )}
       {asked && <RestoreDialog paths={asked} version={version} onClose={() => { setAsked(null); setPicked(new Set()) }} />}
@@ -46,14 +45,14 @@ export function FileActions({ path, index }: { path: string; index: number }) {
   if (!c) return null
   if (c.variant === 'A') return (
     <span className="flex gap-1">
-      <Button size="sm" onClick={() => c.ask([path])}>Restore to a device…</Button>
+      <Button size="sm" onClick={() => c.ask([path])}>Restore…</Button>
       <Button size="sm" variant="quiet" onClick={() => toast(`Downloaded ${path.split('/').pop()}.`)}>Download</Button>
     </span>
   )
   if (c.variant === 'C') {
     const differs = !c.isLatest && index === 0
     return differs
-      ? <span className="flex gap-1 items-center"><Chip tone="warn">Differs</Chip><Button size="sm" onClick={() => c.ask([path])}>Put back on a device…</Button></span>
+      ? <span className="flex gap-1 items-center"><Chip tone="warn">Differs</Chip><Button size="sm" onClick={() => c.ask([path])}>Restore…</Button></span>
       : <Chip>{c.isLatest ? 'Latest' : 'Same as latest'}</Chip>
   }
   return null
@@ -61,31 +60,26 @@ export function FileActions({ path, index }: { path: string; index: number }) {
 
 function RestoreDialog({ paths, version, onClose }: { paths: string[]; version: Version; onClose: () => void }) {
   const flow = useMock(s => s.flow)
-  const [dev, setDev] = useState(M.deck)
-  const name = MACHINE_NAMES[dev]
   const close = () => { endFlow(); onClose() }
   const what = paths.length > 1 ? `${paths.length} files` : paths[0].split('/').pop()
+  const devices = [MACHINE_NAMES[M.pc], MACHINE_NAMES[M.deck]]
+  const running = getState().sim === 'running'
   const send = () => runFlow([
-    { t: `Sent to ${name}` },
-    { t: `${name} checked Hollow Knight isn’t running` },
-    { t: `${name} downloaded ${what} and checked it`, d: 'SHA-256 matches the version' },
-    { t: `${name} kept its current file for undo` },
-    { t: `${name} replaced ${what} in its save folder` },
-  ], { failAt: getState().sim === 'running' ? 1 : -1, failMsg: `Hollow Knight is running on ${name}. Nothing changed. Try again when the game is closed.` })
+    { t: 'Take the latest save', d: `${MACHINE_NAMES[M.deck]} · 9 minutes ago` },
+    { t: `Put ${what} from ${when(version.createdAt)} in it`, d: 'Each file checked against its SHA-256' },
+    { t: 'Save it as a new version and make it Latest', d: `“Restored ${what} from ${when(version.createdAt)}”` },
+    { t: `Tell ${devices.join(' and ')} to pull it`, d: running ? `${MACHINE_NAMES[M.deck]} has Hollow Knight open, so it pulls when the game closes.` : 'Each pulls it the way it pulls any new save' },
+  ], { done: ok => ok && toast(`Restored as a new save. The previous latest is still in history.`) })
   return (
-    <Dialog title={flow ? (flow.state === 'ok' ? `Restored on ${name}` : flow.state === 'fail' ? `${name} didn’t restore it` : `Restoring on ${name}…`) : `Restore ${what} to a device`}
+    <Dialog title={flow ? (flow.state === 'ok' ? 'Restored as a new save' : 'Restoring…') : `Restore ${what}`}
       sub={flow ? undefined : `From ${version.machineName}’s version of ${when(version.createdAt)}.`} onClose={close}
-      actions={!flow ? <><Button variant="quiet" onClick={() => { toast('Downloaded.'); close() }}>Download instead</Button><Button variant="quiet" onClick={close}>Cancel</Button><Button variant="primary" onClick={send}>Send to {name}</Button></>
-        : flow.state === 'run' ? <Button disabled>Waiting for {name}…</Button> : <Button variant="primary" onClick={close}>Done</Button>}>
+      actions={!flow ? <><Button variant="quiet" onClick={() => { toast('Downloaded.'); close() }}>Download instead</Button><Button variant="quiet" onClick={close}>Cancel</Button><Button variant="primary" onClick={send}>Restore and create save</Button></>
+        : flow.state === 'run' ? <Button disabled>Restoring…</Button> : <Button variant="primary" onClick={close}>Done</Button>}>
       {!flow ? (
         <>
-          <div className="grid grid-cols-[70px_minmax(0,1fr)] gap-3 items-center">
-            <span className="text-[12.5px] text-dim">Device</span>
-            <Select label="Device" variant="field" value={dev} onChange={setDev}
-              options={[M.pc, M.deck].map(id => ({ value: id, label: MACHINE_NAMES[id], sub: 'Syncs Hollow Knight' }))} />
-          </div>
           <code className="block font-mono text-[11.5px] bg-raise border border-line rounded-lg px-2.5 py-2 whitespace-pre-wrap">{paths.join('\n')}</code>
-          <p>The device puts {paths.length > 1 ? 'these files' : 'this file'} in its save folder and keeps its own copy, so it can undo. The latest version doesn’t change; the device’s next sync uploads a new one.</p>
+          <p>SaveLocker makes a new save: the latest one, with {paths.length > 1 ? 'these files' : 'this file'} taken from this version. It becomes Latest, and {devices.join(' and ')}, which sync Hollow Knight, pull it. The previous latest stays in history, so Set as Latest undoes this.</p>
+          {running && <p className="rounded-lg border border-watch-line bg-watch-soft text-watch-ink px-3 py-2 text-[12px]">Hollow Knight is open on {MACHINE_NAMES[M.deck]}. It gets the restored save when the game closes.</p>}
         </>
       ) : <Steps />}
     </Dialog>

@@ -23,7 +23,7 @@ export function saveLabel(id: string, text: string | null) {
 
 export function NameChip({ text }: { text: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-info-line bg-info-soft text-info-ink px-2 py-0.5 text-[11px] font-sans font-medium">
+    <span className="inline-flex items-center gap-1 rounded-full border border-info-line bg-info-soft text-info-ink px-2 py-0.5 text-[11px] font-sans font-medium whitespace-nowrap">
       <Icon name="pencil" size={10} />{text}
     </span>
   )

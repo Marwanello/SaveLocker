@@ -17,15 +17,24 @@ export interface FeatureDef {
   pick: string
   always: string[]
   sims?: Sim[]
+  /** Offer the Hunters demo game (two emulators) next to Baldur's Gate 3. */
+  games?: boolean
 }
 
 export const DEMO_GAME = IDS.bg3
 export const DEMO_NAME = "Baldur's Gate 3"
+/** One game saved by two emulators (multi-emulator-games): each emulator's save is its own tree, with its own playthroughs. */
+export const HUNTERS_MELON = 'a0000000-0000-4000-8000-000000000016'
+export const HUNTERS_RETRO = 'a0000000-0000-4000-8000-000000000017'
+export const HUNTERS_TREES = [HUNTERS_MELON, HUNTERS_RETRO]
+export const HUNTERS_NAME = 'Metroid Prime - Hunters'
+export const DEMO_TREES = [DEMO_GAME, ...HUNTERS_TREES]
+export const treeGameName = (id: string) => (HUNTERS_TREES.includes(id) ? HUNTERS_NAME : DEMO_NAME)
 
 export const FEATURES: FeatureDef[] = [
   {
-    id: 'pt-switch', task: 'Playthroughs', name: 'Switch on this device', route: `#game:${DEMO_GAME}`, sims: ['online', 'offline', 'running'],
-    pick: 'B · Header switcher. It keeps the game page as it is and puts the one choice next to the game’s name.',
+    id: 'pt-switch', task: 'Playthroughs', name: 'Switch on this device', route: `#game:${DEMO_GAME}`, sims: ['online', 'offline', 'running'], games: true,
+    pick: 'Chosen: C · Playthrough tabs (2026-10-23). For a game with several emulators the emulator tabs stay on top and each emulator has its own playthrough tabs under them.',
     always: [
       'The save you leave is uploaded to its own playthrough before the other goes in the folder.',
       'Refused while the game runs; nothing changes on a refusal.',
@@ -34,7 +43,7 @@ export const FEATURES: FeatureDef[] = [
     variants: [
       { id: 'A', name: 'Playthroughs card', what: 'A card under the stats lists each playthrough with its latest save and device. “Play here” opens a dialog that explains, then shows each step.', try: 'Play here on “Main”. Then try “Game running”, and “Server unreachable” on “Sara’s Durge run”.' },
       { id: 'B', name: 'Header switcher', what: 'A chip under the game’s name says which playthrough this device plays. It opens a list; picking one asks once, then switches.', try: 'Open the “Honour mode” chip and pick “Main”. “New playthrough…” is at the bottom of the list.' },
-      { id: 'C', name: 'Playthrough tabs', what: 'A segmented control above the stats, one segment per playthrough. Another segment shows its versions read-only, with “Play this one here”.', try: 'Pick “Main”, then “Play this one here”.' },
+      { id: 'C', name: 'Playthrough tabs', what: 'A segmented control above the stats, one segment per playthrough. Another segment shows its versions read-only, with “Play this one here”. On a game saved by several emulators the emulator tabs (multi-emulator-games) come first: each emulator’s save is its own tree, so the playthrough tabs under them are that emulator’s.', try: 'Pick “Main”, then “Play this one here”. Then open Metroid Prime - Hunters (Game, top right), switch to the RetroArch tab and make a “Start fresh” playthrough.' },
     ],
   },
   {
@@ -49,7 +58,7 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     id: 'vh-names', task: 'Version history', name: 'Name a version', route: `#game:${DEMO_GAME}`,
-    pick: 'B · Name dialog. It says that named versions are kept, and its suggestions save typing on the Deck.',
+    pick: 'Chosen: B · Name dialog (2026-10-23).',
     always: ['A named version is never pruned.', 'Removing the name leaves Protect as it was.', 'Up to 80 characters.'],
     variants: [
       { id: 'A', name: 'Inline edit', what: 'A tag button on each row turns it into a text field.', try: 'Tag the version from yesterday, then rename “Before the Netherbrain”.' },
@@ -59,7 +68,7 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     id: 'vh-restore', task: 'Version history', name: 'Restore one file', route: `#game:${DEMO_GAME}`, sims: ['online', 'running'],
-    pick: 'C · Compare and restore. It shows which files differ before you choose, so you don’t restore an identical file.',
+    pick: 'Chosen: B · Pick several (2026-10-23).',
     always: ['Same guards as a pull: game closed, inside the save folder.', 'The file is checked before it replaces anything; the old one is kept for undo.', 'The latest version doesn’t change; the next sync uploads a new one.'],
     variants: [
       { id: 'A', name: 'Restore per file', what: 'Open a version to see its files; each has Restore.', try: 'Open the version from yesterday and restore “HonourMode.lsv”.' },
@@ -102,6 +111,9 @@ interface MockState {
   copies: 'until' | 'keep' | 'off'
   copyOverrides: Record<string, string>
   labels: Record<string, string | null>
+  /** The demo tree whose playthroughs are in `pts`/`selected`; the others wait in `stash`. */
+  treeId: string
+  stash: Record<string, { pts: Playthrough[]; selected: string }>
   flow: { steps: { t: string; d?: string }[]; i: number; state: 'run' | 'ok' | 'fail'; failMsg?: string } | null
 }
 
@@ -119,6 +131,16 @@ function fresh(feature = FEATURES[0].id, variant: Variant = 'A'): MockState {
     copyOverrides: {},
     labels: { 'v-3': 'Before the Netherbrain' },
     flow: null,
+    treeId: DEMO_GAME,
+    stash: {
+      [HUNTERS_MELON]: { selected: 'm-main', pts: [
+        { id: 'm-main', name: 'Main', when: ago(5 * HOUR), by: 'Steam Deck — Maro', versions: 8, size: 262_144, devices: ['Steam Deck — Maro'], local: true },
+        { id: 'm-100', name: '100% run', when: ago(4 * DAY), by: 'Living Room PC', versions: 5, size: 262_144, devices: ['Living Room PC'], local: false },
+      ] },
+      [HUNTERS_RETRO]: { selected: 'r-main', pts: [
+        { id: 'r-main', name: 'Main', when: ago(2 * DAY), by: 'Living Room PC', versions: 4, size: 524_288, devices: ['Living Room PC', 'Steam Deck — Maro'], local: true },
+      ] },
+    },
   }
 }
 
@@ -143,8 +165,7 @@ export const featureDef = () => FEATURES.find(f => f.id === state.feature)!
 
 /** Open the screen the current feature lives on (the app reads the hash and drops it). */
 export function goToFeature() {
-  location.hash = featureDef().route
-  window.dispatchEvent(new HashChangeEvent('hashchange'))
+  openRoute(featureDef().route)
 }
 
 export function chooseFeature(id: string) {
@@ -176,3 +197,20 @@ export function runFlow(steps: { t: string; d?: string }[], opts: { failAt?: num
 export const endFlow = () => setState({ flow: null })
 
 export const ptById = (id: string) => state.pts.find(p => p.id === id)!
+
+/** Show another demo tree's playthroughs: the current ones go back to the stash. */
+export function enterTree(id: string) {
+  if (id === state.treeId || !DEMO_TREES.includes(id)) return
+  const stash = { ...state.stash, [state.treeId]: { pts: state.pts, selected: state.selected } }
+  const next = stash[id]
+  setState({ treeId: id, stash, pts: next.pts, selected: next.selected, flow: null })
+}
+
+export const openGame = (id: string) => openRoute(`#game:${id}`)
+
+/** Deep-link the app. Not `location.hash =`: its own hashchange arrives after the app has already cleared the hash,
+ *  and that empty hash sends it back to Games. */
+function openRoute(route: string) {
+  history.replaceState(null, '', route)
+  window.dispatchEvent(new HashChangeEvent('hashchange'))
+}

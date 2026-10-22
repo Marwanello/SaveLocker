@@ -15,7 +15,7 @@ import { ChangeChips, VersionFiles, type ChangesStatus } from './VersionFiles';
 import { G } from '../fixtures';
 import { useMock } from '../store';
 import { InlineName, NameChip, NameDialog, NamedStrip, useLabels } from '../features/names';
-import { useRestore } from '../features/history';
+import { KeepHistory, useRestore } from '../features/history';
 
 interface Props {
   game: Game;
@@ -48,10 +48,14 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
   const trash = useMock(s => s.trash);
   const demo = game.id === G.hollow;
   const namesOn = demo && feature === 'vh-names';
+  // B: the name has its own column, so the row's actions stay as they are.
+  const namesB = namesOn && mockVariant === 'B';
   const deletedOn = demo && feature === 'vh-trash' && mockVariant === 'B';
   const labels = useLabels();
   const [editing, setEditing] = useState<string | null>(null);
   const [naming, setNaming] = useState<Version | null>(null);
+  const keepOn = demo && feature === 'vh-keep';
+  const [keeping, setKeeping] = useState(false);
   const restore = useRestore();
   const gameTrash = trash.filter(t => t.game === game.name);
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -151,6 +155,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
           options={[{ value: 'main', label: `History ${main.length}` }, { value: 'backups', label: `Backups ${backups.length}` },
             ...(deletedOn ? [{ value: 'deleted' as View, label: `Deleted ${gameTrash.length}` }] : [])]} />
         <Chip>{versions.length} kept</Chip>
+        {keepOn && <Button size="sm" onClick={() => setKeeping(true)}><Icon name="sliders-horizontal" size={13} />Keep history…</Button>}
         <Button size="sm" variant="quiet" disabled={open.size === 0} onClick={() => setOpen(new Set())}>Collapse all</Button>
         {prunable === null
           ? <InlineConfirm
@@ -179,7 +184,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
       {namesOn && mockVariant === 'C' && view === 'main' && <NamedStrip list={main} labels={labels} onRename={setNaming} />}
       {view === 'deleted' && (
         <>
-          <p className="px-4 pt-3 text-[11.5px] text-dim leading-[1.5]">Pruned or deleted versions of {game.name}. Each stays for 14 days, then it’s gone. All games’ trash: Backups › Trash.</p>
+          <p className="px-4 pt-3 text-[11.5px] text-dim leading-[1.5]">Pruned or deleted versions of {game.name}. Each stays for 14 days, then it’s gone. All games’ trash: Storage › Trash.</p>
           <DataTable caption="Deleted versions" rows={gameTrash} rowKey={t => t.id}
             empty={<EmptyState title="Nothing deleted">Pruned and deleted versions wait here for 14 days.</EmptyState>}
             columns={[
@@ -217,10 +222,19 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
                   </button>
                 ),
               },
-              { head: 'When', kind: namesOn ? 'wrap' : 'n', cell: v => (
+              ...(namesB ? [{
+                head: 'Name', kind: 'wrap' as const,
+                cell: (v: Version) => labels[v.id]
+                  ? <button type="button" onClick={() => setNaming(v)} title="Rename" className="cursor-pointer"><NameChip text={labels[v.id]!} /></button>
+                  : <button type="button" onClick={() => setNaming(v)} title="Name this save"
+                      className="inline-flex items-center gap-1 rounded-full border border-dashed border-line px-2 py-0.5 text-[11px] text-faint hover:text-fg hover:border-faint cursor-pointer whitespace-nowrap">
+                      <Icon name="pencil" size={10} />Name
+                    </button>,
+              }] : []),
+              { head: 'When', kind: namesOn && !namesB ? 'wrap' : 'n', cell: v => (
                 <span className="flex flex-col items-start gap-1">
                   <span title={when(v.createdAt)}>{ago(v.createdAt)}</span>
-                  {namesOn && editing !== v.id && labels[v.id] && <NameChip text={labels[v.id]!} />}
+                  {namesOn && !namesB && editing !== v.id && labels[v.id] && <NameChip text={labels[v.id]!} />}
                   {namesOn && editing === v.id && <InlineName v={v} label={labels[v.id] ?? null} onDone={() => setEditing(null)} />}
                 </span>
               ) },
@@ -239,7 +253,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
                         <Icon name="pencil" size={12} />{labels[v.id] ? 'Rename' : 'Name'}
                       </Button>
                     )}
-                    {namesOn && mockVariant !== 'A' && (
+                    {namesOn && mockVariant === 'C' && (
                       <Button size="sm" onClick={() => setNaming(v)}>{labels[v.id] ? 'Rename' : 'Name…'}</Button>
                     )}
                     {v.id !== headId && !v.mergedFrom && (
@@ -276,6 +290,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
               },
             ]}
           />}
+      {keeping && <KeepHistory scope="game" onClose={() => setKeeping(false)} />}
       {naming && <NameDialog v={naming} label={labels[naming.id] ?? null} onClose={() => setNaming(null)} />}
     </Card>
   );

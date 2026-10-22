@@ -4,7 +4,7 @@ import {
   migrateLegacyPassword, signIn, signOut,
 } from '../../src/api';
 import type { GameSummary, Machine, Command, Conflict, Settings, AgentHealth, AgentEvent, Lockout, ServerBuildInfo, GameIntent, GameRequest } from '../../src/types';
-import { NavBar } from '../../src/components/NavBar';
+import { NavBar } from './NavBar';
 import type { View } from '../../src/components/NavBar';
 import { GamesView } from '../../src/components/GamesView';
 import { ConfigView } from './ConfigView';
@@ -22,6 +22,7 @@ import { hasUnreadNotes, markNotesSeen } from '../../src/releaseSeen';
 import { useMock, where } from '../store';
 import { RemoteFullBanner } from '../features/offsite';
 import { FirstRun } from '../features/recover';
+import { ConvertBanner } from '../features/convert';
 
 interface AppData {
   games: GameSummary[];
@@ -321,6 +322,7 @@ export default function App() {
       )}
 
       {feature === 'st-full' && variant !== 'C' && !screen && <RemoteFullBanner />}
+      {feature === 'st-convert' && variant === 'B' && !screen && <ConvertBanner />}
 
       {screen === 'first-run' && <FirstRun />}
 

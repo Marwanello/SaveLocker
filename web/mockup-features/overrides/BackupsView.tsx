@@ -16,7 +16,7 @@ import type { Column } from '../../src/components/ui/DataTable';
 import { EmptyState } from '../../src/components/ui/EmptyState';
 import { Icon } from '../../src/components/ui/Icon';
 import { useMock } from '../store';
-import { TrashCard } from '../features/history';
+import { StorageSections } from '../features/storage';
 import { RestoreFromOffsite } from '../features/recover';
 
 const REASON: Record<BackupInfo['reason'], string> = {
@@ -127,7 +127,7 @@ export function BackupsView({ onRestored }: Props) {
   if (!status) {
     return (
       <Page>
-        <PageHead title="Backups" sub="the database and every game's latest save" />
+        <PageHead title="Storage" sub="backups, space used and off-site copies" />
         {loadError
           ? <Banner tone="watch" title="Could not read the backups" action={<Button size="sm" onClick={() => void load()}>Retry</Button>}>{loadError}</Banner>
           : <div className="text-dim text-[13px]">Loading…</div>}
@@ -198,8 +198,8 @@ export function BackupsView({ onRestored }: Props) {
   return (
     <Page>
       <PageHead
-        title="Backups"
-        sub={<>the database and every game's latest save · {status.enabled ? schedule : 'scheduled backups off'} · keeps the newest {status.retentionCount}</>}
+        title="Storage"
+        sub={<>backups, space used and off-site copies · backups {status.enabled ? schedule : 'off'}, the newest {status.retentionCount} kept</>}
         actions={<>
           {lastRun}
           {feature === 'st-recover' && mockVariant === 'B' && <RestoreFromOffsite />}
@@ -228,8 +228,6 @@ export function BackupsView({ onRestored }: Props) {
             : 'Scheduled backups are off — Configuration turns them on'} />
       </div>
 
-      {feature === 'vh-trash' && mockVariant === 'A' && <TrashCard />}
-
       <Card
         title="Recent backups"
         headerRight={<span className="font-mono text-[11px] text-faint">zip · VACUUM INTO · safe while running</span>}
@@ -254,6 +252,8 @@ export function BackupsView({ onRestored }: Props) {
           </EmptyState>}
         />
       </Card>
+
+      <StorageSections />
     </Page>
   );
 }

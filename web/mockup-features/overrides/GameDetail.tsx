@@ -24,8 +24,8 @@ import { BalancedColumns } from '../../src/components/ui/BalancedColumns';
 import { MergeCard } from '../../src/components/game/MergeCard';
 import { G } from '../fixtures';
 import { useMock } from '../store';
+import { PlaythroughVersionsCard } from '../features/playthroughs';
 import { PlaythroughsCard } from '../features/playthroughs';
-import { KeepHistoryCard } from '../features/history';
 
 interface Props {
   summary: GameSummary;
@@ -47,6 +47,9 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   const { game, head } = summary;
   // Mockup: the planned cards on their demo game, for the feature on show.
   const feature = useMock(s => s.feature);
+  const mockVariant = useMock(s => s.variant);
+  // D and E grow the Versions card into playthroughs and their versions.
+  const ptVersions = feature === 'pt-console' && game.id === G.elden && (mockVariant === 'D' || mockVariant === 'E');
   const [versions, setVersions] = useState<Version[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(true);
   const [paths, setPaths] = useState<MachineSavePath[]>([]);
@@ -201,13 +204,13 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
 
       <GameStats summary={summary} versionCount={versions.length} machinesWithGame={withGame} onRefresh={onRefresh} />
 
-      {feature === 'pt-console' && game.id === G.elden && <PlaythroughsCard />}
-      {feature === 'vh-keep' && game.id === G.hollow && <KeepHistoryCard />}
+      {feature === 'pt-console' && game.id === G.elden && !ptVersions && <PlaythroughsCard />}
+      {ptVersions && <PlaythroughVersionsCard />}
 
       <BalancedColumns items={[
-        {
+        ...(ptVersions ? [] : [{
           key: 'versions',
-          pin: 0,
+          pin: 0 as const,
           node: (
             <VersionsCard
               key={game.id}
@@ -221,7 +224,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
               onRefresh={onRefresh}
             />
           ),
-        },
+        }]),
         {
           key: 'folders',
           node: (

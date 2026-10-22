@@ -6,5 +6,6 @@
   "src/components/game/GameDetail.tsx": "GameDetail.tsx",
   "src/components/game/VersionsCard.tsx": "VersionsCard.tsx",
   "src/components/game/VersionFiles.tsx": "VersionFiles.tsx",
-  "src/components/game/RulesCard.tsx": "RulesCard.tsx"
+  "src/components/game/RulesCard.tsx": "RulesCard.tsx",
+  "src/components/NavBar.tsx": "NavBar.tsx"
 }

@@ -26,9 +26,7 @@ import type { Column } from '../../src/components/ui/DataTable';
 import { EmptyState } from '../../src/components/ui/EmptyState';
 import { OsBadge } from '../../src/components/ui/OsLogo';
 import { useMock } from '../store';
-import { OffsiteSetup, OffsiteStatus, MakeRoom } from '../features/offsite';
-import { ConvertCard } from '../features/convert';
-import { RecentlyDeleted } from '../features/history';
+import { KeepHistory, RecentlyDeleted } from '../features/history';
 
 interface Props {
   games: GameSummary[];
@@ -109,6 +107,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   // Mockup: the planned storage cards, for the feature on show.
   const feature = useMock(s => s.feature);
   const mockVariant = useMock(s => s.variant);
+  const [keepDefault, setKeepDefault] = useState(false);
   const healthByMachine = new Map(health.map(h => [h.machineId, h]));
   const skew = fleetSkew(build?.version, health);
   const storage = settings.storage ?? null;
@@ -459,10 +458,6 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           : <Chip tone="warn">Open — no admin password</Chip>}
       />
 
-      {feature === 'st-setup' && <OffsiteSetup />}
-      {(feature === 'st-status' || (feature === 'st-full' && mockVariant === 'B')) && <OffsiteStatus />}
-      {feature === 'st-full' && mockVariant === 'C' && <MakeRoom />}
-      {feature === 'st-convert' && <ConvertCard />}
       {feature === 'vh-trash' && mockVariant === 'C' && <RecentlyDeleted />}
 
       <div className="grid gap-4 lg:grid-cols-2 items-start">
@@ -678,9 +673,20 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                 </span>
               : 'Reading the backup schedule…'} />
 
-          <KV className="mt-3.5" items={[
-            { label: 'Default keep', value: storage ? `${plural(storage.defaultRetainVersions, 'version')} per game — a game's own Keep overrides it` : '—' },
-          ]} />
+          {feature === 'vh-keep' ? (
+            <div className="flex items-center justify-between gap-4 py-2.5 border-b border-row">
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold text-fg">History to keep</div>
+                <div className="text-xs text-dim mt-0.5">Thinning · Balanced: everything from 3 days, one a day for 30 days, one a week for 26 weeks. Per playthrough; a game’s own setting overrides it.</div>
+              </div>
+              <Button size="sm" onClick={() => setKeepDefault(true)}>Change…</Button>
+            </div>
+          ) : (
+            <KV className="mt-3.5" items={[
+              { label: 'Default keep', value: storage ? `${plural(storage.defaultRetainVersions, 'version')} per game — a game's own Keep overrides it` : '—' },
+            ]} />
+          )}
+          {keepDefault && <KeepHistory scope="default" onClose={() => setKeepDefault(false)} />}
 
           <div className="mt-4">
             <div className="text-[10px] tracking-[0.1em] uppercase text-faint mb-2">

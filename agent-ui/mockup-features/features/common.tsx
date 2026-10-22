@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Check, X } from 'lucide-react'
-import { endFlow, getState, ptById, runFlow, setState, useMock } from '../store'
+import { endFlow, getState, ptById, runFlow, setState, treeGameName, useMock } from '../store'
 import { formatAgo, formatBytes } from '../../src/format'
 
 /** The agent's dialog: the same overlay and `.sl-ask` box SwitchPlaysIn uses. */
@@ -52,14 +52,14 @@ export function startSwitch(target: string, after?: () => void) {
   const cur = ptById(s.selected), tgt = ptById(target)
   const off = s.sim === 'offline'
   const steps = [
-    { t: `Check that ${'Baldur’s Gate 3'} isn’t running`, d: 'Switching while the game has its save open could lose progress.' },
+    { t: `Check that ${treeGameName(s.treeId)} isn’t running`, d: 'Switching while the game has its save open could lose progress.' },
     { t: `Upload “${cur.name}” first`, d: off ? 'The server can’t be reached. A copy is kept on this device and uploads when it’s back.' : 'Changed 20 minutes ago · 50 MB' },
     { t: 'Keep a copy on this device', d: s.copies === 'keep' ? 'Kept for offline switching' : s.copies === 'off' ? 'Copies are off in Settings' : 'Until the upload is confirmed' },
     { t: `Put “${tgt.name}” in the save folder`, d: off ? 'From the copy on this device. It may be older than the server’s.' : `Latest: ${ptLine(target)}` },
     { t: `This device now plays “${tgt.name}”` },
   ]
   let failAt = -1, failMsg = ''
-  if (s.sim === 'running') { failAt = 0; failMsg = 'Baldur’s Gate 3 is running. Close the game, then switch. Nothing was changed.' }
+  if (s.sim === 'running') { failAt = 0; failMsg = `${treeGameName(s.treeId)} is running. Close the game, then switch. Nothing was changed.` }
   else if (off && s.copies === 'off') { failAt = 1; failMsg = `The server can’t be reached to save “${cur.name}” first, and copies are off. Nothing was changed.` }
   else if (off && !tgt.local) { failAt = 3; failMsg = `There’s no copy of “${tgt.name}” on this device. Connect to the server to switch. You’re still on “${cur.name}”.` }
   runFlow(steps, {

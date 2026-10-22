@@ -21,7 +21,8 @@ function overrides(): Plugin {
     name: 'mockup-overrides',
     enforce: 'pre',
     async resolveId(source, importer, options) {
-      if (!importer || importer.startsWith(overridesDir)) return null
+      // Vite hands importers over with forward slashes; resolve() gives backslashes on Windows.
+      if (!importer || importer.replace(/\\/g, '/').startsWith(overridesDir.replace(/\\/g, '/'))) return null
       const hit = await this.resolve(source, importer, { ...options, skipSelf: true })
       if (!hit) return null
       const rel = relative(agentUi, hit.id).replace(/\\/g, '/')

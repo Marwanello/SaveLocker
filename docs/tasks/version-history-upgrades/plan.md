@@ -22,7 +22,7 @@ groups them into sessions.
 
 ## Mockups
 
-Clickable mockups, three variants per feature (rebuilt on the real UI 2026-10-22): <https://claude.ai/artifact/8VkXiktxDYXL929DVrj4qo>.
+Clickable mockups, three variants per feature (rebuilt on the real UI 2026-10-22, revised from the maintainer's review 2026-10-23): <https://claude.ai/artifact/8VkXiktxDYXL929DVrj4qo>.
 The page lists this task's features and opens each in the agent, the console, or the Decky and Playnite page. Each
 mockup has a strip at the top to pick the feature and variant, with notes, a “Mock only” switch for the failure cases,
 and my pick.
@@ -32,14 +32,29 @@ of the real components. Source: `agent-ui/mockup-features/` and `web/mockup-feat
 real components plus the feature, `features/` = the new pieces, `store.ts` = the feature list and variants). Run one
 with `npx vite --config mockup-features/vite.config.ts` in `agent-ui/` or `web/`. Decky and Playnite can't run
 outside Steam and Playnite, so those two screens are rebuilt by hand and are close, not exact. *Proposed* is my pick;
-*Decision* is the maintainer's, filled in when made, and the build follows it.
+*Decision* is the maintainer's, and the build follows it.
 
 | Feature | Where | Phase | A | B | C | Proposed | Decision |
 |---|---|---|---|---|---|---|---|
-| Trash | Console | 1 | Trash card on Backups | “Deleted” segment in the game’s Versions | Recently deleted panel from Configuration › Storage | A | ⏳ Pending |
-| Name a version | Agent + console Versions | 2 | Inline edit | Name dialog with suggestions | Named-saves strip | B | ⏳ Pending |
-| How much to keep | Console game page | 3, 4 | Presets + preview line | Timeline of kept / removed | One slider + Advanced | B | ⏳ Pending |
-| Restore one file | Agent + console version files | 5 | Per file | Tick several | Compare with this device / the latest | Agent C, console A | ⏳ Pending |
+| Trash | Console | 1 | Trash card on Backups | “Deleted” segment in the game’s Versions | Recently deleted panel from Configuration › Storage | A | ✅ **A** (2026-10-23), always last on the page, which is renamed **Storage** |
+| Name a version | Agent + console Versions | 2 | Inline edit | Name dialog with suggestions | Named-saves strip | B | ✅ **B** in both (2026-10-23); the console's rows get a Name column so their layout holds |
+| How much to keep | Console game page | 3, 4 | Presets + preview line | Timeline of kept / removed | One slider + Advanced | B | ✅ **B** (2026-10-23), behind “Keep history…” on the Versions card; the default in Configuration |
+| Restore one file | Agent + console version files | 5 | Per file | Tick several | Compare with this device / the latest | Agent C, console A | ✅ **B** in both (2026-10-23); in the console it makes a new save (“Restore and create save”) |
+
+### From the review (2026-10-23)
+
+- **Backups becomes Storage.** The console's Backups tab is renamed *Storage* and holds everything about where the
+  data lives, in this order: backups first, then *Space used* (the server's data folder by kind, and each off-site
+  remote's use; storage-dedup-offsite), then *Off-site copies*, and **Trash always last**.
+- **Name a version:** the console's B adds a *Name* column with a pencil ("Name" when empty, the name chip when set,
+  either opens the dialog). The first build stacked the name under the date and pushed the row's actions to a second
+  line.
+- **How much to keep:** per game, the timeline (B) opens from **Keep history…** on the Versions card, with *Use the
+  default* or *Its own setting*. The **server-wide default** is a *History to keep* row in Configuration › Defaults &
+  maintenance, whose *Change…* opens the same planner.
+- **Restore files in the console creates a save.** Restoring makes a new version on the server (the latest save with
+  the picked files taken from the old version). It becomes Latest, every device that syncs the game pulls it, and
+  the old latest stays in history. So the button says **Restore and create save**, not "Send to {device}".
 
 ---
 
@@ -75,9 +90,10 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
 4. **Restore:** brings the row back, moves the archive back, and refuses if its playthrough is gone (unless the
    playthrough is restored with it, Playthroughs Phase 10). A restored version is never made head automatically.
    *Set as Latest* stays a separate, explicit step.
-5. **Console:** a **Trash** section on the Storage/Config page: list (game, playthrough, time, size, reason,
-   days left), Restore, *Empty trash* (confirmation naming the count and size), and the trash's size on the storage
-   summary. The Versions card says "Deleted versions go to trash for 14 days".
+5. **Console:** a **Trash** card, last on the **Storage** page (the Backups tab renamed, 2026-10-23): list (game,
+   playthrough, time, size, reason, days left), Restore, *Empty trash* (confirmation naming the count and size), the
+   *Keep deleted versions for* setting, and the trash's size in *Space used*. The Versions card says "Deleted
+   versions go to trash for 14 days".
 6. Health: trash size counts towards disk use. A disk-space warning names it as the first thing to free.
 7. Server backups never include trash.
 
@@ -85,7 +101,8 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
 
 1. `SaveVersion.Label?` (1–80 chars, trimmed). A labelled version is **never pruned**, whatever `Protected` says.
    Clearing the label leaves `Protected` as it was set.
-2. Edit inline on the console's version row and the agent's (agent-key route
+2. Named from a dialog with suggestions (mockup B, decided 2026-10-23): the console's Versions table gets a *Name*
+   column whose pencil opens it; the agent's rows open it from "Name…" (agent-key route
    `PUT /api/agent/games/{id}/versions/{versionId}/label`). Shown as a chip on every version line, conflict card
    and *Set as Latest* dialog. Audit `version.label` with old and new.
 3. CLI: `label <game> <version> "Before the final boss"` / `--clear`.
@@ -118,8 +135,10 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
    | Balanced | 3 days | 30 days | 26 weeks |
    | Long | 7 days | 90 days | forever |
 
-4. The console's retention control: *Count* or *Thinning* → preset or custom, with Phase 3's preview live under it
-   and a small timeline showing which versions survive.
+4. The console's retention control (mockup B, decided 2026-10-23): **Keep history…** on a game's Versions card opens
+   it: *Use the default* or *Its own setting*; then *Count* or *Thinning* → preset or custom, with Phase 3's preview
+   live under it and the timeline of which versions survive. The server-wide default is a *History to keep* row in
+   Configuration › Defaults & maintenance, with the same planner behind *Change…*.
 5. Planner tests: gaps of weeks, many pushes in one minute, DST changes, a week split across a month or year
    boundary, pinned versions beyond the cap, an empty playthrough.
 
@@ -132,12 +151,16 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
    `SavePathGuard`, no symlink traversal, the path must resolve inside that folder key's root. Write to temp, verify
    the hash, then replace. The previous file goes into the local copy store (Playthroughs Phase 5) when that mode
    keeps copies, so the restore itself can be undone. The head is unchanged.
-3. **Agent UI:** a *Restore this file* action in the version file tree, with a dialog that names the source version
+3. **Agent UI** (mockup B, decided 2026-10-23): tick files in the version file tree, then *Restore N files*, with a
+   dialog that names the source version
    (and playthrough, if it isn't the Selected one) and says "Your save will then differ from the latest; the next
    push makes a new version."
-4. **Console:** *Restore to a device…* in `VersionFiles.tsx` picks a machine and queues an `AgentCommand`
-   (`RestoreFile`), which runs with the same guards and reports its result in the command history.
-   *Download this file* goes beside it.
+4. **Console** (mockup B, decided 2026-10-23): tick files in `VersionFiles.tsx`, then **Restore and create save**.
+   The server makes a new version of that playthrough: the head's files, with the ticked ones taken from the old
+   version (each checked against its SHA-256), labelled "Restored N files from <date>". It becomes the head, and
+   every device that syncs the game pulls it like any new save (the closed-game check included). The old head stays
+   in history, so *Set as Latest* undoes it. Admin `POST /api/admin/games/{id}/versions/{versionId}/restore-files`
+   `{ paths, playthroughId }`, audited. *Download this file* goes beside it.
 5. **CLI:** `restore-file <game> <version> <path> [--folder <key>]` ([[CLI Reference]] article).
 
 ---

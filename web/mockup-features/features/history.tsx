@@ -8,7 +8,7 @@ import { Seg } from '../../src/components/ui/Seg'
 import { fmtSize } from '../../src/format'
 import { toast } from '../../src/toast'
 import { getState, setState, useMock, type TrashItem } from '../store'
-import { Dialog, fieldCls } from './common'
+import { Choice, Dialog, fieldCls } from './common'
 
 /* ------------------------------------------------------------------ retention planner (plan.md Phase 3–4) */
 
@@ -48,9 +48,11 @@ const ageText = (a: number) => (a < 1 ? 'today' : a < 2 ? 'yesterday' : `${Math.
 const why = (v: HV, p: Policy) => v.head ? 'Latest' : v.label ? `Named “${v.label}”` : v.prot ? 'Protected'
   : p.mode === 'count' ? `Among the newest ${p.count}` : v.age < p.a ? `Within ${p.a} days` : v.age < p.a + p.d ? 'Newest of its day' : 'Newest of its week'
 
-/** “How much to keep”: the planned retention control on the game page, in the variant on show. */
-export function KeepHistoryCard() {
+/** “How much to keep”: the planned retention planner, in the variant on show. `game` is one game's own setting (opened from
+ *  its Versions card, and it can follow the default); `default` is the server-wide default in Configuration. */
+export function KeepHistory({ scope, onClose }: { scope: 'game' | 'default'; onClose: () => void }) {
   const variant = useMock(s => s.variant)
+  const [own, setOwn] = useState(false)
   const [mode, setMode] = useState<'count' | 'thin'>('thin')
   const [preset, setPreset] = useState('balanced')
   const [custom, setCustom] = useState<[number, number, number]>([3, 30, 26])
@@ -62,7 +64,9 @@ export function KeepHistoryCard() {
   const [advanced, setAdvanced] = useState(false)
 
   let p: Policy
-  if (variant === 'C' && !advanced) {
+  if (scope === 'game' && !own) {
+    p = { mode: 'thin', a: 3, d: 30, w: 26, cap: 0, count: 10 }
+  } else if (variant === 'C' && !advanced) {
     const map: Record<number, Policy> = {
       1: { mode: 'count', a: 0, d: 0, w: 0, cap: 0, count: 10 },
       2: { mode: 'thin', a: 2, d: 14, w: 8, cap: 0, count: 10 },
@@ -139,7 +143,7 @@ export function KeepHistoryCard() {
       </span>
       <span className="flex gap-1.5">
         {variant === 'A' && r.drop.length > 0 && <Button size="sm" onClick={() => setShowList(!showList)}>{showList ? 'Hide' : 'Show which'}</Button>}
-        <Button size="sm" variant="primary" onClick={() => (r.drop.length ? setConfirm(true) : toast('Saved. Nothing to remove.'))}>Save</Button>
+        <Button size="sm" variant="primary" onClick={() => (r.drop.length ? setConfirm(true) : (toast('Saved. Nothing to remove.'), onClose()))}>Save</Button>
       </span>
     </div>
   )
@@ -151,11 +155,20 @@ export function KeepHistoryCard() {
     </div>
   )
 
+  const follows = scope === 'game' && !own
   return (
     <>
-      <Card title="Keep history" headerRight={<span className="text-[11.5px] text-dim">Hollow Knight · Main · {HIST.length} versions · {fmtSize(total)}</span>}>
+      <Dialog wide onClose={onClose}
+        title={scope === 'game' ? 'Keep history · Hollow Knight' : 'History to keep · every game'}
+        sub={scope === 'game' ? `Main playthrough · ${HIST.length} versions · ${fmtSize(total)}` : 'Each playthrough of a game that has no setting of its own. Shown on Hollow Knight’s history.'}>
         <div className="flex flex-col gap-3">
-          {variant === 'C' && !advanced ? (
+          {scope === 'game' && (
+            <div className="grid sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Which setting">
+              <Choice checked={!own} onPick={() => setOwn(false)} title="Use the default" sub="Thinning · Balanced, set in Configuration" />
+              <Choice checked={own} onPick={() => setOwn(true)} title="Its own setting" sub="Only Hollow Knight" />
+            </div>
+          )}
+          {follows ? <p className="text-[12.5px] text-dim">{sentence} Named, protected and latest versions are always kept.</p> : variant === 'C' && !advanced ? (
             <>
               <input type="range" min={1} max={4} value={level} onChange={e => setLevel(Number(e.target.value))} aria-label="How much history"
                 className="w-full accent-[var(--color-accent)]" />
@@ -163,10 +176,10 @@ export function KeepHistoryCard() {
               <p className="text-[12.5px] text-dim">{sentence}</p>
             </>
           ) : controls}
-          {variant === 'C' && <label className="flex items-center gap-1.5 text-[12px] text-dim cursor-pointer"><input type="checkbox" className="accent-[var(--color-accent)]" checked={advanced} onChange={e => setAdvanced(e.target.checked)} />Advanced</label>}
+          {!follows && variant === 'C' && <label className="flex items-center gap-1.5 text-[12px] text-dim cursor-pointer"><input type="checkbox" className="accent-[var(--color-accent)]" checked={advanced} onChange={e => setAdvanced(e.target.checked)} />Advanced</label>}
           {variant === 'B' && timeline}
           {variant === 'C' && <>{bar('Now', HIST.length, total, 'bg-info')}{bar('After saving', r.keep.size, total - r.bytes, 'bg-safe')}</>}
-          {summary}
+          {follows ? <div className="flex justify-end"><Button size="sm" variant="primary" onClick={() => { toast('Hollow Knight follows the default.'); onClose() }}>Save</Button></div> : summary}
           {variant === 'A' && showList && (
             <div className="border border-line rounded-xl max-h-[220px] overflow-y-auto">
               {HIST.slice(0, 50).map((v, i) => (
@@ -177,12 +190,12 @@ export function KeepHistoryCard() {
             </div>
           )}
         </div>
-      </Card>
+      </Dialog>
       {confirm && (
-        <Dialog title={`Move ${r.drop.length} versions to trash?`} sub="Hollow Knight · Main" onClose={() => setConfirm(false)}
+        <Dialog title={`Move ${r.drop.length} versions to trash?`} sub={scope === 'game' ? 'Hollow Knight · Main' : 'Every game that uses the default · 61 versions in all'} onClose={() => setConfirm(false)}
           actions={<><Button variant="quiet" onClick={() => setConfirm(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => { setConfirm(false); toast(`Saved. ${r.drop.length} versions moved to trash for 14 days.`) }}>Save and move to trash</Button></>}>
-          <p>With this setting, {r.drop.length} versions ({fmtSize(r.bytes)}) go to trash now. You can restore them from Backups › Trash for 14 days. Named, protected and latest versions are always kept.</p>
+            <Button variant="primary" onClick={() => { setConfirm(false); onClose(); toast(`Saved. ${r.drop.length} versions moved to trash for 14 days.`) }}>Save and move to trash</Button></>}>
+          <p>With this setting, {r.drop.length} versions ({fmtSize(r.bytes)}) go to trash now. You can restore them from Storage › Trash for 14 days. Named, protected and latest versions are always kept.</p>
         </Dialog>
       )}
     </>

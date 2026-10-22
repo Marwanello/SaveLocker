@@ -5,7 +5,7 @@ import { Button } from '../../src/components/ui/Button'
 import { Card } from '../../src/components/ui/Card'
 import { Chip } from '../../src/components/ui/Chip'
 import { formatAgo, formatBytes } from '../../src/format'
-import { getState, ptById, setState, useMock } from '../store'
+import { HUNTERS_MELON, HUNTERS_RETRO, HUNTERS_TREES, getState, ptById, setState, treeGameName, useMock } from '../store'
 import { Dialog, Steps, closeFlow, ptLine, startSwitch } from './common'
 
 /* ------------------------------------------------------------------ dialogs */
@@ -40,22 +40,41 @@ export function SwitchDialog({ target, onClose }: { target: string; onClose: () 
   )
 }
 
+/** The save folder's files, for “Start fresh”: which to keep (profile, settings) and which go. */
+function folderFiles(treeId: string) {
+  if (treeId === HUNTERS_MELON) return [{ path: 'Metroid Prime - Hunters (USA).sav', size: 262_144, keep: false }]
+  if (treeId === HUNTERS_RETRO) return [{ path: 'Metroid Prime - Hunters (USA).srm', size: 524_288, keep: false }]
+  return [
+    { path: 'profile8.lsf', size: 2_048, keep: true, why: 'Profile and settings' },
+    { path: 'HonourMode.lsv', size: 33_554_432, keep: false },
+    { path: 'HonourMode.WebP', size: 184_320, keep: false },
+    { path: 'QuickSave_12.lsv', size: 19_922_944, keep: false },
+    { path: 'Autosave_44.lsv', size: 20_971_520, keep: false },
+  ]
+}
+
 export function NewPlaythroughDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('')
-  const [from, setFrom] = useState<'here' | 'latest'>('here')
+  const [from, setFrom] = useState<'fresh' | 'current'>('current')
   const [switchNow, setSwitchNow] = useState(true)
   const selected = useMock(s => s.selected)
+  const treeId = useMock(s => s.treeId)
+  const files = folderFiles(treeId)
+  const [keep, setKeep] = useState<Record<string, boolean>>(() => Object.fromEntries(files.map(f => [f.path, f.keep])))
+  const kept = files.filter(f => keep[f.path])
+  const cur = ptById(selected)
   const create = () => {
     const id = `new-${Date.now()}`
     const s = getState()
+    const size = from === 'fresh' ? kept.reduce((n, f) => n + f.size, 0) : cur.size
     setState({
-      pts: [...s.pts, { id, name: name.trim(), when: new Date().toISOString(), by: 'Steam Deck — Maro', versions: 1, size: 52_428_800, devices: switchNow ? ['Steam Deck — Maro'] : [], local: true }]
+      pts: [...s.pts, { id, name: name.trim(), when: new Date().toISOString(), by: 'Steam Deck — Maro', versions: 1, size, devices: switchNow ? ['Steam Deck — Maro'] : [], local: true }]
         .map(p => (switchNow && p.id !== id ? { ...p, devices: p.devices.filter(d => d !== 'Steam Deck — Maro') } : p)),
       ...(switchNow ? { selected: id } : {}),
     })
     onClose()
   }
-  const opt = (v: 'here' | 'latest', title: string, sub: string) => (
+  const opt = (v: 'fresh' | 'current', title: string, sub: string) => (
     <button type="button" className="sl-plays__opt" role="radio" aria-checked={from === v} onClick={() => setFrom(v)}>
       <span className="sl-plays__radio" /><span className="sl-plays__txt"><b>{title}</b><span>{sub}</span></span>
     </button>
@@ -65,17 +84,31 @@ export function NewPlaythroughDialog({ onClose }: { onClose: () => void }) {
       title="New playthrough" onClose={onClose}
       actions={<><Button variant="quiet" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!name.trim()} onClick={create}>Create</Button></>}
     >
-      <p>A separate line of saves for Baldur’s Gate 3. The others stay as they are.</p>
+      <p>A separate line of saves for {treeGameName(treeId)}{HUNTERS_TREES.includes(treeId) ? ` in ${treeId === HUNTERS_MELON ? 'melonDS' : 'RetroArch'}` : ''}. The others stay as they are.</p>
       <div className="sl-field" style={{ marginBottom: 12 }}>
         <label htmlFor="slf-ptname">Name</label>
         <input id="slf-ptname" className="sl-input" value={name} placeholder="e.g. Dark Urge, tactician" onChange={e => setName(e.target.value)} autoFocus />
       </div>
       <div className="sl-plays" role="radiogroup" style={{ marginBottom: 12 }}>
-        {opt('here', 'The save on this device', `A copy of ${ptById(selected).name} as it is here`)}
-        {opt('latest', 'The latest of another playthrough', `Main · ${ptLine('main')}`)}
+        {opt('current', 'Current save', `Starts as a copy of ${cur.name}’s latest save, ${ptLine(selected)}`)}
+        {opt('fresh', 'Start fresh', 'Starts with an empty save folder, so the game begins a new game. Tick the files to keep, like your profile and settings.')}
       </div>
+      {from === 'fresh' && (
+        <div className="slf-keep" role="group" aria-label="Files to keep">
+          {files.map(f => (
+            <label key={f.path}>
+              <input type="checkbox" className="slf-check" checked={!!keep[f.path]} onChange={e => setKeep({ ...keep, [f.path]: e.target.checked })} />
+              <span className="sl-mono">{f.path}</span>
+              <small>{f.why ?? formatBytes(f.size)}</small>
+            </label>
+          ))}
+          <span className="slf-dim" style={{ fontSize: 11.5, padding: '4px 2px' }}>
+            {kept.length === 0 ? 'Nothing is kept: the folder starts empty.' : `Keeps ${kept.length} file${kept.length === 1 ? '' : 's'}; the rest stay in ${cur.name}, not deleted.`}
+          </span>
+        </div>
+      )}
       <div className="sl-setting">
-        <div className="sl-setting__label">Play it on this device now<small>Uploads {ptById(selected).name} first, as a switch does.</small></div>
+        <div className="sl-setting__label">Play it on this device now<small>Uploads {cur.name} first, as a switch does{from === 'fresh' ? ', then empties the save folder except the files you kept' : ''}.</small></div>
         <button type="button" className="sl-switch" role="switch" aria-checked={switchNow} aria-label="Play it now" onClick={() => setSwitchNow(!switchNow)} />
       </div>
     </Dialog>
@@ -160,7 +193,7 @@ export function PlaythroughChipB() {
 
 /* ------------------------------------------------------------------ C · tabs */
 
-export function PlaythroughTabsC({ viewing, onView }: { viewing: string; onView: (id: string) => void }) {
+export function PlaythroughTabsC({ viewing, onView, scope }: { viewing: string; onView: (id: string) => void; scope?: string | null }) {
   const pts = useMock(s => s.pts)
   const selected = useMock(s => s.selected)
   const [ask, setAsk] = useState<string | null>(null)
@@ -169,6 +202,7 @@ export function PlaythroughTabsC({ viewing, onView }: { viewing: string; onView:
   return (
     <>
       <div className="slf-inline">
+        {scope && <span className="slf-scope">{scope} playthroughs</span>}
         <div className="sl-seg" role="tablist" aria-label="Playthroughs">
           {pts.filter(q => !q.archived).map(q => (
             <button key={q.id} type="button" role="tab" aria-pressed={q.id === viewing} onClick={() => onView(q.id)}>
@@ -179,7 +213,7 @@ export function PlaythroughTabsC({ viewing, onView }: { viewing: string; onView:
         <Button size="sm" variant="quiet" onClick={() => setAdding(true)}><Plus size={13} aria-hidden="true" />New</Button>
       </div>
       {viewing === selected
-        ? <Banner tone="ok" title={`This device plays ${p.name}`} detail="Sync, the launch check and Versions all use it." />
+        ? <Banner tone="ok" title={`This device plays ${p.name}${scope ? ` in ${scope}` : ''}`} detail={scope ? `Sync, the launch check and Versions all use it. Each emulator keeps its own playthroughs; the other tabs aren’t affected.` : 'Sync, the launch check and Versions all use it.'} />
         : <Banner tone="warn" title={`Viewing ${p.name}`} detail={`Latest ${formatAgo(p.when)} on ${p.by}, ${formatBytes(p.size)}. This device plays ${ptById(selected).name}.`}
             action={<Button variant="primary" onClick={() => setAsk(viewing)}>Play this one here</Button>} />}
       {ask && <SwitchDialog target={ask} onClose={() => setAsk(null)} />}

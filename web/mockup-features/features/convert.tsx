@@ -3,6 +3,7 @@ import { Banner } from '../../src/components/ui/Banner'
 import { Button } from '../../src/components/ui/Button'
 import { Card } from '../../src/components/ui/Card'
 import { DataTable } from '../../src/components/ui/DataTable'
+import { Icon } from '../../src/components/ui/Icon'
 import { toast } from '../../src/toast'
 import { getState, runFlow, setState, timers, useMock } from '../store'
 import { Dialog, Steps } from './common'
@@ -42,14 +43,15 @@ export function ConvertCard() {
     </span>
   )
   const lowBanner = low && <Banner tone="watch" title="Conversion paused: 4.1 GB free">It needs 5 GB free to carry on safely, because the original zips stay in trash for 14 days. Empty trash or free space and it carries on by itself.</Banner>
-  const popup = !seen && variant !== 'B' && (
-    <Dialog title="SaveLocker is converting your saves to save space" sub="This update stores each file once, even when many versions share it."
-      actions={<Button variant="primary" onClick={() => setState({ convSeen: true })}>Got it</Button>}>
+  const popup = !seen && (
+    <Dialog title={variant === 'B' ? 'Updated to SaveLocker 0.9: converting your saves' : 'SaveLocker is converting your saves to save space'}
+      sub="This update stores each file once, even when many versions share it. It runs once, right after the upgrade."
+      actions={<Button variant="primary" onClick={() => setState({ convSeen: true })}>{variant === 'B' ? 'OK' : 'Got it'}</Button>}>
       <p>Your 412 versions are converted in the background. You can keep using SaveLocker and syncing normally the whole time. Each version is checked before it switches over, and its original zip stays in trash for 14 days.</p>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-[12.5px]">
         <dt className="text-faint">Expected saving</dt><dd className="text-fg">about {SAVED_GB} GB of 14.2 GB</dd>
         <dt className="text-faint">Time</dt><dd className="text-fg">about 20 minutes</dd>
-        <dt className="text-faint">Progress</dt><dd className="text-fg">Configuration › Storage</dd>
+        <dt className="text-faint">Progress</dt><dd className="text-fg">Storage, at the top</dd>
       </dl>
     </Dialog>
   )
@@ -77,20 +79,32 @@ export function ConvertCard() {
     let left = conv
     const rows = games.map(([n, total, gb]) => { const done = Math.min(total, left); left -= done; return { n, total, gb, done } })
     body = (
-      <>
-        {!seen && <Banner tone="watch" title="SaveLocker is converting your saves to save space" action={<Button size="sm" variant="primary" onClick={() => setState({ convSeen: true })}>OK</Button>}>You can keep using it normally. Progress is below.</Banner>}
-        {seen && conv < TOTAL && <Banner tone="safe" title={`Converting saves to save space · ${pct}%`}>Syncing isn’t affected.</Banner>}
-        <Card title={`Storage · ${state}`} headerRight={controls} flush>
-          <DataTable caption="Conversion by game" rows={rows} rowKey={r => r.n}
-            columns={[
-              { head: 'Game', kind: 'k', cell: r => r.n },
-              { head: 'Progress', cell: r => <span className="block w-[160px] h-1.5 rounded-full bg-tile overflow-hidden"><i className="block h-full bg-info" style={{ width: `${(r.done / r.total) * 100}%` }} /></span> },
-              { head: 'Versions', kind: 'n', cell: r => `${r.done} / ${r.total}` },
-              { head: 'Saved', kind: 'n', cell: r => `${((r.gb * r.done) / r.total).toFixed(1)} GB` },
-            ]} />
-          {flow && <div className="p-4"><Steps /></div>}
-        </Card>
-      </>
+      <Card title="Converting to save space" headerRight={controls}>
+        <div className="flex flex-col gap-3">
+          <div className="flex justify-between items-baseline gap-3 flex-wrap">
+            <b className="text-[15px] text-fg">{state}</b>
+            <span className="font-mono text-[12px] text-dim">{conv} of {TOTAL} versions · {pct}%</span>
+          </div>
+          <div className="h-3.5 rounded-full bg-tile overflow-hidden" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Conversion">
+            <i className={`block h-full ${low || paused ? 'bg-watch' : 'bg-info'} transition-[width] duration-300`} style={{ width: `${pct}%` }} />
+          </div>
+          <span className="text-[12px] text-dim">Saved so far: {saved} GB of about {SAVED_GB} GB · problems: none · syncing isn’t affected</span>
+          <details className="group border border-line rounded-xl overflow-hidden">
+            <summary className="flex items-center gap-1.5 px-3.5 py-2.5 text-[12.5px] text-fg cursor-pointer list-none hover:bg-hover">
+              <Icon name="chevron-right" size={13} className="text-faint transition-transform group-open:rotate-90" />Per game
+              <span className="text-dim">· {rows.filter(r => r.done >= r.total).length} of {rows.length} done</span>
+            </summary>
+            <DataTable caption="Conversion by game" rows={rows} rowKey={r => r.n}
+              columns={[
+                { head: 'Game', kind: 'k', cell: r => r.n },
+                { head: 'Progress', cell: r => <span className="block w-[160px] h-1.5 rounded-full bg-tile overflow-hidden"><i className="block h-full bg-info" style={{ width: `${(r.done / r.total) * 100}%` }} /></span> },
+                { head: 'Versions', kind: 'n', cell: r => `${r.done} / ${r.total}` },
+                { head: 'Saved', kind: 'n', cell: r => `${((r.gb * r.done) / r.total).toFixed(1)} GB` },
+              ]} />
+          </details>
+          {flow && <Steps />}
+        </div>
+      </Card>
     )
   } else {
     const f = conv / TOTAL
@@ -112,4 +126,21 @@ export function ConvertCard() {
     )
   }
   return <>{lowBanner}{body}{popup}{revertDialog}</>
+}
+
+/** B · on every page while the conversion runs, under the nav like the console’s own notices. */
+export function ConvertBanner() {
+  const conv = useMock(s => s.conv)
+  const seen = useMock(s => s.convSeen)
+  const low = useMock(s => s.sim) === 'low'
+  if (!seen || conv >= TOTAL) return null
+  const pct = Math.round((conv / TOTAL) * 100)
+  return (
+    <div className="px-6 pt-3">
+      <Banner tone={low ? 'watch' : 'safe'} title={low ? 'Converting saves: paused for disk space' : `Converting saves to save space · ${pct}%`}
+        action={location.hash === '#backups' ? undefined : <Button size="sm" onClick={() => { location.hash = 'backups' }}>Open Storage</Button>}>
+        After the update to 0.9. Syncing isn’t affected.
+      </Banner>
+    </div>
+  )
 }

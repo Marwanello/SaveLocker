@@ -266,7 +266,7 @@ function useRemote() {
   return { skip, used, toggle }
 }
 
-function GamesTable() {
+export function GamesTable() {
   const { skip, toggle } = useRemote()
   return (
     <DataTable caption="Games on the remote" rows={GAMES.map((g, i) => ({ g, i }))} rowKey={r => String(r.i)}
@@ -289,7 +289,7 @@ function SpaceBar() {
   )
 }
 
-function RunNow() {
+export function RunNow() {
   const flow = useMock(s => s.flow)
   const paused = useMock(s => s.offsite.paused)
   const run = () => runFlow([

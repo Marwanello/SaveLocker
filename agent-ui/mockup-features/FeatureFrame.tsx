@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { FEATURES, chooseFeature, chooseVariant, setState, useMock, type Sim } from './store'
+import { DEMO_GAME, FEATURES, HUNTERS_MELON, HUNTERS_TREES, chooseFeature, chooseVariant, openGame, setState, useMock, type Sim } from './store'
 
 const SIM_LABEL: Record<Sim, string> = { online: 'Online', offline: 'Server unreachable', running: 'Game running' }
 
@@ -12,6 +12,7 @@ export function FeatureFrame({ children }: { children: ReactNode }) {
   const variant = useMock(s => s.variant)
   const sim = useMock(s => s.sim)
   const notes = useMock(s => s.notes)
+  const treeId = useMock(s => s.treeId)
   const f = FEATURES.find(x => x.id === featureId)!
   const v = f.variants.find(x => x.id === variant)!
   const tasks = [...new Set(FEATURES.map(x => x.task))]
@@ -45,6 +46,13 @@ export function FeatureFrame({ children }: { children: ReactNode }) {
             {f.sims.map(s => (
               <button key={s} className="mock-btn" aria-pressed={sim === s} onClick={() => setState({ sim: s })}>{SIM_LABEL[s]}</button>
             ))}
+          </div>
+        )}
+        {f.games && (
+          <div className="mock-group">
+            <span className="mock-label">Game</span>
+            <button className="mock-btn" aria-pressed={treeId === DEMO_GAME} onClick={() => openGame(DEMO_GAME)}>Baldur’s Gate 3</button>
+            <button className="mock-btn" aria-pressed={HUNTERS_TREES.includes(treeId)} onClick={() => openGame(HUNTERS_MELON)}>Metroid Prime - Hunters · 2 emulators</button>
           </div>
         )}
         <div className="mock-spacer" />
