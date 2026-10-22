@@ -21,14 +21,14 @@ export const FEATURES: FeatureDef[] = [
   {
     id: 'pt-console', task: 'Playthroughs', name: 'Playthroughs card', where: () => ({ view: 'games', game: G.elden }),
     sims: [['ok', 'Device ready'], ['running', 'Game running on the device']],
-    pick: 'D or E, asked for on 2026-10-23: playthroughs and their versions on one card. Versions belong to one playthrough, so A–C’s separate Versions card has no playthrough to show; D and E pick one and show its versions.',
+    pick: 'Chosen: E (2026-10-24). The card is called Saves and replaces Versions on every game: each game has at least one playthrough, Main, which is the default and can’t be archived. A version’s chevron opens its files.',
     always: ['Switching a device sends it a command; the device runs the switch with its own checks.', 'Delete is refused while a device plays it or it’s the default; it goes to trash for 14 days.', 'Archive hides it with no time limit.'],
     variants: [
       { id: 'A', name: 'Table', what: 'A Playthroughs card under the stats: latest save, versions, size and which devices play each one, with a row menu.', try: '“Switch a device…” → Steam Deck → Hard mode run. Then “Delete…” on Main (refused).' },
       { id: 'B', name: 'Lanes over time', what: 'Each playthrough is a lane of version dots; clicking one opens its details and actions beside the list.', try: 'Click “Sara’s run” → “Switch a device to this…”.' },
       { id: 'C', name: 'List and detail', what: 'Playthroughs on the left; the chosen one on the right with every device and a “Switch to this” per device.', try: 'Pick “Main”, then “Switch to this” on Battlestation.' },
       { id: 'D', name: 'Side by side', what: 'One card replaces Versions: playthroughs on the left with their devices; the picked one’s versions on the right, with its devices and switch above them.', try: 'Pick “Hard mode run”, name a version, then “Switch a device to this…” → Steam Deck.' },
-      { id: 'E', name: 'Tabs over versions', what: 'One card replaces Versions: a tab per playthrough with the devices that play it; under the tab its devices, actions and versions.', try: 'Open the “Sara’s run” tab, Set as Latest on an older version, then switch Battlestation to it.' },
+      { id: 'E', name: 'Tabs over versions', what: 'A Saves card replaces Versions on every game: a tab per playthrough with the devices that play it; under the tab its devices, actions and versions, each opening its files. A game with one playthrough shows just Main.', try: 'Open the “Sara’s run” tab, open a version’s files, Set as Latest on an older one, then switch Battlestation to it. Then open Hollow Knight: just Main.' },
     ],
   },
   {
@@ -64,11 +64,11 @@ export const FEATURES: FeatureDef[] = [
   {
     id: 'vh-restore', task: 'Version history', name: 'Restore one file', where: () => ({ view: 'games', game: G.hollow }),
     sims: [['ok', 'Device ready'], ['running', 'Game running on the device']],
-    pick: 'Chosen: B · Pick several (2026-10-23). A restore makes a new save, so the button says “Restore and create save”.',
+    pick: 'Chosen: B · Pick several (2026-10-23), with folders (2026-10-24): ticking a folder takes everything in it, and the dialog lists what each file and folder becomes in the new save.',
     always: ['The server makes a new version: the latest save with the picked files taken from the old one. It becomes Latest and each device pulls it, closed-game check included.', 'Download a single file is always there.', 'The old latest stays in history, so Set as Latest undoes it.'],
     variants: [
       { id: 'A', name: 'Per file', what: 'An opened version lists its files; each has “Restore…” and Download.', try: 'Open a version, restore “user3.dat”.' },
-      { id: 'B', name: 'Pick several', what: 'Tick files in an opened version and restore them together as a new save.', try: 'Tick two files, “Restore 2 files…”, then “Restore and create save”.' },
+      { id: 'B', name: 'Pick several', what: 'Tick files or whole folders in an opened version and restore them together as a new save. The dialog shows each file replaced, added or already the same, folders created, and files the old version didn’t have.', try: 'Open a version, tick “Steel Soul” and “Old saves”, Restore… Try “Make the picked folders exactly as they were”.' },
       { id: 'C', name: 'Compare with latest', what: 'An opened version is compared with the latest; files that differ get a restore button.', try: 'Restore the file marked “Differs”.' },
     ],
   },
@@ -105,8 +105,8 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     id: 'st-recover', task: 'Storage', name: 'Restore a lost server', where: v => (v === 'A' ? { view: 'games', screen: 'first-run' } : v === 'B' ? { view: 'backups' } : { view: 'games', screen: 'sign-in' }),
-    sims: [['linked', 'A remote is set up'], ['none', 'No remote set up']],
-    pick: 'Chosen: A and B, both (2026-10-23). B searches the remote this server already has straight away.',
+    sims: [['linked', 'One remote set up'], ['two', 'Two remotes set up'], ['none', 'No remote set up']],
+    pick: 'Chosen: A and B, both (2026-10-23). B searches the remote this server already has straight away; with several, it asks which one first (2026-10-24).',
     always: ['Restores a backup from the remote, then adopts the remote so nothing there is deleted.', 'Can import older versions from the copy afterwards.', 'Devices reconnect with their existing keys.'],
     variants: [
       { id: 'A', name: 'First-run screen', what: 'An empty server opens on “Start fresh” or “Restore from an off-site copy”.', try: 'Restore → Folder → Find backups → Restore.' },
@@ -151,6 +151,7 @@ interface MockState {
   convSeen: boolean
 }
 
+export const NAS: Remote = { id: 'r2', provider: 'SFTP · NAS', where: 'marwan@nas.local:/backups/SaveLocker', used: 7.1, cap: 0, free: 1840, total: 3700 }
 export const GDRIVE: Remote = { id: 'r1', provider: 'Google Drive', where: 'marwan@gmail.com · My Drive/SaveLocker', used: 6.4, cap: 10, free: 11.2, total: 15 }
 
 function fresh(feature: string, variant: Variant, navSeq: number): MockState {

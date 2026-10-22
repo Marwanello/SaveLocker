@@ -43,11 +43,11 @@ The real Decky page has no status or Sync buttons on game rows (rows open a dial
 
 | Feature | Where | Phases | A | B | C | Proposed | Decision |
 |---|---|---|---|---|---|---|---|
-| Switch on this device | Agent game page | 4, 6 | Playthroughs card (table) + dialog | Header chip “Playing: X ▾” + dialog | Segmented tabs + banner | B | ✅ **C** (2026-10-23), under the emulator tabs on a multi-emulator game |
-| Copies on this device | Agent Settings | 5 | One setting row | Explained choices (`sl-plays` cards) | Per-game override table | B | ⏳ Pending — the card didn't show in the first build (fixed 2026-10-23), so it's up for review again |
-| Playthroughs card | Console game page | 7 | Table | Lanes over time + side details | List and detail | D / E | ⏳ Pending between the new **D** (side by side) and **E** (tabs over versions), which put playthroughs and their versions on one card |
-| Decky | Gaming Mode (from live captures) | 8 | A “Playthrough” Field in the game’s dialog | Dropdown button on the Games row | A Playthroughs page in the sidebar | A | ✅ **B** (2026-10-23), plus the same dropdown in the QAM; game icons and List / Grid added |
-| Playnite | Desktop menu (Harmony theme) | 9 | Ticked submenu | Picker window | Submenu title + tag | A | ✅ **A** (2026-10-23): fewest clicks |
+| Switch on this device | Agent game page | 4, 6 | Playthroughs card (table) + dialog | Header chip “Playing: X ▾” + dialog | Segmented tabs + banner | B | ✅ **C** (2026-10-23), under the emulator tabs on a multi-emulator game; Versions on the server follows the playthrough on show (2026-10-24) |
+| Copies on this device | Agent Settings | 5 | One setting row | Explained choices (`sl-plays` cards) | Per-game override table | B | ⏳ Pending — still broken on 2026-10-24 (the card overlapped the Settings page); now inside the real Settings page |
+| Playthroughs card | Console game page | 7 | Table | Lanes over time + side details | List and detail | D / E | ✅ **E** (2026-10-24): a **Saves** card on every game, a tab per playthrough (Main at least), its versions and their files |
+| Decky | Gaming Mode (from live captures) | 8 | A “Playthrough” Field in the game’s dialog | Dropdown button on the Games row | A Playthroughs page in the sidebar | A | ✅ **B** (2026-10-23, confirmed 2026-10-24), plus the same dropdown in the QAM; game icons and List / Grid added |
+| Playnite | Desktop menu (Harmony theme) | 9 | Ticked submenu | Picker window | Submenu title + tag | A | ✅ **A** (2026-10-23, confirmed 2026-10-24): fewest clicks |
 
 ### From the review (2026-10-23)
 
@@ -70,6 +70,17 @@ The real Decky page has no status or Sync buttons on game rows (rows open a dial
   library art for Steam games by app id; the server's art for the rest).
 - **Playnite:** “New playthrough…” in the Playthrough submenu opens a window (name, Current save or Start fresh,
   play it now); it didn't work in the first build.
+
+### From the second review (2026-10-24)
+
+- **Agent C:** *Versions on the server* lists the versions of the playthrough on show, titled with its name; another
+  playthrough's tab shows its history read-only.
+- **Console E, named Saves:** it replaces the Versions card on **every** game. Every game has at least one
+  playthrough, **Main**, so a game nobody forked shows a single Main tab with its versions. Each version's chevron
+  opens its files (the Versions card's own file tree). The **default playthrough can't be archived** (Archive is not
+  offered on it; delete was already refused).
+- **Copies on this device:** the card sat outside the Settings page and the page drew over it; it's now the first
+  card inside the real page.
 
 ---
 
@@ -209,20 +220,22 @@ An agent setting, **Playthrough copies on this device**:
    latest version, so nothing is uploaded again) or *Start fresh* (after the current save is uploaded, the save folder
    is emptied except the files ticked to keep; the first push makes the new playthrough's first version). "Play it on
    this device now" is on by default.
-2. The playthrough name on sync status, activity lines, conflict cards and the Versions card's rows once a game has
-   more than one. The Versions card shows the Selected playthrough by default, with a picker to view others
-   (read-only, plus "New playthrough from this version").
+2. The playthrough name on sync status, activity lines and conflict cards once a game has more than one. *Versions
+   on the server* follows the playthrough tab on show and is titled with its name: the Selected one by default,
+   another one read-only (plus "New playthrough from this version").
 3. Settings: the Phase 5 mode.
 4. CLI (`AgentCli.cs`, [[CLI Reference]] KB article): `playthrough list <game>`, `playthrough switch <game> <name>`,
    `playthrough new <game> <name> [--from-version <id>]`.
 5. No toast at launch: the maintainer doesn't want a launch notification. The Selected name just shows where the
    game is shown.
 
-1. A **Playthroughs and versions** card replaces the Versions card on a game with playthroughs (mockup D or E,
-   decision pending): pick a playthrough; the card shows the devices on it (from `DeviceSelection`), "Switch a
-   device to this…" (picks a machine with `MachineSelect` and queues the command from Phase 3), Rename, Archive,
-   *Default for new devices*, Delete (Phase 10), and that playthrough's versions with the Versions card's own row
-   actions plus "New playthrough from this version".
+1. A **Saves** card replaces the Versions card on **every** game (mockup E, decided 2026-10-24): a tab per
+   playthrough, with the devices that play it under its name; every game has at least **Main**. Under the tab: the
+   devices on it (from `DeviceSelection`), "Switch a device to this…" (picks a machine with `MachineSelect` and
+   queues the command from Phase 3), Rename, Archive (not on the default: **the default playthrough can't be
+   archived**, and the server refuses it too), *Default for new devices*, Delete (Phase 10), and that playthrough's
+   versions with the Versions card's own row actions: the chevron opening the version's files, Name, Set as Latest,
+   Download, and "New playthrough from this version".
 2. New playthrough: *Current save* (pick which playthrough's latest) or *Start fresh* (keep files picked from the
    latest's file list), as in the agent.
 3. The game list shows a small "3 playthroughs" chip.

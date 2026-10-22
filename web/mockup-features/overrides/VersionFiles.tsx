@@ -11,7 +11,7 @@ type Change = 'Added' | 'Changed' | 'Removed';
 
 import { useMock } from '../store';
 import { G, versions } from '../fixtures';
-import { FileActions, FileLead, RestoreProvider } from '../features/restore';
+import { DirLead, FileActions, FileLead, RestoreProvider } from '../features/restore';
 
 export type ChangesStatus = 'loading' | 'loaded' | 'failed';
 
@@ -159,6 +159,10 @@ function nest(files: FileRow[]): Dir {
   return root;
 }
 
+function filesUnder(node: Dir, prefix: string): string[] {
+  return [...node.files.map(f => prefix + f.name), ...[...node.dirs.entries()].flatMap(([n, d]) => filesUnder(d, prefix + n + '/'))];
+}
+
 /** Nested paths as folders that fold, open by default, then files with their change and size. */
 function FileTree({ files }: { files: FileRow[] }) {
   return <TreeLevel node={nest(files)} prefix="" top />;
@@ -182,6 +186,7 @@ function TreeLevel({ node, prefix, top }: { node: Dir; prefix: string; top?: boo
                 className="w-3.5 shrink-0 text-faint hover:text-fg cursor-pointer">
                 <Icon name="chevron-right" size={12} className={open ? 'rotate-90 transition-transform' : 'transition-transform'} />
               </button>
+              <DirLead name={name} paths={filesUnder(sub, k + '/')} />
               <Icon name="folder" size={13} className="text-faint shrink-0" />
               <span className="flex-1 min-w-0 font-semibold [overflow-wrap:anywhere]">{name}/</span>
             </Node>

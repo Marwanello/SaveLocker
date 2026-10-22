@@ -6,17 +6,17 @@ import { DataTable } from '../../src/components/ui/DataTable'
 import { Icon } from '../../src/components/ui/Icon'
 import { InlineConfirm } from '../../src/components/ui/InlineConfirm'
 import { toast } from '../../src/toast'
-import { endFlow, getState, setState, useMock, type Remote } from '../store'
+import { NAS, endFlow, getState, setState, useMock, type Remote } from '../store'
 import { Dialog, fieldCls } from './common'
 import { AdvancedFields, GamesTable, MakeRoom, OffsiteSetup, OffsiteStatus, PROVIDERS, ProviderPicker, RunNow, SignInFields, TestBlock, WhatFields } from './offsite'
 import { ConvertCard } from './convert'
 import { TrashCard } from './history'
 
 /** The configured remotes; none while st-recover shows a server with no remote. */
-function useRemotes() {
+export function useRemotes() {
   const remotes = useMock(s => s.offsite.remotes)
-  const none = useMock(s => s.feature === 'st-recover' && s.sim === 'none')
-  return none ? [] : remotes
+  const sim = useMock(s => s.feature === 'st-recover' ? s.sim : null)
+  return sim === 'none' ? [] : sim === 'two' ? [...remotes, NAS] : remotes
 }
 
 /* ------------------------------------------------------------------ space used */
@@ -181,7 +181,7 @@ function RemoteTile({ r, first }: { r: Remote; first: boolean }) {
           </div>
           <div className="flex flex-col gap-1.5">
             <div className="h-2 rounded-full bg-tile overflow-hidden"><i className="block h-full bg-info" style={{ width: `${((fresh ? 0.4 : r.used) / cap) * 100}%` }} /></div>
-            <div className="flex gap-3.5 flex-wrap text-[11.5px] text-dim"><span>SaveLocker {fresh ? '0.4' : r.used.toFixed(1)} GB</span><span>Cap {r.cap} GB</span>{r.free != null && <span>{r.free} GB free of {r.total} GB</span>}</div>
+            <div className="flex gap-3.5 flex-wrap text-[11.5px] text-dim"><span>SaveLocker {fresh ? '0.4' : r.used.toFixed(1)} GB</span><span>{r.cap ? `Cap ${r.cap} GB` : "No cap"}</span>{r.free != null && <span>{r.free} GB free of {r.total} GB</span>}</div>
           </div>
           <div className="flex gap-1.5 flex-wrap">
             <Button size="sm" onClick={() => setPanel('settings')}>Saves and history…</Button>

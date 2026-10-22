@@ -49,7 +49,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   const feature = useMock(s => s.feature);
   const mockVariant = useMock(s => s.variant);
   // D and E grow the Versions card into playthroughs and their versions.
-  const ptVersions = feature === 'pt-console' && game.id === G.elden && (mockVariant === 'D' || mockVariant === 'E');
+  const ptVersions = feature === 'pt-console' && (mockVariant === 'D' || mockVariant === 'E');
   const [versions, setVersions] = useState<Version[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(true);
   const [paths, setPaths] = useState<MachineSavePath[]>([]);
@@ -205,7 +205,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
       <GameStats summary={summary} versionCount={versions.length} machinesWithGame={withGame} onRefresh={onRefresh} />
 
       {feature === 'pt-console' && game.id === G.elden && !ptVersions && <PlaythroughsCard />}
-      {ptVersions && <PlaythroughVersionsCard />}
+      {ptVersions && <PlaythroughVersionsCard game={game} versions={versions} machines={(withGame.length > 0 ? withGame : machines).map(m => m.name)} />}
 
       <BalancedColumns items={[
         ...(ptVersions ? [] : [{

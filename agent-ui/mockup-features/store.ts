@@ -34,7 +34,7 @@ export const treeGameName = (id: string) => (HUNTERS_TREES.includes(id) ? HUNTER
 export const FEATURES: FeatureDef[] = [
   {
     id: 'pt-switch', task: 'Playthroughs', name: 'Switch on this device', route: `#game:${DEMO_GAME}`, sims: ['online', 'offline', 'running'], games: true,
-    pick: 'Chosen: C · Playthrough tabs (2026-10-23). For a game with several emulators the emulator tabs stay on top and each emulator has its own playthrough tabs under them.',
+    pick: 'Chosen: C · Playthrough tabs (2026-10-23). For a game with several emulators the emulator tabs stay on top and each emulator has its own playthrough tabs under them. Versions on the server lists the playthrough on show.',
     always: [
       'The save you leave is uploaded to its own playthrough before the other goes in the folder.',
       'Refused while the game runs; nothing changes on a refusal.',
@@ -68,11 +68,11 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     id: 'vh-restore', task: 'Version history', name: 'Restore one file', route: `#game:${DEMO_GAME}`, sims: ['online', 'running'],
-    pick: 'Chosen: B · Pick several (2026-10-23).',
+    pick: 'Chosen: B · Pick several (2026-10-23 and 2026-10-24), with folders: ticking one takes everything in it, sub-folders included.',
     always: ['Same guards as a pull: game closed, inside the save folder.', 'The file is checked before it replaces anything; the old one is kept for undo.', 'The latest version doesn’t change; the next sync uploads a new one.'],
     variants: [
       { id: 'A', name: 'Restore per file', what: 'Open a version to see its files; each has Restore.', try: 'Open the version from yesterday and restore “HonourMode.lsv”.' },
-      { id: 'B', name: 'Pick several', what: 'Tick files in an opened version, then restore them together.', try: 'Tick two files, then “Restore 2 files”.' },
+      { id: 'B', name: 'Pick several', what: 'Tick files or whole folders in an opened version, then restore them together. The dialog shows what happens to each file and folder here: replaced, added, folder created, already the same, and files the version didn’t have.', try: 'Tick the Story folder (or QuickSave_9), then “Restore”. Try “Make the ticked folders exactly as they were”.' },
       { id: 'C', name: 'Compare and restore', what: 'An opened version shows this device beside it; files that differ have a restore arrow.', try: 'Restore the file marked “Differs”.' },
     ],
   },

@@ -39,7 +39,7 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
 | Trash | Console | 1 | Trash card on Backups | “Deleted” segment in the game’s Versions | Recently deleted panel from Configuration › Storage | A | ✅ **A** (2026-10-23), always last on the page, which is renamed **Storage** |
 | Name a version | Agent + console Versions | 2 | Inline edit | Name dialog with suggestions | Named-saves strip | B | ✅ **B** in both (2026-10-23); the console's rows get a Name column so their layout holds |
 | How much to keep | Console game page | 3, 4 | Presets + preview line | Timeline of kept / removed | One slider + Advanced | B | ✅ **B** (2026-10-23), behind “Keep history…” on the Versions card; the default in Configuration |
-| Restore one file | Agent + console version files | 5 | Per file | Tick several | Compare with this device / the latest | Agent C, console A | ✅ **B** in both (2026-10-23); in the console it makes a new save (“Restore and create save”) |
+| Restore one file | Agent + console version files | 5 | Per file | Tick several | Compare with this device / the latest | Agent C, console A | ✅ **B** in both (2026-10-23, confirmed 2026-10-24), with folders; in the console it makes a new save (“Restore and create save”) |
 
 ### From the review (2026-10-23)
 
@@ -55,6 +55,9 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
 - **Restore files in the console creates a save.** Restoring makes a new version on the server (the latest save with
   the picked files taken from the old version). It becomes Latest, every device that syncs the game pulls it, and
   the old latest stays in history. So the button says **Restore and create save**, not "Send to {device}".
+- **Folders and sub-folders (2026-10-24):** ticking a folder takes everything in it, and the restore dialog lists,
+  per file and folder, what happens: replaced, added, already the same, folder created, and files the target has
+  that the old version didn't (kept unless *Make the ticked folders exactly as they were* is on). Rules in Phase 5.
 
 ---
 
@@ -161,7 +164,15 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
    every device that syncs the game pulls it like any new save (the closed-game check included). The old head stays
    in history, so *Set as Latest* undoes it. Admin `POST /api/admin/games/{id}/versions/{versionId}/restore-files`
    `{ paths, playthroughId }`, audited. *Download this file* goes beside it.
-5. **CLI:** `restore-file <game> <version> <path> [--folder <key>]` ([[CLI Reference]] article).
+   **Folders** (2026-10-24): ticking a folder ticks every file under it, sub-folders included (half-ticked when only
+   some are). Files go back at the same path relative to the save folder (or extra folder key), so a folder restores
+   the same on every device. A folder the target doesn't have is created. Each picked file is *replaced*, *added*
+   or *already the same* (hash match, skipped), and the dialog lists that per file before anything runs. Files the
+   target has in a **fully ticked** folder that the old version didn't are left alone by default; *Make the ticked
+   folders exactly as they were* removes them too (into the undo copy on the agent, left out of the new save in the
+   console). Files outside the ticked ones are never touched.
+6. **CLI:** `restore-file <game> <version> <path> [--folder <key>]` ([[CLI Reference]] article); a path ending in
+   `/` restores that folder, `--exact` makes it exactly as it was.
 
 ---
 

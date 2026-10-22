@@ -8,6 +8,9 @@ import { InlineConfirm } from '../../src/components/ui/InlineConfirm'
 import { Select } from '../../src/components/ui/Select'
 import { ago, fmtSize } from '../../src/format'
 import { toast } from '../../src/toast'
+import type { Game, Version, VersionChanges } from '../../src/types'
+import { VersionFiles } from '../overrides/VersionFiles'
+import { G, filesOf } from '../fixtures'
 import { M, MACHINE_NAMES, devicesOn, endFlow, getState, ptById, runFlow, setState, useMock, type Pt } from '../store'
 import { Choice, Dialog, Steps, fieldCls } from './common'
 
@@ -85,7 +88,7 @@ export function PlaythroughsCard() {
               <Button size="sm" onClick={() => setAsk({ kind: 'move', to: sel.id })}>Switch a device to this…</Button>
               <Button size="sm" onClick={() => setAsk({ kind: 'rename', id: sel.id })}>Rename</Button>
               {sel.id !== def && <Button size="sm" onClick={() => { setState({ def: sel.id }); toast(`New devices now start on ${sel.name}.`) }}>Make default for new devices</Button>}
-              <Button size="sm" variant="quiet" onClick={() => archive(sel.id)}>{sel.archived ? 'Unarchive' : 'Archive'}</Button>
+              {sel.id !== def && <Button size="sm" variant="quiet" onClick={() => archive(sel.id)}>{sel.archived ? 'Unarchive' : 'Archive'}</Button>}
               <Button size="sm" variant="alert" onClick={() => setAsk({ kind: 'delete', id: sel.id })}>Delete…</Button>
             </>
           )}
@@ -153,7 +156,7 @@ function RowMenu({ p, isDefault, onAsk }: { p: Pt; isDefault: boolean; onAsk: (a
     <span className="inline-flex gap-1.5 justify-end flex-wrap">
       <Button size="sm" variant="quiet" onClick={() => onAsk({ kind: 'rename', id: p.id })}>Rename</Button>
       {!isDefault && !p.archived && <Button size="sm" variant="quiet" onClick={() => { setState({ def: p.id }); toast(`New devices now start on ${p.name}.`) }}>Make default</Button>}
-      <Button size="sm" variant="quiet" onClick={() => archive(p.id)}>{p.archived ? 'Unarchive' : 'Archive'}</Button>
+      {!isDefault && <Button size="sm" variant="quiet" onClick={() => archive(p.id)}>{p.archived ? 'Unarchive' : 'Archive'}</Button>}
       <Button size="sm" variant="quiet" onClick={() => onAsk({ kind: 'delete', id: p.id })}>Delete…</Button>
     </span>
   )
@@ -269,48 +272,70 @@ function NewDialog({ onClose }: { onClose: () => void }) {
 
 /* ------------------------------------------------------------------ D and E · playthroughs and their versions on one card */
 
-interface PtVersion { id: string; when: string; by: string; size: number; files: number }
-
 const hex8 = (key: string) => {
   let h = 0x811c9dc5
   for (const c of key) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193)
   return (Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0).toString(16).padStart(8, '0')
 }
 
-/** Each playthrough's own history: versions belong to one playthrough, so the card shows the picked one's. */
-function versionsOf(p: Pt): PtVersion[] {
+/** Each playthrough's own history, shaped like the server's versions so the real file tree can open them. */
+function versionsOf(p: Pt, gameId: string): Version[] {
   const gaps = [0, 3, 26, 50, 75, 140, 220, 300, 410]
-  return Array.from({ length: Math.min(p.versions, 9) }, (_, i) => ({
-    id: hex8(`${p.id}-${i}`),
-    when: new Date(Date.parse(p.when) - gaps[i] * 3_600_000).toISOString(),
-    by: i % 3 === 1 ? 'Battlestation' : p.by,
-    size: Math.round(p.size * (1 - i * 0.01)),
-    files: 3 + (i % 2),
-  }))
+  const n = Math.min(p.versions, 9)
+  const id = (i: number) => `${hex8(`${p.id}-${i}`)}-0000-4000-8000-000000000000`
+  return Array.from({ length: n }, (_, i) => ({
+    id: id(i), gameId, machineId: null,
+    machineName: i % 3 === 1 ? 'Battlestation' : p.by,
+    createdAt: new Date(Date.parse(p.when) - gaps[i] * 3_600_000).toISOString(),
+    contentHash: hex8(`h${p.id}${i}`), size: Math.round(p.size * (1 - i * 0.01)), parentVersionId: i < n - 1 ? id(i + 1) : null, protected: false,
+  }) as unknown as Version)
 }
 
-function DeviceChips({ id, empty = 'No device plays it' }: { id: string; empty?: string }) {
-  const on = devicesOn(id)
-  return on.length
-    ? <span className="flex gap-1 flex-wrap">{on.map(d => <Chip key={d} tone="ok"><Icon name="monitor" size={11} />{d}</Chip>)}</span>
+function changesOf(v: Version, game: Game, first: boolean): VersionChanges {
+  const files = filesOf(game.id)
+  return {
+    versionId: v.id, baseMissing: false, added: first ? files.length : 0, changed: first ? 0 : 1, removed: 0, unchanged: first ? 0 : files.length - 1,
+    files: first ? files.map(([path, size]) => ({ key: 'main', path, change: 'Added' as const, size }))
+      : [{ key: 'main', path: files[0][0], change: 'Changed' as const, size: files[0][1] }],
+  } as VersionChanges
+}
+
+function DeviceChips({ names, empty = 'No device plays it' }: { names: string[]; empty?: string }) {
+  return names.length
+    ? <span className="flex gap-1 flex-wrap">{names.map(d => <Chip key={d} tone="ok"><Icon name="monitor" size={11} />{d}</Chip>)}</span>
     : <span className="text-[11.5px] text-faint">{empty}</span>
 }
 
-function PtVersionsTable({ p }: { p: Pt }) {
+function PtVersionsTable({ p, game, rows }: { p: Pt; game: Game; rows: Version[] }) {
   const [latest, setLatest] = useState<Record<string, string>>({})
   const [names, setNames] = useState<Record<string, string>>({})
-  const [naming, setNaming] = useState<PtVersion | null>(null)
+  const [naming, setNaming] = useState<Version | null>(null)
+  const [open, setOpen] = useState<Set<string>>(new Set())
   const [text, setText] = useState('')
-  const rows = versionsOf(p)
   const head = latest[p.id] ?? rows[0]?.id
+  const on = devicesOn(p.id)
+  const toggle = (id: string) => setOpen(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
   return (
     <>
       <DataTable caption={`Versions of ${p.name}`} rows={rows} rowKey={v => v.id}
+        expanded={v => open.has(v.id)
+          ? <VersionFiles id={`pt-files-${v.id}`} game={game} version={v} changes={changesOf(v, game, v.id === rows[rows.length - 1].id)} status="loaded" />
+          : null}
         columns={[
-          { head: 'Version', kind: ['k', 'm'], cell: v => <span className="flex items-center gap-1.5">{v.id}{v.id === head && <Chip tone="ok">Latest</Chip>}</span> },
+          { head: 'Version', kind: ['k', 'm'], cell: v => (
+            <span className="flex items-center gap-1.5">
+              <button type="button" onClick={() => toggle(v.id)} aria-expanded={open.has(v.id)} aria-controls={`pt-files-${v.id}`}
+                aria-label={`${open.has(v.id) ? 'Hide' : 'Show'} the files of version ${v.id.slice(0, 8)}`}
+                className="inline-flex items-center gap-1.5 cursor-pointer rounded hover:text-accent-ink">
+                <Icon name="chevron-right" size={13} className={`text-faint transition-transform ${open.has(v.id) ? 'rotate-90 text-accent-ink' : ''}`} />
+                {v.id.slice(0, 8)}
+              </button>
+              {v.id === head && <Chip tone="ok">Latest</Chip>}
+            </span>
+          ) },
           { head: 'When', kind: 'wrap', cell: v => (
             <span className="flex flex-col items-start gap-1">
-              <span title={v.when} className="whitespace-nowrap">{ago(v.when)} · {v.by}</span>
+              <span title={v.createdAt} className="whitespace-nowrap">{ago(v.createdAt)} · {v.machineName}</span>
               {names[v.id] && <span className="inline-flex items-center gap-1 rounded-full border border-info-line bg-info-soft text-info-ink px-2 py-0.5 text-[11px] font-medium whitespace-nowrap"><Icon name="pencil" size={10} />{names[v.id]}</span>}
             </span>
           ) },
@@ -320,16 +345,16 @@ function PtVersionsTable({ p }: { p: Pt }) {
               <Button size="sm" onClick={() => { setText(names[v.id] ?? ''); setNaming(v) }}>{names[v.id] ? 'Rename' : 'Name…'}</Button>
               {v.id !== head && (
                 <InlineConfirm label="Set as Latest" tone="primary"
-                  consequence={`${p.name}’s latest becomes this save from ${ago(v.when)}. ${devicesOn(p.id).length ? `${devicesOn(p.id).join(', ')} ${devicesOn(p.id).length > 1 ? 'pull' : 'pulls'} it.` : 'No device plays this playthrough, so nothing is pulled yet.'} Other playthroughs aren’t touched.`}
-                  confirmLabel={`Make ${v.id} Latest`}
-                  onConfirm={() => { setLatest({ ...latest, [p.id]: v.id }); toast(`${v.id} is ${p.name}’s latest now.`) }} />
+                  consequence={`${p.name}’s latest becomes this save from ${ago(v.createdAt)}. ${on.length ? `${on.join(', ')} ${on.length > 1 ? 'pull' : 'pulls'} it.` : 'No device plays this playthrough, so nothing is pulled yet.'} Other playthroughs aren’t touched.`}
+                  confirmLabel={`Make ${v.id.slice(0, 8)} Latest`}
+                  onConfirm={() => { setLatest({ ...latest, [p.id]: v.id }); toast(`${v.id.slice(0, 8)} is ${p.name}’s latest now.`) }} />
               )}
-              <Button size="sm" variant="quiet" onClick={() => toast(`Downloaded ${p.name} · ${v.id}.zip`)}>Download</Button>
+              <Button size="sm" variant="quiet" onClick={() => toast(`Downloaded ${p.name} · ${v.id.slice(0, 8)}.zip`)}>Download</Button>
             </span>
           ) },
         ]} />
       {naming && (
-        <Dialog title={names[naming.id] ? 'Rename this save' : 'Name this save'} sub={`${p.name} · ${naming.by} · ${ago(naming.when)}`} onClose={() => setNaming(null)}
+        <Dialog title={names[naming.id] ? 'Rename this save' : 'Name this save'} sub={`${p.name} · ${naming.machineName} · ${ago(naming.createdAt)}`} onClose={() => setNaming(null)}
           actions={<><Button variant="quiet" onClick={() => setNaming(null)}>Cancel</Button>
             <Button variant="primary" disabled={!text.trim()} onClick={() => { setNames({ ...names, [naming.id]: text.trim() }); setNaming(null); toast('Named. Pruning never removes this version.') }}>Save</Button></>}>
           <input autoFocus className={fieldCls} value={text} maxLength={80} placeholder="e.g. Before Malenia" onChange={e => setText(e.target.value)} aria-label="Name" />
@@ -348,7 +373,7 @@ function PtHead({ p, onAsk }: { p: Pt; onAsk: (a: Ask) => void }) {
       <div className="min-w-0 flex flex-col gap-1.5">
         <div className="text-[15px] font-semibold text-fg flex items-center gap-1.5 flex-wrap">{p.name}{p.id === def && <Chip>Default for new devices</Chip>}{p.archived && <Chip>Archived</Chip>}</div>
         <div className="text-xs text-dim">{p.versions} versions · {fmtSize(p.size)} · latest {ago(p.when)} on {p.by}</div>
-        <span className="flex items-center gap-1.5 flex-wrap text-[11.5px] text-dim">Played on <DeviceChips id={p.id} /></span>
+        <span className="flex items-center gap-1.5 flex-wrap text-[11.5px] text-dim">Played on <DeviceChips names={devicesOn(p.id)} /></span>
       </div>
       <span className="flex gap-1.5 flex-wrap items-center">
         <Button size="sm" variant="primary" onClick={() => onAsk({ kind: 'move', to: p.id })}>Switch a device to this…</Button>
@@ -358,23 +383,40 @@ function PtHead({ p, onAsk }: { p: Pt; onAsk: (a: Ask) => void }) {
   )
 }
 
-/** D and E: the game page's Versions card, grown into playthroughs and their versions. */
-export function PlaythroughVersionsCard() {
+/**
+ * D and E: the game page's Versions card grown into "Saves": playthroughs and their versions. Every game has at least
+ * one playthrough, Main; Elden Ring has four, every other game shows its Main with its real versions.
+ */
+export function PlaythroughVersionsCard({ game, versions, machines }: { game: Game; versions: Version[]; machines: string[] }) {
   const variant = useMock(s => s.variant)
   const pts = useMock(s => s.pts)
   useMock(s => s.plays)
   const [ask, setAsk] = useState<Ask>(null)
   const [pick, setPick] = useState('main')
   const [showArchived, setShowArchived] = useState(false)
-  const shown = pts.filter(q => showArchived || !q.archived)
-  const p = pts.find(q => q.id === pick) ?? pts[0]
+  const many = game.id === G.elden
+  const one: Pt = { id: 'main', name: 'Main', when: versions[0]?.createdAt ?? new Date().toISOString(), by: versions[0]?.machineName ?? '—', versions: versions.length, size: versions[0]?.size ?? 0 }
+  const list = many ? pts : [one]
+  const shown = list.filter(q => showArchived || !q.archived)
+  const p = list.find(q => q.id === pick) ?? list[0]
+  const rows = many ? versionsOf(p, game.id) : versions
   const header = (
     <span className="flex items-center gap-1.5 flex-wrap">
-      <label className="flex items-center gap-1.5 text-[11.5px] text-dim cursor-pointer">
+      {many && <label className="flex items-center gap-1.5 text-[11.5px] text-dim cursor-pointer">
         <input type="checkbox" className="accent-[var(--color-accent)]" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />Show archived
-      </label>
+      </label>}
       <Button size="sm" onClick={() => setAsk({ kind: 'new' })}><Icon name="plus" size={13} />New playthrough</Button>
     </span>
+  )
+  const head = many ? <PtHead p={p} onAsk={setAsk} /> : (
+    <div className="flex items-start justify-between gap-3 flex-wrap px-4 py-3 border-b border-line">
+      <div className="min-w-0 flex flex-col gap-1.5">
+        <div className="text-[15px] font-semibold text-fg flex items-center gap-1.5">Main<Chip>Default for new devices</Chip></div>
+        <div className="text-xs text-dim">{versions.length} versions · every game starts with this one playthrough</div>
+        <span className="flex items-center gap-1.5 flex-wrap text-[11.5px] text-dim">Played on <DeviceChips names={machines} /></span>
+      </div>
+      <Button size="sm" variant="quiet" onClick={() => setAsk({ kind: 'rename', id: 'main' })} disabled>Rename</Button>
+    </div>
   )
   const body = variant === 'D' ? (
     <div className="grid md:grid-cols-[200px_minmax(0,1fr)]">
@@ -384,11 +426,11 @@ export function PlaythroughVersionsCard() {
             className={`w-full text-left px-4 py-3 border-b border-row cursor-pointer hover:bg-hover flex flex-col gap-1.5 ${q.id === p.id ? 'bg-raise shadow-[inset_2px_0_0_var(--color-accent)]' : ''}`}>
             <span className="text-[13px] font-semibold text-fg flex items-center gap-1.5">{q.name}{q.archived && <Chip>Archived</Chip>}</span>
             <span className="text-[11.5px] text-dim">{q.versions} versions · latest {ago(q.when)}</span>
-            <DeviceChips id={q.id} empty="No device" />
+            <DeviceChips names={many ? devicesOn(q.id) : machines} empty="No device" />
           </button>
         ))}
       </div>
-      <div className="min-w-0"><PtHead p={p} onAsk={setAsk} /><PtVersionsTable p={p} /></div>
+      <div className="min-w-0">{head}<PtVersionsTable key={p.id} p={p} game={game} rows={rows} /></div>
     </div>
   ) : (
     <div>
@@ -397,17 +439,17 @@ export function PlaythroughVersionsCard() {
           <button key={q.id} type="button" role="tab" aria-selected={q.id === p.id} onClick={() => setPick(q.id)}
             className={`flex flex-col items-start gap-0.5 px-3.5 pt-2 pb-2.5 -mb-px border-b-2 rounded-t-lg cursor-pointer whitespace-nowrap ${q.id === p.id ? 'border-accent text-fg' : 'border-transparent text-dim hover:text-fg hover:bg-hover'}`}>
             <span className="text-[13px] font-semibold">{q.name}</span>
-            <span className="text-[11px] text-faint">{devicesOn(q.id).length ? devicesOn(q.id).join(' · ') : 'No device'}</span>
+            <span className="text-[11px] text-faint">{(many ? devicesOn(q.id) : machines).join(' · ') || 'No device'}</span>
           </button>
         ))}
       </div>
-      <PtHead p={p} onAsk={setAsk} />
-      <PtVersionsTable p={p} />
+      {head}
+      <PtVersionsTable key={p.id} p={p} game={game} rows={rows} />
     </div>
   )
   return (
     <>
-      <Card title="Playthroughs and versions" headerRight={header} flush>{body}</Card>
+      <Card title="Saves" headerRight={header} flush>{body}</Card>
       {ask?.kind === 'move' && <MoveDialog device={ask.device} to={ask.to} onClose={() => setAsk(null)} />}
       {ask?.kind === 'rename' && <RenameDialog id={ask.id} onClose={() => setAsk(null)} />}
       {ask?.kind === 'delete' && <DeleteDialog id={ask.id} onClose={() => setAsk(null)} />}

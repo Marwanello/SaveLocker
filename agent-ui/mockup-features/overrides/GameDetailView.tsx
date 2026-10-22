@@ -401,12 +401,14 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
 
       {historyFeature ? (
         <>
-          <VersionsCard gameId={game.id} headId={state?.head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions} />
+          <VersionsCard gameId={game.id} headId={state?.head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions}
+            playthrough={ptUi === 'C' ? (viewingPt && ptById(viewingPt) ? viewingPt : selectedPt) : undefined} />
           <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
         </>
       ) : (
         <div className="sl-grid2">
-          <VersionsCard gameId={game.id} headId={state?.head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions} />
+          <VersionsCard gameId={game.id} headId={state?.head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions}
+            playthrough={ptUi === 'C' ? (viewingPt && ptById(viewingPt) ? viewingPt : selectedPt) : undefined} />
           <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
         </div>
       )}

@@ -48,7 +48,7 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
 | Set up off-site | Storage page | 1–3 | Wizard dialog | One long card | Provider tiles + summary | A | ✅ **A** (2026-10-23); then a tile per remote and *Add another remote* |
 | Off-site status | Storage page | 4, 5 | Compact card + dialogs | Dashboard numbers + games table | Activity log with tabs | A | ✅ **A** (2026-10-23), one per remote; *What's on the remote* is a folder tree |
 | Remote full / pause and ask | Every page | 6 | Banner + Resolve dialog | Banner + panel | Make-room card | A | ✅ **A** (2026-10-23) |
-| Restore a lost server | First run / Storage / sign-in | 7 | First-run screen | On Storage | Link on sign-in | A | ✅ **A and B** (2026-10-23); B searches the remote already set up |
+| Restore a lost server | First run / Storage / sign-in | 7 | First-run screen | On Storage | Link on sign-in | A | ✅ **A and B** (2026-10-23); B searches the remote already set up, and asks which one first when there are several (2026-10-24) |
 | Converting to save space | Storage page | 9 | Popup + progress card | Notice + per-game table | Stacked storage bar | A | ✅ **B with A's big progress bar** (2026-10-23), once after upgrading, per-game rows folded |
 
 ### From the review (2026-10-23)
@@ -65,7 +65,9 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
 - **What's on the remote** is a real folder tree (folders expand, files show date and size, *Download*), not a text
   listing.
 - **Restore a lost server:** both the first-run screen (A) and *Restore from off-site…* on Storage (B). B lists the
-  backups on the remote this server is already set up with at once, with *Look somewhere else* for another.
+  backups on the remote this server is already set up with at once, with *Look somewhere else* for another. With
+  **several remotes** it first asks which one (each with its backup count and newest backup, plus *Somewhere else*)
+  — added 2026-10-24.
 - **Converting:** shown once, on the first start after upgrading to the version that brings it (a notice), then a
   banner on every page while it runs and a big progress bar on Storage with the per-game rows folded under it.
 
@@ -228,9 +230,10 @@ Both entry points are built (A and B, decided 2026-10-23).
    `_index.json` into `OffsiteObject` so Phase 5's ownership rule covers the files already there.
 2. *Import older versions from the mirror* (optional, after restore): downloads versioned zips the backup didn't
    hold back into history, verified by content hash.
-3. **Restore from off-site…** on the Storage page, beside the local backups: with a remote already set up it lists
-   that remote's `_server/` backups straight away (*Look somewhere else* opens the connect step); with none it starts
-   at the connect step. It restores the same way, after the usual *Before restore* safety backup.
+3. **Restore from off-site…** on the Storage page, beside the local backups: with one remote set up it lists that
+   remote's `_server/` backups straight away (*Look somewhere else* opens the connect step); with several it first
+   asks which remote (name, folder, backup count, newest backup, or *Somewhere else*); with none it starts at the
+   connect step. It restores the same way, after the usual *Before restore* safety backup.
 4. `README.txt` (written by Phase 5) explains the by-hand path, in case SaveLocker itself is gone.
 
 ## Phase 8 — Deduplicated blob store for new versions

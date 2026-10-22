@@ -4,7 +4,8 @@ import { Button } from '../../src/components/ui/Button'
 import { Card } from '../../src/components/ui/Card'
 import { Mark } from '../../src/components/ui/Mark'
 import { toast } from '../../src/toast'
-import { endFlow, runFlow, useMock } from '../store'
+import { endFlow, runFlow, useMock, type Remote } from '../store'
+import { useRemotes } from './storage'
 import { Choice, Dialog, Steps, fieldCls } from './common'
 import { PROVIDERS, ProviderPicker, SignInFields } from './offsite'
 
@@ -15,11 +16,13 @@ const BACKUPS = [
 ]
 
 /** Connect to the remote, pick a server backup there, restore it and adopt the remote. Shared by every variant. */
-export function RecoverFlow({ onDone, linked }: { onDone?: () => void; linked?: string }) {
+export function RecoverFlow({ onDone, linked = [] }: { onDone?: () => void; linked?: Remote[] }) {
   const flow = useMock(s => s.flow)
-  // A remote this server already copies to is searched straight away (B); otherwise ask where to look.
-  const [step, setStep] = useState<'connect' | 'pick'>(linked ? 'pick' : 'connect')
-  const [from, setFrom] = useState(linked)
+  // The remotes this server already copies to are searched straight away (B): one is opened at once, several are picked
+  // from first. With none, ask where to look.
+  const [step, setStep] = useState<'remote' | 'connect' | 'pick'>(linked.length > 1 ? 'remote' : linked.length ? 'pick' : 'connect')
+  const [from, setFrom] = useState<string | undefined>(linked.length === 1 ? linked[0].provider : undefined)
+  const [which, setWhich] = useState(linked[0]?.id ?? '')
   const [prov, setProv] = useState('folder')
   const [connected, setConnected] = useState(false)
   const [pick, setPick] = useState(0)
@@ -45,6 +48,20 @@ export function RecoverFlow({ onDone, linked }: { onDone?: () => void; linked?: 
       </>}
     </div>
   )
+  if (step === 'remote') return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[12.5px] text-dim">This server copies to {linked.length} remotes. Which one should the backup come from?</p>
+      <div className="flex flex-col gap-2" role="radiogroup" aria-label="Remote">
+        {linked.map((r, i) => <Choice key={r.id} checked={which === r.id} onPick={() => setWhich(r.id)} title={r.provider}
+          sub={<><span className="font-mono">{r.where}</span><span className="block">{i === 0 ? '3 server backups · newest today 03:00' : '3 server backups · newest yesterday 03:00'}</span></>} />)}
+        <Choice checked={which === 'other'} onPick={() => setWhich('other')} title="Somewhere else" sub="Connect to another remote" />
+      </div>
+      <div className="flex justify-end"><Button variant="primary" onClick={() => {
+        const r = linked.find(x => x.id === which)
+        if (r) { setFrom(r.provider); setStep('pick') } else { setFrom(undefined); setStep('connect') }
+      }}>{which === 'other' ? 'Next' : 'Find backups'}</Button></div>
+    </div>
+  )
   if (step === 'connect') return (
     <div className="flex flex-col gap-3">
       <p className="text-[12.5px] text-dim">Connect to where your off-site copy is. Use the same account as before.</p>
@@ -56,7 +73,7 @@ export function RecoverFlow({ onDone, linked }: { onDone?: () => void; linked?: 
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12.5px] text-dim flex flex-wrap items-center gap-x-1.5">Found 3 server backups in <code className="font-mono">SaveLocker/_server</code> on {from ?? p.name}{from && ', the remote this server copies to'}.
-        {from && <button type="button" className="underline underline-offset-2 text-fg cursor-pointer" onClick={() => { setFrom(undefined); setStep('connect') }}>Look somewhere else</button>}</p>
+        {from && <button type="button" className="underline underline-offset-2 text-fg cursor-pointer" onClick={() => { if (linked.length > 1) setStep('remote'); else { setFrom(undefined); setStep('connect') } }}>{linked.length > 1 ? 'Pick another remote' : 'Look somewhere else'}</button>}</p>
       <div className="flex flex-col gap-2" role="radiogroup">
         {BACKUPS.map((b, i) => <Choice key={b[0]} checked={pick === i} onPick={() => setPick(i)} title={`${b[1]} · ${b[2]}`} sub={<span className="font-mono">{b[0]}</span>} />)}
       </div>
@@ -97,8 +114,7 @@ export function FirstRun() {
 /** B · “Restore from off-site…” on Backups. */
 export function RestoreFromOffsite() {
   const [open, setOpen] = useState(false)
-  const remotes = useMock(s => s.offsite.remotes)
-  const linked = useMock(s => s.sim) === 'linked' ? remotes[0]?.provider : undefined
+  const linked = useRemotes()
   return (
     <>
       <Button onClick={() => setOpen(true)}>Restore from off-site…</Button>

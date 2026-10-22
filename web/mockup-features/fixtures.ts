@@ -31,7 +31,7 @@ function art(name: string, hue: number): string {
 interface GameSeed { key: string; name: string; hue: number; size: number; count: number; machines: string[]; files: [string, number][]; source: string; retain?: number | null }
 const SEEDS: GameSeed[] = [
   { key: 'elden', name: 'Elden Ring', hue: 38, size: 2_830_000, count: 9, machines: [M.pc, M.deck, M.living], files: [['ER0000.sl2', 2_820_000], ['steam_autocloud.vdf', 64]], source: 'Steam' },
-  { key: 'hollow', name: 'Hollow Knight', hue: 220, size: 1_460_000, count: 12, machines: [M.pc, M.deck], files: [['user1.dat', 412_000], ['user1.dat.bak1', 410_000], ['user2.dat', 96_000], ['user3.dat', 201_000], ['shared.dat', 3_000]], source: 'Steam', retain: 10 },
+  { key: 'hollow', name: 'Hollow Knight', hue: 220, size: 1_460_000, count: 12, machines: [M.pc, M.deck], files: [['user1.dat', 412_000], ['user2.dat', 96_000], ['shared.dat', 3_000], ['Steel Soul/user3.dat', 201_000], ['Steel Soul/user3.dat.bak1', 200_000], ['Old saves/user2.dat', 95_000], ['Old saves/Pantheon/user4.dat', 120_000]], source: 'Steam', retain: 10 },
   { key: 'cyber', name: 'Cyberpunk 2077', hue: 55, size: 18_950_000, count: 6, machines: [M.pc, M.living], files: [['ManualSave-12/sav.dat', 9_400_000], ['AutoSave-3/sav.dat', 9_500_000]], source: 'GOG' },
   { key: 'hades', name: 'Hades II', hue: 140, size: 1_890_000, count: 5, machines: [M.pc, M.deck], files: [['Profile1.sav', 1_880_000], ['Settings.json', 2_104]], source: 'Steam' },
   { key: 'stardew', name: 'Stardew Valley', hue: 95, size: 1_220_000, count: 7, machines: [M.living, M.sara], files: [['Farm_394829102/Farm_394829102', 1_200_000], ['Farm_394829102/SaveGameInfo', 20_000]], source: 'Steam' },

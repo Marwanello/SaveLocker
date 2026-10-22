@@ -77,3 +77,4 @@ a.mock-btn { text-decoration: none; }
 .slf-keep { display: flex; flex-direction: column; gap: 2px; margin: 0 0 12px 28px; padding: 6px 8px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-raise); }
 .slf-keep label { display: flex; align-items: center; gap: 9px; font-size: 12.5px; padding: 4px 2px; cursor: pointer; }
 .slf-keep small { margin-left: auto; color: var(--color-dim); font-size: 11px; }
+.sl-ask__label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--color-faint); margin-bottom: -6px; }

@@ -8,12 +8,15 @@ import { Card } from '../../src/components/ui/Card'
 import { Chip } from '../../src/components/ui/Chip'
 import { DEMO_FILES, DEMO_GAME, DEMO_VERSIONS, getState, ptById, runFlow, setState, useMock, type DemoVersion } from '../store'
 import { Dialog, Steps, closeFlow } from '../features/common'
+import { PickTree } from '../features/restoreTree'
 
 interface Props {
   gameId: string
   headId: string | null
   refreshKey: number
   onLoaded: (versions: SaveVersion[]) => void
+  /** Playthrough tabs (pt-switch C): the playthrough whose versions to list; the device's own otherwise. */
+  playthrough?: string
 }
 
 const SUGGEST = ['Before the final boss', 'Act 3 start', 'Before the Netherbrain', 'Honour mode backup']
@@ -22,7 +25,7 @@ const SUGGEST = ['Before the final boss', 'Act 3 start', 'Before the Netherbrain
  * The real "Versions on the server" card, plus the planned features on the demo game: a name per version (vh-names) and
  * restoring one file from a version (vh-restore). Every other game gets the real card unchanged.
  */
-export function VersionsCard({ gameId, headId, refreshKey, onLoaded }: Props) {
+export function VersionsCard({ gameId, headId, refreshKey, onLoaded, playthrough }: Props) {
   const feature = useMock(s => s.feature)
   const demo = gameId === DEMO_GAME
   const [real, setReal] = useState<SaveVersion[] | null>(null)
@@ -38,6 +41,7 @@ export function VersionsCard({ gameId, headId, refreshKey, onLoaded }: Props) {
     return () => { live = false }
   }, [gameId, refreshKey, demo])
 
+  if (playthrough) return <DemoPlain id={playthrough} />
   if (!demo) return <PlainCard versions={real} headId={headId} />
   if (feature === 'vh-names') return <NamesCard />
   if (feature === 'vh-restore') return <RestoreCard />
@@ -68,20 +72,28 @@ function PlainCard({ versions, headId }: { versions: SaveVersion[] | null; headI
   )
 }
 
-/** The demo game's card as it is today, naming the playthrough (pt-* features). */
-function DemoPlain() {
+/** The demo game's card as it is today, for one playthrough: the device's own, or the tab on show (pt-switch C). */
+function DemoPlain({ id }: { id?: string }) {
   const selected = useMock(s => s.selected)
-  const pt = ptById(selected)
+  useMock(s => s.pts)
+  const pt = ptById(id ?? selected)
+  const gaps = [0, 3, 26, 50, 75, 140]
+  const rows = Array.from({ length: Math.min(pt.versions, 6) }, (_, i) => ({
+    when: new Date(Date.parse(pt.when) - gaps[i] * 3_600_000).toISOString(),
+    by: i % 3 === 1 ? (pt.by === 'Living Room PC' ? 'Steam Deck — Maro' : 'Living Room PC') : pt.by,
+    size: Math.round(pt.size * (1 - i * 0.01)),
+  }))
   return (
-    <Card title="Versions on the server" flush headerRight={<Chip>{pt.name} · {pt.versions} kept</Chip>}>
+    <Card title={`Versions on the server · ${pt.name}`} flush headerRight={<Chip>{pt.versions} kept</Chip>}>
+      {pt.id !== selected && <p className="sl-setting__note" style={{ margin: 0, padding: '10px 17px' }}>{pt.name}’s history, read-only. This device plays {ptById(selected).name}.</p>}
       <div className="sl-table-wrap">
         <table className="sl-table">
           <thead><tr><th>When</th><th>From</th><th className="sl-num">Size</th><th /></tr></thead>
           <tbody>
-            {DEMO_VERSIONS.slice(0, 4).map((v, i) => (
-              <tr key={v.id}>
-                <td>{i === 0 ? formatAgo(pt.when) : formatAgo(v.createdAt)}</td>
-                <td className="sl-dim">{i === 0 ? pt.by : v.machineName}</td>
+            {rows.map((v, i) => (
+              <tr key={i}>
+                <td title={formatDateTime(v.when)}>{formatAgo(v.when)}</td>
+                <td className="sl-dim">{v.by}</td>
                 <td className="sl-num sl-dim">{formatBytes(v.size)}</td>
                 <td>{i === 0 && <Chip tone="ok">Latest</Chip>}</td>
               </tr>
@@ -211,11 +223,9 @@ function RestoreCard() {
   const variant = useMock(s => s.variant)
   const flow = useMock(s => s.flow)
   const [open, setOpen] = useState<string | null>('v-3')
-  const [picked, setPicked] = useState<Record<string, boolean>>({})
   const [ask, setAsk] = useState<string[] | null>(null)
   const [undone, setUndone] = useState(false)
   const files = DEMO_FILES.filter(f => !f.onlyHere || variant === 'C')
-  const pickedList = Object.keys(picked).filter(k => picked[k])
 
   const start = (list: string[]) => {
     const running = getState().sim === 'running'
@@ -227,7 +237,7 @@ function RestoreCard() {
       { t: 'Replace it in the save folder' },
     ], { failAt: running ? 0 : -1, failMsg: 'Baldur’s Gate 3 is running. Close it, then restore. Nothing changed.' })
   }
-  const close = () => { closeFlow(); setAsk(null); setPicked({}); setUndone(false) }
+  const close = () => { closeFlow(); setAsk(null); setUndone(false) }
   const v = DEMO_VERSIONS.find(x => x.id === open)
 
   return (
@@ -242,7 +252,7 @@ function RestoreCard() {
                   <tr className={open === d.id ? 'slf-sel' : undefined}>
                     <td>
                       <button type="button" className="sl-tree__twist" aria-expanded={open === d.id} aria-label="Show files"
-                        onClick={() => { setOpen(open === d.id ? null : d.id); setPicked({}) }} style={{ border: 0, background: 'none', marginRight: 6 }}>
+                        onClick={() => { setOpen(open === d.id ? null : d.id) }} style={{ border: 0, background: 'none', marginRight: 6 }}>
                         <ChevronRight size={14} className={`sl-tree__chev${open === d.id ? ' sl-tree__chev--open' : ''}`} />
                       </button>
                       {formatAgo(d.createdAt)}
@@ -258,15 +268,13 @@ function RestoreCard() {
                           <span>Compared with this device · {files.filter(f => f.differs || f.onlyHere).length} differ</span><span>this device · that version</span>
                         </div>
                       )}
-                      <ul className="sl-tree">
+                      {variant === 'B' ? <PickTree version={d} /> : <ul className="sl-tree">
                         {files.map(f => {
                           const differs = f.differs || f.onlyHere
                           return (
                             <li key={f.path}>
                               <div className="sl-tree__node" style={variant === 'C' && differs ? { background: 'var(--color-watch-soft)' } : undefined}>
-                                {variant === 'B'
-                                  ? <input type="checkbox" className="slf-check" aria-label={`Pick ${f.path}`} checked={!!picked[f.path]} onChange={e => setPicked({ ...picked, [f.path]: e.target.checked })} />
-                                  : <span className="sl-tree__twist" />}
+                                <span className="sl-tree__twist" />
                                 <File size={14} className="sl-tree__icon" aria-hidden="true" />
                                 <span className="sl-tree__name sl-mono">{f.path}</span>
                                 {variant === 'C' && <span className="sl-tree__state">{f.onlyHere ? 'Only on this device' : f.differs ? 'Differs' : 'Same'}</span>}
@@ -280,7 +288,7 @@ function RestoreCard() {
                             </li>
                           )
                         })}
-                      </ul>
+                      </ul>}
                     </td></tr>
                   )}
                 </Fragment>
@@ -288,11 +296,6 @@ function RestoreCard() {
             </tbody>
           </table>
         </div>
-        {variant === 'B' && pickedList.length > 0 && (
-          <div className="slf-bar"><span>{pickedList.length} picked from {v ? formatAgo(v.createdAt) : ''}</span>
-            <span className="slf-inline"><Button size="sm" variant="quiet" onClick={() => setPicked({})}>Clear</Button>
-              <Button size="sm" variant="primary" onClick={() => { setAsk(pickedList); setUndone(false) }}><RotateCcw size={12} aria-hidden="true" />Restore {pickedList.length} file{pickedList.length > 1 ? 's' : ''}</Button></span></div>
-        )}
       </Card>
       {ask && (
         <Dialog
