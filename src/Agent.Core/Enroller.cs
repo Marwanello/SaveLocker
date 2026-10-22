@@ -614,10 +614,13 @@ public static class Enroller
         return matches.FirstOrDefault(g => g.IsEnrolledHere) ?? matches.FirstOrDefault();
     }
 
+    // An unscoped game (a PC game's whole folder) names no files either: ServerNames is empty for it, and empty would
+    // equal empty, making every scoped save "tracked" as the first PC game (v0.8.0 on the Deck).
     private static IEnumerable<TrackedGame> ByFiles(AgentConfig config, ScanCandidate c) =>
         c.IncludeGlobs is not { Count: > 0 }
             ? []
-            : config.Games.Where(g => (SameScope(g.IncludeGlobs, c.IncludeGlobs) || SameScope(g.IncludeGlobs, ServerNames(g, c.IncludeGlobs))) &&
+            : config.Games.Where(g => g.IncludeGlobs.Count > 0 &&
+                                      (SameScope(g.IncludeGlobs, c.IncludeGlobs) || SameScope(g.IncludeGlobs, ServerNames(g, c.IncludeGlobs))) &&
                                       SameEmulator(g, c) && !OtherRegion(g.Release, c))
                 .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
 

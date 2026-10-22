@@ -123,6 +123,23 @@ public sealed class IdentityByFoldersTests : IClassFixture<ServerProcess>, IDisp
     }
 
     [Fact]
+    public void A_tracked_pc_game_is_never_a_scoped_save_by_its_files()
+    {
+        // The Deck on v0.8.0: a Heroic game with no include patterns "kept" every scoped emulator save, so Add games
+        // hid them all and Steam ROM Manager's shortcuts were recorded on the PC game.
+        var c = Scan("z", title: null);
+        var config = AgentConfig.Load(Path.Combine(_dir, "z", "state", "config.json"));
+        config.Games.Add(new TrackedGame
+        {
+            GameId = Guid.NewGuid(), Name = "Alba: A Wildlife Adventure", SaveDirectory = Path.Combine(_dir, "alba"),
+            Source = new GameSourceDto(GameSourceKinds.Heroic, "Epic Games", new[] { "Wine prefix" }),
+        });
+        config.Games.Add(new TrackedGame { GameId = Guid.NewGuid(), Name = "No source yet", SaveDirectory = Path.Combine(_dir, "nosource") });
+        Assert.Null(Enroller.TrackedFor(config, c));
+        Assert.Empty(SrmShortcuts.Backfill(config, new[] { c with { ShortcutAppIds = new[] { "2599779049" } } }));
+    }
+
+    [Fact]
     public void Server_name_prefers_the_game_keeping_these_files_then_a_free_name()
     {
         var c = Scan("y", title: null);
