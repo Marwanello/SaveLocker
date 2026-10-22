@@ -36,7 +36,9 @@ The agent and console mockups are **the real apps** with a mock backend and the 
 of the real components. Source: `agent-ui/mockup-features/` and `web/mockup-features/` (each has `overrides/` = copied
 real components plus the feature, `features/` = the new pieces, `store.ts` = the feature list and variants). Run one
 with `npx vite --config mockup-features/vite.config.ts` in `agent-ui/` or `web/`. Decky and Playnite can't run
-outside Steam and Playnite, so those two screens are rebuilt by hand and are close, not exact. *Proposed* is my pick;
+outside Steam and Playnite, so those two are rebuilt by hand: Decky from screenshots and computed styles read off the
+Deck’s live UI (its Steam debug port, over SSH), Playnite from a window capture and the Harmony theme’s Constants.xaml.
+The real Decky page has no status or Sync buttons on game rows (rows open a dialog), so the chip went where it fits. *Proposed* is my pick;
 *Decision* is the maintainer's, filled in when made, and the build follows it.
 
 | Feature | Where | Phases | A | B | C | Proposed | Decision |
@@ -44,8 +46,8 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
 | Switch on this device | Agent game page | 4, 6 | Playthroughs card (table) + dialog | Header chip “Playing: X ▾” + dialog | Segmented tabs + banner | B | ⏳ Pending |
 | Copies on this device | Agent Settings | 5 | One setting row | Explained choices (`sl-plays` cards) | Per-game override table | B | ⏳ Pending |
 | Playthroughs card | Console game page | 7 | Table | Lanes over time + side details | List and detail | A | ⏳ Pending |
-| Decky | Gaming Mode (hand-built) | 8 | Steam-style picker modal | Inline dropdown | Playthroughs page | A | ⏳ Pending |
-| Playnite | Desktop menu (hand-built) | 9 | Ticked submenu | Picker window | Submenu + tag | A | ⏳ Pending |
+| Decky | Gaming Mode (from live captures) | 8 | A “Playthrough” Field in the game’s dialog | Dropdown button on the Games row | A Playthroughs page in the sidebar | A | ⏳ Pending |
+| Playnite | Desktop menu (Harmony theme) | 9 | Ticked submenu | Picker window | Submenu title + tag | A | ⏳ Pending |
 
 ---
 
