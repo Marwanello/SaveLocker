@@ -687,10 +687,8 @@ function New-EmuDeckFixture {
     # One game, two emulators (tasks/multi-emulator-games): Hunters in melonDS and in RetroArch's melonDS DS core. Two
     # server games, one console entry with a tab each; a copy turns melonDS's .sav into RetroArch's .srm, same bytes.
     Set-Content -NoNewline -Encoding ascii (Join-Path $melon 'saves\Metroid Prime - Hunters (USA).sav') "hunters melonds $(Get-Date -Format o)"
-    New-Item -ItemType Directory -Force (Join-Path $target 'roms
-ds') | Out-Null
-    Set-Content -NoNewline -Encoding ascii (Join-Path $target 'roms
-ds\Metroid Prime - Hunters (USA).nds') ''
+    New-Item -ItemType Directory -Force (Join-Path $target 'roms\nds') | Out-Null
+    Set-Content -NoNewline -Encoding ascii (Join-Path $target 'roms\nds\Metroid Prime - Hunters (USA).nds') ''
     Set-Content -NoNewline -Encoding ascii (Join-Path $saves 'Metroid Prime - Hunters (USA).srm') "hunters retroarch $(Get-Date -Format o)"
     # Model 2 (Phase 9): NVDATA beside the emulator, inside Emulation on SteamOS. A real EmuDeck also seeds 39
     # untouched .DAT files there; those are hidden by hash, which only the hardware pass can show.
