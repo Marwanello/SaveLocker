@@ -61,6 +61,9 @@
          DesktopEntry.cs renders the embedded copy, so an install and a self-update write the same text. -->
     <EmbeddedResource Include="..\..\packaging\linux\savelocker.desktop"
                       LogicalName="SaveLocker.Agent.Linux.savelocker.desktop" />
+    <!-- The unit's ExecStartPre sits beside the binary, so a build tree carries it too. -->
+    <None Include="..\..\packaging\linux\savelocker-preflight.sh" Link="savelocker-preflight.sh"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 
