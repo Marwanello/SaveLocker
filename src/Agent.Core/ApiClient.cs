@@ -28,7 +28,10 @@ public sealed class ApiClient
     /// or null over plain http (nothing to pin) or before the first request. Enrollment reads this
     /// to record the TOFU pin; see <see cref="ServerTrust"/>.
     /// </summary>
-    public string? ObservedPin { get; private set; }
+    public string? ObservedPin => Observed?.Pin;
+
+    /// <summary>The last handshake's certificate in full — enrollment records its <see cref="ObservedCert.Trust"/> with the pin.</summary>
+    public ObservedCert? Observed { get; private set; }
 
     /// <summary>
     /// The client every part of the agent should use: it carries the machine key and enforces the
@@ -38,16 +41,13 @@ public sealed class ApiClient
     public static ApiClient For(AgentConfig config, string? apiKey = null, bool useConfigKey = true) =>
         new(config.ServerUrl,
             apiKey ?? (useConfigKey ? config.ApiKey : null),
-            config.ServerPin,
-            observed => ServerTrust.WarnMismatch(config.ServerPin!, observed));
+            seen => ServerTrust.Check(config, seen));
 
-    /// <param name="expectedPin">TOFU pin recorded at enrollment, if any.</param>
-    /// <param name="onPinMismatch">Invoked with the observed pin when it differs from the expected one.</param>
-    public ApiClient(string baseUrl, string? apiKey, string? expectedPin = null, Action<string>? onPinMismatch = null)
+    /// <param name="onCert">The pin policy to run on each handshake — <see cref="ServerTrust.Check"/> via <see cref="For"/>.</param>
+    public ApiClient(string baseUrl, string? apiKey, Action<ObservedCert>? onCert = null)
     {
         // Shared with UpdateChecker via ServerHttp, so the TLS policy cannot drift between the two.
-        var handler = ServerHttp.CreateHandler(
-            expectedPin, onObserved: pin => ObservedPin = pin, onMismatch: onPinMismatch);
+        var handler = ServerHttp.CreateHandler(Watch);
 
         _http = new HttpClient(handler) { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromMinutes(10) };
         if (!string.IsNullOrEmpty(apiKey))
@@ -55,11 +55,16 @@ public sealed class ApiClient
 
         _artHttp = new Lazy<HttpClient>(() =>
         {
-            var artHandler = ServerHttp.CreateHandler(
-                expectedPin, onObserved: pin => ObservedPin = pin, onMismatch: onPinMismatch);
+            var artHandler = ServerHttp.CreateHandler(Watch);
             artHandler.AllowAutoRedirect = false;
             return new HttpClient(artHandler) { BaseAddress = new Uri(baseUrl) };
         });
+
+        void Watch(ObservedCert seen)
+        {
+            Observed = seen;
+            onCert?.Invoke(seen);
+        }
     }
 
     /// <summary>

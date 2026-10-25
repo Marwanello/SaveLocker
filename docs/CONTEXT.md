@@ -2574,6 +2574,18 @@ sh, the unit's `ExecStartPre`) puts `previous/` back when the installed agent ca
 while an update is pending. The daemon refreshes a stale installed unit. **Not on hardware yet**;
 protection starts with the update *after* the one that installs it. `run-linux-tests` covers it.
 
+## TLS pin: renewals behind Cloudflare stop warning (2026-10-22)
+
+Found on the maintainer's Deck: "TLS identity has CHANGED" since 2026-10-13 with no certificate
+touched — Cloudflare's Universal SSL renewal rotated the edge key the agent had pinned. The agent now
+records how the pinned cert was vouched for (`ServerPinTrust`) and re-pins quietly when a new key is
+CA-valid for the host *and* carries embedded CT SCTs; a private cert's new key, a public server
+presenting an unlogged cert, or a failing chain still warns, with a reason line. Existing agents fix
+themselves on the next connection. Rule and rejected options: [[Decisions]] (TLS bullet, amendment);
+[[Gotchas]] → Hosting / network. Tests: `ServerTrustTests` (xUnit, 16) and
+`run-enrollment-tls-tests` (now 9). **Next:** watch the Deck's agent log for the one-line "certificate
+was renewed … pin updated" after it updates.
+
 ---
 
 ## Where to look
