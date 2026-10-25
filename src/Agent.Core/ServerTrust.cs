@@ -104,42 +104,79 @@ public static class ServerTrust
         if (string.IsNullOrEmpty(pinned)) return null;
 
         var verdict = Judge(pinned, config.ServerPinTrust, seen);
+        // A long-lived host judges against the pin it loaded at boot. Before calling a key changed, look
+        // at the file: `trust --accept` in another process may already have accepted this one.
+        if (verdict == PinVerdict.Changed)
+        {
+            bool adopted;
+            lock (RenewLock) adopted = config.AdoptPinFromDisk();
+            if (adopted)
+            {
+                pinned = config.ServerPin;
+                if (string.IsNullOrEmpty(pinned)) return null;
+                verdict = Judge(pinned, config.ServerPinTrust, seen);
+            }
+        }
+
         if (verdict == PinVerdict.Renewed) AcceptRenewal(config, pinned, seen);
         else if (verdict == PinVerdict.Changed) WarnMismatch(pinned, config.ServerPinTrust, seen);
+        else if (config.ServerPinTrust is null && seen.Errors == SslPolicyErrors.None) LearnTrust(config, pinned, seen);
         return verdict;
     }
 
     private static readonly object RenewLock = new();
-    private static int _loggedRenewal;
 
     private static void AcceptRenewal(AgentConfig config, string pinned, ObservedCert seen)
     {
         lock (RenewLock)
         {
+            // Another handshake got here first, and logged and recorded this renewal.
             if (config.ServerPin != pinned) return;
             config.ServerPin = seen.Pin;
             config.ServerPinTrust = seen.Trust;
         }
 
-        if (Interlocked.Exchange(ref _loggedRenewal, 1) == 0)
-            AgentLogger.Log($"The server's certificate was renewed with a new key (publicly logged, valid for " +
-                            $"{config.ServerUrl}); pin updated: {pinned} -> {seen.Pin}");
+        AgentLogger.Log($"The server's certificate was renewed with a new key (publicly logged, valid for " +
+                        $"{config.ServerUrl}); pin updated: {pinned} -> {seen.Pin}");
 
         // Best-effort: in memory is already right for this process, and a failure here only means the
         // next process re-pins again. Never worth failing a handshake over.
-        try { config.RecordRenewedPin(pinned, seen.Pin, seen.Trust); }
+        try { config.RecordHandshakePin(pinned, seen.Pin, seen.Trust); }
         catch (Exception ex) { AgentLogger.LogException("Recording the renewed server pin", ex); }
+    }
+
+    /// <summary>
+    /// A pin recorded before the trust was gets it from the first matching handshake. Left unknown, a
+    /// private server's agent would take a public cert for its host as a renewal, forever.
+    /// </summary>
+    private static void LearnTrust(AgentConfig config, string pinned, ObservedCert seen)
+    {
+        lock (RenewLock)
+        {
+            if (config.ServerPin != pinned || config.ServerPinTrust is not null) return;
+            config.ServerPinTrust = seen.Trust;
+        }
+
+        try { config.RecordHandshakePin(pinned, pinned, seen.Trust); }
+        catch (Exception ex) { AgentLogger.LogException("Recording the server pin's trust", ex); }
     }
 
     public static string MismatchWarning(string expected, ServerCertTrust? pinnedTrust, ObservedCert seen)
     {
         var why = seen.Errors != SslPolicyErrors.None
             ? $"  The new certificate also fails validation ({seen.Errors}), so this connection was refused.\n"
-            : pinnedTrust == ServerCertTrust.Public
-                ? "  This machine enrolled against a publicly-trusted certificate, and this one was not publicly\n" +
-                  "  logged. That is what a TLS-intercepting proxy or a different server looks like.\n"
-                : "  This server uses a private certificate (self-signed or a home CA). Its key only changes when\n" +
-                  "  someone replaces that certificate.\n";
+            : pinnedTrust switch
+            {
+                ServerCertTrust.Public =>
+                    "  This machine enrolled against a publicly-trusted certificate, and this one was not publicly\n" +
+                    "  logged. That is what a TLS-intercepting proxy or a different server looks like.\n",
+                ServerCertTrust.Private =>
+                    "  This server uses a private certificate (self-signed or a home CA). Its key only changes when\n" +
+                    "  someone replaces that certificate.\n",
+                // Pinned before the trust was recorded, so all that is known is the new cert.
+                _ => "  The new certificate was not publicly logged. A private certificate (self-signed or a home CA)\n" +
+                     "  that was replaced looks like this, and so does a TLS-intercepting proxy or a different server.\n",
+            };
         return "WARNING: the server's TLS identity has CHANGED since this machine enrolled.\n" +
                $"  pinned:   {expected}\n" +
                $"  observed: {seen.Pin}\n" +

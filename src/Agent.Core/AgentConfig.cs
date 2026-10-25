@@ -345,21 +345,23 @@ public sealed class AgentConfig
     }
 
     /// <summary>
-    /// Persist a pin <see cref="ServerTrust"/> re-pinned after a renewal, touching nothing else. It runs
-    /// inside a TLS handshake, so the lock wait is short — on contention the next process re-pins — and
-    /// the write is skipped when the file no longer holds <paramref name="pinned"/> for this origin: a
+    /// Persist what <see cref="ServerTrust"/> learned in a handshake — a pin re-pinned after a renewal,
+    /// or the trust of a pin recorded before trust was — touching nothing else. It runs inside a TLS
+    /// handshake, so the lock wait is short — on contention the next process does it again — and the
+    /// write is skipped when the file no longer holds <paramref name="pinned"/> for this origin: a
     /// re-enroll or <c>trust --accept</c> in between is newer than this.
     /// </summary>
-    public void RecordRenewedPin(string pinned, string renewed, ServerCertTrust trust)
+    public void RecordHandshakePin(string pinned, string renewed, ServerCertTrust trust)
     {
         using var guard = AgentStateLock.TryAcquire("config", StateDir, TimeSpan.FromSeconds(2));
         if (guard is null) return;
 
         var onDisk = ReadOnDisk();
         if (onDisk is null || !ServerOrigin.Same(onDisk.ServerUrl, ServerUrl)) return;
-        if (onDisk.ServerPin != pinned)
+        if (onDisk.ServerPin != pinned || (onDisk.ServerPin == renewed && onDisk.ServerPinTrust == trust))
         {
-            // Newer than this renewal: adopt it, or this process's next Save() would write ours over it.
+            // Newer than this handshake, or already what it learned: adopt it, or this process's next
+            // Save() would write ours over it.
             ServerPin = onDisk.ServerPin;
             ServerPinTrust = onDisk.ServerPinTrust;
             _pinOnDisk = (ServerPin, ServerPinTrust);
@@ -370,6 +372,23 @@ public sealed class AgentConfig
         AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(onDisk, JsonOpts),
             restrictPermissions: true);
         _pinOnDisk = (renewed, trust);
+    }
+
+    /// <summary>
+    /// Take the pin on disk when another process changed it since this one last read or wrote it — a
+    /// <c>trust --accept</c> while the daemon runs. True when the pin in memory changed. The same rule as
+    /// <see cref="Save"/>: never over a pin this process changed itself, nor from another origin's file.
+    /// </summary>
+    public bool AdoptPinFromDisk()
+    {
+        if ((ServerPin, ServerPinTrust) != _pinOnDisk) return false;
+        var onDisk = ReadOnDisk();
+        if (onDisk is null || !ServerOrigin.Same(onDisk.ServerUrl, ServerUrl)) return false;
+        if ((onDisk.ServerPin, onDisk.ServerPinTrust) == _pinOnDisk) return false;
+        ServerPin = onDisk.ServerPin;
+        ServerPinTrust = onDisk.ServerPinTrust;
+        _pinOnDisk = (ServerPin, ServerPinTrust);
+        return true;
     }
 
     /// <summary>

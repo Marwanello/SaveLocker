@@ -321,7 +321,10 @@ session can judge an edge case, not to reopen the choice.
   cert (what a TLS-intercepting proxy with a planted root looks like), or a cert that fails validation.
   The kind is recorded with the pin (`ServerPinTrust`: `Public`/`Private`) at enroll, register and
   `trust --accept`; a pin from before it existed is judged by what the server presents now, which is what
-  lets already-enrolled agents stop warning. SCT presence is a classifier, not verified against the logs'
+  lets already-enrolled agents stop warning — and it learns its kind from the first handshake that matches
+  it, so an old agent of a private server gets the private rule instead of staying permissive forever. A
+  key judged changed is first checked against `config.json`, so `trust --accept` beside a running daemon
+  takes effect at its next connection. SCT presence is a classifier, not verified against the logs'
   keys — forging one takes a root this machine already trusts, which is game over regardless. Rejected:
   dropping the pin (it is the only check left for a private cert); re-pinning on any CA-valid cert (a
   private CA re-issuing is exactly the case the pin exists for); telling public from private by the root

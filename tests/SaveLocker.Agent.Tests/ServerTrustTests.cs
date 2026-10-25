@@ -185,6 +185,35 @@ public sealed class ServerTrustTests : IDisposable
     }
 
     [Fact]
+    public void A_key_another_process_accepted_is_a_match_for_a_running_host()
+    {
+        // The daemon holds its boot-time pin; `trust --accept` ran beside it. Its next handshake must
+        // not call the accepted key a change.
+        var daemon = Enrolled(Cert(publiclyLogged: false), ServerCertTrust.Private);
+        var cli = OnDisk();
+        var accepted = Cert(publiclyLogged: false);
+        cli.SetPin(ServerTrust.Observe(accepted, SslPolicyErrors.None));
+        cli.Save();
+
+        Assert.Equal(PinVerdict.Match, Handshake(daemon, accepted));
+        Assert.Equal(ServerTrust.Fingerprint(accepted), daemon.ServerPin);
+    }
+
+    [Fact]
+    public void A_pin_recorded_before_trust_existed_learns_it_from_a_matching_handshake()
+    {
+        // Otherwise an old agent of a self-signed server would take any public cert for its host as a
+        // renewal, forever: the private -> public rule never applied to it.
+        var original = Cert(publiclyLogged: false);
+        var config = Enrolled(original, trust: null);
+
+        Assert.Equal(PinVerdict.Match, Handshake(config, original));
+        Assert.Equal(ServerCertTrust.Private, config.ServerPinTrust);
+        Assert.Equal(ServerCertTrust.Private, OnDisk().ServerPinTrust);
+        Assert.Equal(PinVerdict.Changed, Handshake(config, Cert(publiclyLogged: true)));
+    }
+
+    [Fact]
     public void A_pin_changed_in_this_process_is_what_its_save_writes()
     {
         var config = Enrolled(Cert(publiclyLogged: false), ServerCertTrust.Private);
@@ -209,6 +238,10 @@ public sealed class ServerTrustTests : IDisposable
         var seen = new ObservedCert("new", ServerCertTrust.Private, SslPolicyErrors.None);
         Assert.Contains("private certificate", ServerTrust.MismatchWarning("old", ServerCertTrust.Private, seen));
         Assert.Contains("not publicly", ServerTrust.MismatchWarning("old", ServerCertTrust.Public, seen));
+        // A pin from before the trust was recorded: nothing is claimed about the old cert.
+        var legacy = ServerTrust.MismatchWarning("old", null, seen);
+        Assert.Contains("was not publicly logged", legacy);
+        Assert.DoesNotContain("enrolled against", legacy);
         Assert.Contains("fails validation", ServerTrust.MismatchWarning("old", ServerCertTrust.Public,
             seen with { Errors = SslPolicyErrors.RemoteCertificateChainErrors }));
         Assert.All(new[] { ServerCertTrust.Private, ServerCertTrust.Public }, trust =>
