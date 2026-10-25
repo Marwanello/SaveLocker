@@ -288,6 +288,8 @@ SaveLocker/
 │
 ├── web/                                 # React admin dashboard
 │   │                                   # Stack: Vite 8, React 19, TypeScript, Tailwind v4
+│   ├── mockup-features/              # Feature mockups: the real console + fake backend + planned
+│   │                               #   features. The base for every console mockup — mockups/README.md
 │   ├── src/
 │   │   ├── api.ts                       # Typed fetch client (all server endpoints)
 │   │   ├── api-types.ts                 # GENERATED from /openapi/v1.json → npm run gen:api
@@ -337,6 +339,8 @@ SaveLocker/
 │
 ├── agent-ui/                            # React agent UI — served by BOTH hosts (tray WebView2 and
 │   │                                   #   the Linux daemon). Stack: Vite, React 19, TypeScript
+│   ├── mockup-features/              # Feature mockups: the real agent UI + fake backend + planned
+│   │                               #   features. The base for every agent mockup — mockups/README.md
 │   └── src/
 │       ├── App.tsx                      # Root, sidebar nav, 10 s state poll, live version string
 │       ├── api-types.ts                 # GENERATED from the AGENT's OpenAPI → npm run gen:api.
@@ -487,6 +491,8 @@ SaveLocker/
 │                                       #   build-linux (tarball + checksums + attestation)
 │
 ├── .agents/AGENTS.md · AGENTS.md · CLAUDE.md   # Agent instructions (paths-ignore'd by both workflows)
+├── mockups/                         # Mockup hub: README (how to add a feature), Decky + Playnite
+│                                   #   handheld.html, review landing pages; built bundles gitignored
 ├── docs/                            # README imagery + THIS Obsidian vault
 │                                       #   (vault articles at top level; tasks in
 │                                       #   docs/tasks/; logs in docs/logs/)

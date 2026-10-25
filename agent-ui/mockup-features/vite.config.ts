@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, relative, resolve } from 'node:path'
 
@@ -8,11 +9,7 @@ const agentUi = resolve(here, '..')
 const overridesDir = resolve(here, 'overrides')
 
 /** Real components the feature mockups replace with a copy that has the new feature in it. */
-const OVERRIDES: Record<string, string> = {
-  'src/components/GameDetailView.tsx': 'GameDetailView.tsx',
-  'src/components/VersionsCard.tsx': 'VersionsCard.tsx',
-  'src/components/SettingsView.tsx': 'SettingsView.tsx',
-}
+const OVERRIDES: Record<string, string> = JSON.parse(readFileSync(resolve(here, 'overrides.json'), 'utf8'))
 
 /** Every import of a replaced component resolves to its copy — except from inside overrides/, so a copy can wrap the
  *  real one. */
