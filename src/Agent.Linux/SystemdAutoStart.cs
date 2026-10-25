@@ -89,6 +89,53 @@ public sealed class SystemdAutoStart : IAutoStart
     }
 
     /// <summary>
+    /// The daemon's call: bring an existing unit up to this version's. An agent that updates itself
+    /// never runs install.sh, so without this a self-updated Deck keeps the unit it was first
+    /// installed with, and the update hook in it, forever. Only for the installed agent (as
+    /// <see cref="DesktopEntry.OfferForInstalledAgent"/>), and only when a unit is already there:
+    /// whether auto-start is on is the user's choice. Takes effect at the next start.
+    /// </summary>
+    public static void RefreshForInstalledAgent(AgentConfig config, Action<string> log)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var prefix = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
+        var installed = Path.TrimEndingDirectorySeparator(AgentConfig.DefaultDir);
+        if (!string.Equals(prefix, installed, StringComparison.Ordinal) ||
+            !string.Equals(Path.TrimEndingDirectorySeparator(config.StateDir), installed, StringComparison.Ordinal))
+            return;
+
+        try
+        {
+            if (!File.Exists(UnitPath)) return;
+            // The new unit's ExecStartPre is this script, and systemd ignores a missing one ("-"):
+            // pointing the unit at nothing would stop every future update from installing, silently.
+            if (!File.Exists(Path.Combine(prefix, "savelocker-preflight.sh"))) return;
+            var current = File.ReadAllText(UnitPath).Replace("\r\n", "\n");
+            // install.sh writes the packaged text as-is (%h paths); this class writes it with the
+            // path filled in. Either one is current.
+            if (current == ReadTemplate() || current == UnitFile()) return;
+
+            // Flushed before the rename: an empty unit after a power cut is an agent that never starts.
+            var tmp = UnitPath + ".tmp";
+            using (var file = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var writer = new StreamWriter(file))
+            {
+                writer.Write(UnitFile());
+                writer.Flush();
+                file.Flush(flushToDisk: true);
+            }
+            File.Move(tmp, UnitPath, overwrite: true);
+            Durable.FlushDirectory(UnitDir);
+            ProcessRunner.Run("systemctl", "--user", "daemon-reload");
+            log("Updated savelocker.service to this version's unit. It takes effect at the next start.");
+        }
+        catch (Exception ex)
+        {
+            log($"Could not update savelocker.service: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// A reason the user can act on. Exit -1 is <see cref="ProcessRunner.Run(string, string[])"/>'s
     /// "could not even start systemctl", which on a Deck reached over SSH means no user bus rather
     /// than a broken unit —

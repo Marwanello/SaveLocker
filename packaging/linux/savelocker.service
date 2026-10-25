@@ -14,7 +14,12 @@ Type=simple
 # agent's files. This runs in the NEW invocation, with the old daemon already gone. It is also where
 # an update that could not start is rolled back. It never fails the unit — a device that will not
 # start at all is a far worse outcome than one running last week's build.
-ExecStartPre=-%h/.local/share/SaveLocker/savelocker apply-update
+#
+# It goes through savelocker-preflight.sh (plain sh), which runs `savelocker apply-update` last. The
+# rollback lives in the agent's own binary, so it cannot run if a crash emptied that binary. The
+# script puts the previous version back first in that case. The path is the agent's with a suffix,
+# so the agent's own copy of this unit (SystemdAutoStart.UnitFile) points it beside the binary too.
+ExecStartPre=-%h/.local/share/SaveLocker/savelocker-preflight.sh
 ExecStart=%h/.local/share/SaveLocker/savelocker daemon
 Restart=on-failure
 RestartSec=10

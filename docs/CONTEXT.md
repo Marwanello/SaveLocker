@@ -2564,6 +2564,16 @@ Deck, `run-linux-tests`, Game Mode (by choice). `openapi.json` unchanged on purp
 or DTO shape changed, only a 409 the routes did not declare. **Next:** testenv pass, then PRs for
 both repos.
 
+## Linux update crash safety (PR #87, branch `linux-update-crash-safety`, 2026-10-25)
+
+A Deck that crashed ~30 s after the v0.7.0 self-update came back with every updated file at 0 bytes
+and no rollback copy ([[Gotchas]] → Linux agent, "An update's files came back empty"). The updater
+now fsyncs everything before `applied.json`; `installing.json` records an in-progress install
+(including which files it adds) so a cut-off one resumes safely; `savelocker-preflight.sh` (plain
+sh, the unit's `ExecStartPre`) puts `previous/` back when the installed agent cannot start, but only
+while an update is pending. The daemon refreshes a stale installed unit. **Not on hardware yet**;
+protection starts with the update *after* the one that installs it. `run-linux-tests` covers it.
+
 ## TLS pin: renewals behind Cloudflare stop warning (2026-10-22)
 
 Found on the maintainer's Deck: "TLS identity has CHANGED" since 2026-10-13 with no certificate
@@ -2572,7 +2582,7 @@ records how the pinned cert was vouched for (`ServerPinTrust`) and re-pins quiet
 CA-valid for the host *and* carries embedded CT SCTs; a private cert's new key, a public server
 presenting an unlogged cert, or a failing chain still warns, with a reason line. Existing agents fix
 themselves on the next connection. Rule and rejected options: [[Decisions]] (TLS bullet, amendment);
-[[Gotchas]] → Hosting / network. Tests: `ServerTrustTests` (xUnit, 11) and
+[[Gotchas]] → Hosting / network. Tests: `ServerTrustTests` (xUnit, 16) and
 `run-enrollment-tls-tests` (now 9). **Next:** watch the Deck's agent log for the one-line "certificate
 was renewed … pin updated" after it updates.
 

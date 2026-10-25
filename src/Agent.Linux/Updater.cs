@@ -53,6 +53,7 @@ public static class Updater
     private static string PreviousDir(AgentConfig c) => Path.Combine(UpdateRoot(c), "previous");
     private static string StagedMarker(AgentConfig c) => Path.Combine(UpdateRoot(c), "apply.json");
     private static string AppliedMarker(AgentConfig c) => Path.Combine(UpdateRoot(c), "applied.json");
+    private static string InstallingMarker(AgentConfig c) => Path.Combine(UpdateRoot(c), "installing.json");
 
     /// <summary>Written by <see cref="StageAsync"/>; read by <see cref="Apply"/>.</summary>
     private sealed record StagedPayload(string Version, string PayloadDir, DateTime StagedAt);
@@ -68,6 +69,13 @@ public static class Updater
     /// </param>
     private sealed record AppliedUpdate(
         string Version, string FromVersion, DateTime AppliedAt, string[] Added);
+
+    /// <summary>
+    /// Written by <see cref="InstallStaged"/> before it moves anything, cleared once the install is
+    /// complete. <paramref name="Added"/> is the same list <see cref="AppliedUpdate"/> carries, fixed
+    /// up front so an install resumed after a power cut still knows which files were new.
+    /// </summary>
+    private sealed record InstallingUpdate(string Version, string[]? Added);
 
     private static readonly JsonSerializerOptions _json = new() { WriteIndented = true };
 
@@ -165,6 +173,11 @@ public static class Updater
             var staged = StagedDir(config);
             Directory.CreateDirectory(staged);
             Extract(tarball, staged);
+            // The staged tree is what an interrupted install is finished from, so it has to survive
+            // the same power cut the install might not.
+            foreach (var dir in Directory.EnumerateDirectories(staged, "*", SearchOption.AllDirectories)
+                         .Append(staged).Append(root).Append(config.StateDir))
+                Durable.FlushDirectory(dir);
 
             var payload = ResolvePayloadRoot(staged);
             var binary = Path.Combine(payload, "savelocker");
@@ -259,6 +272,7 @@ public static class Updater
                         $"The package expanded past {MaxBytes / (1024 * 1024)} MB. Refusing to continue.");
                 outFile.Write(buffer, 0, read);
             }
+            outFile.Flush(flushToDisk: true);
             outFile.Dispose();
 
             // The execute bit is the only mode that matters here, and tar carries it.
@@ -394,18 +408,40 @@ public static class Updater
 
         var prefix = InstallPrefix;
         var previous = PreviousDir(config);
-        DeleteDirectory(previous);
+
+        // Present only if an earlier install of this update was cut off part-way. Then previous/
+        // holds the genuine old files it had already moved aside, and the prefix holds whatever
+        // half-written copies replaced them. Those old files are the only copy left, so keep them.
+        // Otherwise previous/ is leftover from an install that was committed or rolled back, and
+        // would restore the wrong version.
+        var resuming = File.Exists(InstallingMarker(config));
+        var earlier = resuming ? ReadJson<InstallingUpdate>(InstallingMarker(config))?.Added ?? [] : [];
+        if (!resuming) DeleteDirectory(previous);
         Directory.CreateDirectory(previous);
+
+        var files = Directory.EnumerateFiles(payload, "*", SearchOption.AllDirectories)
+            .Select(src => (Src: src, Rel: Path.GetRelativePath(payload, src)))
+            .ToList();
+
+        // Decided once, before anything moves, and recorded: a resumed install sees the files the
+        // cut-off one added sitting in the prefix, indistinguishable from old ones. Taken for old,
+        // they would be moved into previous/ and a rollback would restore the new version's copy.
+        var added = new HashSet<string>(earlier, StringComparer.Ordinal);
+        foreach (var (_, rel) in files)
+            if (!File.Exists(Path.Combine(prefix, rel)) && !File.Exists(Path.Combine(previous, rel)))
+                added.Add(rel);
+        WriteJson(InstallingMarker(config), new InstallingUpdate(staged.Version, [.. added.Order(StringComparer.Ordinal)]));
 
         var from = UpdateChecker.CurrentVersionText;
         var moved = 0;
         var copied = 0;
-        var added = new List<string>();
+        var touched = new HashSet<string>(StringComparer.Ordinal) { UpdateRoot(config) };
 
-        foreach (var src in Directory.EnumerateFiles(payload, "*", SearchOption.AllDirectories))
+        foreach (var (src, rel) in files)
         {
-            var rel = Path.GetRelativePath(payload, src);
             var dst = Path.Combine(prefix, rel);
+            var keep = Path.Combine(previous, rel);
+            var isNew = added.Contains(rel);
 
             Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
 
@@ -415,20 +451,34 @@ public static class Updater
             // of taking a SIGBUS partway through.
             if (File.Exists(dst))
             {
-                var keep = Path.Combine(previous, rel);
-                Directory.CreateDirectory(Path.GetDirectoryName(keep)!);
-                File.Move(dst, keep);
-                moved++;
+                // Resuming: a copy the cut-off attempt wrote. The real old version, if any, is in keep.
+                if (isNew || File.Exists(keep))
+                {
+                    File.Delete(dst);
+                }
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(keep)!);
+                    File.Move(dst, keep);
+                    touched.UnionWith(Durable.UpTo(Path.GetDirectoryName(keep)!, previous));
+                }
             }
-            else added.Add(rel);
+            if (!isNew) moved++;
 
-            File.Copy(src, dst);
+            Durable.CopyFile(src, dst);
             CopyExecutableBit(src, dst);
+            touched.UnionWith(Durable.UpTo(Path.GetDirectoryName(dst)!, prefix));
             copied++;
         }
 
+        // Every new file's data and name is on the disk BEFORE applied.json exists. Only then can
+        // the daemon commit the install and release previous/. Without this a power cut in the next
+        // ~30 s left a Deck with 0-byte binaries and its rollback copy already deleted.
+        foreach (var dir in touched) Durable.FlushDirectory(dir);
+
         WriteJson(AppliedMarker(config),
-            new AppliedUpdate(staged.Version, from, DateTime.UtcNow, [.. added]));
+            new AppliedUpdate(staged.Version, from, DateTime.UtcNow, [.. added.Order(StringComparer.Ordinal)]));
+        TryDelete(InstallingMarker(config));
         TryDelete(StagedMarker(config));
         DeleteDirectory(StagedDir(config));
 
@@ -460,6 +510,7 @@ public static class Updater
 
         if (Directory.Exists(previous))
         {
+            var touched = new HashSet<string>(StringComparer.Ordinal);
             foreach (var src in Directory.EnumerateFiles(previous, "*", SearchOption.AllDirectories))
             {
                 var rel = Path.GetRelativePath(previous, src);
@@ -469,12 +520,21 @@ public static class Updater
                     Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
                     if (File.Exists(dst)) File.Delete(dst);   // unlink: the replacement gets no say
                     File.Move(src, dst);
+                    touched.UnionWith(Durable.UpTo(Path.GetDirectoryName(dst)!, prefix));
                     restored++;
                 }
                 catch (Exception ex)
                 {
                     log($"update: could not restore {rel} — {ex.Message}");
                 }
+            }
+
+            // After the loop, not per file: a failed flush is not a failed restore, and must not be
+            // logged as one.
+            foreach (var dir in touched)
+            {
+                try { Durable.FlushDirectory(dir); }
+                catch (Exception ex) { log($"update: {ex.Message}"); }
             }
         }
 
@@ -496,6 +556,11 @@ public static class Updater
     /// <summary>
     /// Called once the agent is genuinely up. This is what turns "installed" into "kept": until it
     /// runs, the next start treats the applied version as suspect and reverts it.
+    /// <para>
+    /// Releasing previous/ here is safe only because <see cref="InstallStaged"/> flushed every new
+    /// file to disk before writing the marker this reads. A running daemon proves the files are in
+    /// memory, not on the disk.
+    /// </para>
     /// </summary>
     public static void Commit(AgentConfig config, Action<string> log)
     {
@@ -503,6 +568,10 @@ public static class Updater
         {
             if (ReadApplied(config) is not { } applied) return;
             TryDelete(AppliedMarker(config));
+            // The marker's removal is on the disk before previous/ goes. The other order, after a
+            // crash, is a marker with nothing to restore: the next start "rolls back" by deleting the
+            // working version's new files.
+            Durable.FlushDirectory(UpdateRoot(config));
             DeleteDirectory(PreviousDir(config));
             log($"update: v{applied.Version} started successfully (was v{applied.FromVersion}).");
         }
@@ -617,8 +686,13 @@ public static class Updater
     private static void WriteJson<T>(string path, T value)
     {
         var tmp = path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(value, _json));
+        using (var file = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            JsonSerializer.Serialize(file, value, _json);
+            file.Flush(flushToDisk: true);
+        }
         File.Move(tmp, path, overwrite: true);
+        Durable.FlushDirectory(Path.GetDirectoryName(path)!);
     }
 
     private static void TryDelete(string path)
