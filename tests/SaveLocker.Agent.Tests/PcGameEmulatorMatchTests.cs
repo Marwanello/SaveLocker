@@ -68,7 +68,10 @@ public sealed class PcGameEmulatorMatchTests : IDisposable
         legacy.IncludeGlobs = ["Metal Gear.srm"];
         var config = Config(alba, sifu, noSource, emulator, legacy);
 
-        Assert.Equal(3, SrmShortcuts.Backfill(config, []).Count);
+        // The scan gives the stray shortcuts to the emulator saves they start, none of which is tracked here.
+        var smash = SwitchSave("Super Smash Bros.") with { EmulatorKey = null, ShortcutAppIds = new[] { "2599779049", "2208192691" } };
+        var kart = SwitchSave("Mario Kart 8") with { EmulatorKey = null, ShortcutAppIds = new[] { "2329661433" } };
+        Assert.Equal(3, SrmShortcuts.Backfill(config, new[] { smash, kart }).Count);
 
         var saved = AgentConfig.Load(config.ConfigPath);
         TrackedGame Saved(TrackedGame g) => saved.Games.Single(x => x.GameId == g.GameId);
@@ -83,6 +86,20 @@ public sealed class PcGameEmulatorMatchTests : IDisposable
         Assert.Equal(["2473684172"], Saved(legacy).ShortcutAppIds);
 
         // Nothing left to drop: the next rescan writes nothing.
-        Assert.Empty(SrmShortcuts.Backfill(saved, []));
+        Assert.Empty(SrmShortcuts.Backfill(saved, new[] { smash, kart }));
+    }
+
+    [Fact]
+    public void A_shortcut_the_scan_did_not_see_is_kept()
+    {
+        // An SD card out, or a Steam folder it could not read: the scan says nothing about the shortcut, so a game with no source
+        // (a folder mapped before sources were recorded, possibly an emulator's) keeps it and the app ID its launches match on.
+        var mapped = Game("Pokemon X", null, "2329661433", ["2329661433"]);
+        var config = Config(mapped);
+
+        Assert.Empty(SrmShortcuts.Backfill(config, []));
+        var saved = AgentConfig.Load(config.ConfigPath).Games.Single();
+        Assert.Equal(["2329661433"], saved.ShortcutAppIds);
+        Assert.Equal("2329661433", saved.SteamAppId);
     }
 }

@@ -394,22 +394,28 @@ public static class SrmShortcuts
     public static IReadOnlyList<TrackedGame> Backfill(AgentConfig config, IEnumerable<ScanCandidate> candidates)
     {
         var changed = new List<TrackedGame>();
-        var matched = new HashSet<Guid>();
+        // Which game this scan gives each shortcut to (null: none tracked here).
+        var owner = new Dictionary<string, Guid?>(StringComparer.Ordinal);
         foreach (var c in candidates)
         {
             if (c.ShortcutAppIds is not { Count: > 0 } ids) continue;
-            if (Enroller.TrackedFor(config, c) is not { IsEnrolledHere: true } game) continue;
-            matched.Add(game.GameId);
+            var tracked = Enroller.TrackedFor(config, c);
+            foreach (var id in ids) owner[id] = tracked?.GameId;
+            if (tracked is not { IsEnrolledHere: true } game) continue;
             if (ids.ToHashSet(StringComparer.Ordinal).SetEquals(game.ShortcutAppIds) && !string.IsNullOrWhiteSpace(game.SteamAppId)) continue;
             config.SaveGameShortcuts(game.GameId, ids);
             changed.Add(game);
         }
         // v0.8.0 matched emulator saves to PC games and recorded their shortcuts there, so a launch of the emulator's shortcut
-        // synced the PC game. Such a game is never an emulator's, so its shortcuts go (and an app ID taken from one with them).
-        foreach (var game in config.Games.Where(g => g.ShortcutAppIds.Count > 0 && !matched.Contains(g.GameId) && NeverAnEmulatorGame(g)).ToList())
+        // synced the PC game. Such a game is never an emulator's, so a shortcut this scan gives to another save goes (and an
+        // app ID taken from it with it). Only those: one the scan did not see (an SD card out, an unreadable Steam folder) says
+        // nothing, and dropping it would leave a launch through it syncing nothing until the next Add games.
+        foreach (var game in config.Games.Where(g => g.ShortcutAppIds.Count > 0 && NeverAnEmulatorGame(g)).ToList())
         {
-            config.SaveGameShortcuts(game.GameId, []);
-            changed.Add(game);
+            var stray = game.ShortcutAppIds.Where(id => owner.TryGetValue(id, out var o) && o != game.GameId).ToHashSet(StringComparer.Ordinal);
+            if (stray.Count == 0) continue;
+            config.SaveGameShortcuts(game.GameId, game.ShortcutAppIds.Where(id => !stray.Contains(id)).ToList());
+            if (!changed.Contains(game)) changed.Add(game);
         }
         return changed;
     }
