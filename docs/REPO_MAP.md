@@ -105,6 +105,8 @@ SaveLocker/
 │   │   ├── ServerOrigin.cs              # What counts as "the same server" — what credentials bind to
 │   │   ├── LocalAuth.cs                 # Token + Host/Origin guard for the agent's OWN API. That API
 │   │   │                               #   manages the machine, so loopback alone is not a defence
+│   │   ├── LoopbackPeer.cs              # Is the loopback caller THIS OS account? (/proc/net/tcp uid; Windows TCP table
+│   │   │                               #   PID → token SID). Gates the token-bearing index.html
 │   │   ├── StateDirSecurity.cs          # Makes the state dir private: a per-account ACL on Windows (WA-03),
 │   │   │                               #   0700/0600 on Unix, tightening files older builds left permissive
 │   │   ├── AtomicFile.cs                # Whole-file writes no reader can catch half-finished
@@ -522,7 +524,8 @@ SaveLocker/
   `POST /api/admin/session`, revocable, expiring), **or** `X-Admin-Password: <password>` for scripts.
   Set in the dashboard; open if unset. Password guesses are throttled on every path that checks one.
 - **The agent's own API (:5178)** — `X-SaveLocker-Token`, from the 0600 `api-token` file beside
-  `config.json`, **plus** a loopback `Host` check and an Origin check. Loopback is not by itself a
+  `config.json`, **plus** a loopback `Host` check and an Origin check; the page carrying the token is served
+  only to a process of the same OS account (`LoopbackPeer`). Loopback is not by itself a
   defence: that API rewrites config and re-registers the machine, and any local process or web page
   can reach it. There is **no CORS policy on purpose**, so a foreign page cannot call it at all.
 

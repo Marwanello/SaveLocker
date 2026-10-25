@@ -83,6 +83,15 @@ session can judge an edge case, not to reopen the choice.
   points rather than trusting the stored string. The state directory is refused as
   same-or-ancestor only, not as a whole tree — `config.json` and `api-token` sit directly in it, and
   the test suites legitimately put save folders below it.
+  **Autorun folders joined the floor (2026-10-25, full-repo security review).** The Start Menu
+  (user and all-users, so both Startup folders), `~/.ssh`, and on Linux `~/.config/autostart`,
+  `autostart-scripts`, `plasma-workspace`, `systemd`, `environment.d` and `~/.local/share/systemd`
+  are refused as the folder, anything inside it, and anything holding it. A save folder's files
+  are whatever the server's head says, and a template from **one** machine key fans out to every
+  agent that adopts the game — aimed at Startup, a routine pull became code at the next logon. The
+  server also refuses to store such a template from an agent (`SyncService.AgentTemplateError`,
+  now also on the primary folder's `SuggestedSaveDir`, which an agent may no longer send as a
+  literal path), but the agent's check on the *expanded* path is the load-bearing one.
 - **Windows agent state belongs to one account: whoever enrolled** (WA-03, 2026-07-27). Not a local
   group. `%PROGRAMDATA%` grants every authenticated user read access and it inherits, so
   `config.json` (this machine's **server API key**) and `api-token` (which grants the local
@@ -609,6 +618,14 @@ session can judge an edge case, not to reopen the choice.
   `AgentApiServer` can re-point a machine at another server — reaching it is equivalent to owning
   the box. `--lan` is withdrawn and exits non-zero. Remote access is an SSH tunnel. Full rationale
   in git history if ever revisited.
+  **The token page goes only to this OS account (2026-10-25).** Loopback is shared by every account
+  on the machine, so serving `index.html` (the token's one way into the browser) to any loopback
+  caller let another local user read the token the per-account `api-token` ACL keeps from them.
+  `LoopbackPeer` asks the OS who owns the client end of the connection — `/proc/net/tcp{,6}`'s uid
+  on Linux, `GetExtendedTcpTable`'s owning PID and its token's user SID on Windows — and anything
+  else gets a 403. Chosen over a launch code or cookie because it needs no change to any surface
+  that opens the UI (tray WebView2, `savelocker open`, a browser tab, toast links), and a code put
+  on a Chromium command line is readable by other users on Linux (`/proc/<pid>/cmdline`).
 - **Config/queue/health files are cross-process shared state**, not single-owner. Daemon +
   launch-wrapper are separate processes sharing `config.json` etc. — per-game `flock` +
   in-process semaphore both required, every write atomic (temp+rename), reads happen under the

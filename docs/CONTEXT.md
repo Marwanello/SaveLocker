@@ -18,6 +18,21 @@ and 1 — both resolve to the same rollout: the console and fleet are now curren
 which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
 fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
+**Full-repo security review: two findings fixed (2026-10-25, branch `security-review-fixes`, PR open, not merged).**
+(1) **One stolen machine key could plant code in every Windows agent's Startup folder:** an agent-created game's
+`SuggestedSaveDir` was never validated, every agent adopts server games and expands the template, `SavePathGuard`
+had no rule for autorun folders, and the restore writes any file name. Now the guard refuses the Start Menu
+(both Startups), `~/.ssh` and the Linux autostart/systemd/KDE-login folders as the folder, inside it, or holding
+it, and the server refuses an agent template naming one — and a literal `SuggestedSaveDir` from an agent at all.
+(2) **Another local account could read the local API token** by fetching `/` over loopback; `index.html` now goes
+only to a process of the same OS account (`LoopbackPeer`). Also: the audit CSV export neutralises formula cells.
+Rationale in [[Decisions]] (WA-02 autorun note; local API entry). Tests: new `AutoRunFolderTests.cs` (guard,
+template recogniser, a real server refusing the templates, the peer check over IPv4/IPv6) — both behaviour tests
+fail against the pre-fix code; `dotnet test` 849/849; `run-local-api-tests` 128/0. **Pre-existing, not fixed:** that suite's section 10 (server
+switch) hits a 401 reading the daemon's state and its checks never run — identical with this fix reverted. **Not verified:** the
+refusal from a genuinely different account (needs a second login on Windows and on the Deck).
+**Next action:** the maintainer tries the agent UI from the tray, `savelocker open` and a browser tab, then merge.
+
 **One console entry per game, one save tree per emulator (2026-10-21, branch `multi-emulator-games`, PR open, not
 merged).** All six phases of [[tasks/multi-emulator-games/plan]] are built: a console-side `GameTitle` groups the
 server games one title is saved as (melonDS + RetroArch's Hunters, Dolphin + PrimeHack's Trilogy); the console and
