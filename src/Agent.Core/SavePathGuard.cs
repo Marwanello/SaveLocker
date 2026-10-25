@@ -125,6 +125,15 @@ public static class SavePathGuard
                     "overwrite installed files. Map the game's own save folder instead.");
         }
 
+        foreach (var (autoRun, label) in AutoRunPaths())
+        {
+            if (autoRun is not null &&
+                (string.Equals(full, autoRun, Cmp) || IsInside(full, autoRun) || IsInside(autoRun, full)))
+                return Result.Refuse(
+                    $"'{path}' is or holds {label}. Files a pull writes there run as you, so it can never " +
+                    "be a save folder. Map the game's own save folder instead.");
+        }
+
         return Result.Allow(full);
     }
 
@@ -167,6 +176,36 @@ public static class SavePathGuard
         yield return (Special(Environment.SpecialFolder.ProgramFiles), "Program Files");
         yield return (Special(Environment.SpecialFolder.ProgramFilesX86), "Program Files (x86)");
         yield return (Trim(AppContext.BaseDirectory), "the SaveLocker install directory");
+    }
+
+    /// <summary>
+    /// Folders whose contents the OS or desktop runs, or that grant a login, refused as the folder itself, anything
+    /// inside it, and anything holding it. A save folder's files are whatever the server's head says: a template or
+    /// server path aimed here (one stolen machine key can publish such a template to the whole fleet) would turn a
+    /// routine pull into code that runs at the next logon.
+    /// </summary>
+    private static IEnumerable<(string? Path, string Label)> AutoRunPaths()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            yield return (Canonicalize(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu)), "your Start Menu (with its Startup folder)");
+            yield return (Canonicalize(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu)), "the all-users Start Menu (with its Startup folder)");
+        }
+
+        if (Special(Environment.SpecialFolder.UserProfile) is not { } home) yield break;
+        yield return (Canonicalize(Path.Combine(home, ".ssh")), "your SSH folder");
+        if (OperatingSystem.IsWindows()) yield break;
+
+        var config = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") is { Length: > 0 } xc && Path.IsPathRooted(xc)
+            ? xc : Path.Combine(home, ".config");
+        var data = Environment.GetEnvironmentVariable("XDG_DATA_HOME") is { Length: > 0 } xd && Path.IsPathRooted(xd)
+            ? xd : Path.Combine(home, ".local", "share");
+        yield return (Canonicalize(Path.Combine(config, "autostart")), "your desktop autostart folder");
+        yield return (Canonicalize(Path.Combine(config, "autostart-scripts")), "KDE's autostart scripts folder");
+        yield return (Canonicalize(Path.Combine(config, "plasma-workspace")), "KDE's login scripts folder");
+        yield return (Canonicalize(Path.Combine(config, "systemd")), "your systemd user units");
+        yield return (Canonicalize(Path.Combine(config, "environment.d")), "your login environment folder");
+        yield return (Canonicalize(Path.Combine(data, "systemd")), "your systemd user units");
     }
 
     private static string? Special(Environment.SpecialFolder f)

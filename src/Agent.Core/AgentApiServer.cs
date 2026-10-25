@@ -2104,8 +2104,9 @@ public sealed class AgentApiServer : IDisposable
 
     /// <summary>
     /// Serve the SPA shell with the local token baked in. This is the one place the token crosses
-    /// into the browser, and it is safe because the same-origin policy stops any other page from
-    /// reading the response — which is exactly why the Guard rejects a non-loopback Host first.
+    /// into the browser. The same-origin policy stops any other page from reading the response —
+    /// which is exactly why the Guard rejects a non-loopback Host first — and <see cref="LoopbackPeer"/>
+    /// stops any other OS account's process, which loopback alone would let in.
     /// </summary>
     private async Task SendIndexAsync(HttpContext context)
     {
@@ -2113,6 +2114,17 @@ public sealed class AgentApiServer : IDisposable
         if (!File.Exists(index))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        if (!LoopbackPeer.IsSameUser(context.Connection.RemoteIpAddress, context.Connection.RemotePort,
+                context.Connection.LocalPort))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "text/plain; charset=utf-8";
+            await context.Response.WriteAsync(
+                "SaveLocker only opens for the account it runs as. Open it from that account's tray icon, " +
+                "app menu entry or `savelocker open`.");
             return;
         }
 

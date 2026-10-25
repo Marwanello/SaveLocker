@@ -13,7 +13,8 @@ namespace SaveLocker.Agent;
 ///
 /// The defence is a high-entropy bearer token the page cannot guess and cannot read cross-origin,
 /// plus a Host check. The token lives in a 0600 file next to config.json and is handed to the
-/// bundled UI by injecting it into index.html, which is only served to a loopback Host.
+/// bundled UI by injecting it into index.html, which is only served to a loopback Host and only to a
+/// process of this same OS account (<see cref="LoopbackPeer"/>) — loopback is shared by every account.
 /// </summary>
 public sealed class LocalAuth
 {

@@ -1821,11 +1821,14 @@ static string PathKeyOf(string? path) =>
     string.IsNullOrWhiteSpace(path) ? SaveRoot.PrimaryKey : path.Trim();
 
 // The folders a create request asks for are checked before the game exists, so a bad key or scope
-// refuses the request instead of creating a half-defined game. An agent's extra folders must be templates
-// (SyncService.AgentTemplateError): it is defining them for every machine.
+// refuses the request instead of creating a half-defined game. An agent's folders, the primary one's suggestion
+// included, must be templates (SyncService.AgentTemplateError): it is defining them for every machine.
 static string? ValidateNewGameFolders(CreateGameRequest req, bool fromAgent = false) =>
     GameReleaseDto.Validate(req.Release) ?? GlobConfig.ValidateIncludes(req.IncludeGlobs) ?? GlobConfig.ValidateExtraPaths(req.ExtraPaths) ??
-    (fromAgent ? req.ExtraPaths?.Select(SyncService.AgentTemplateError).FirstOrDefault(e => e is not null) : null);
+    (fromAgent
+        ? SyncService.AgentTemplateError(req.SuggestedSaveDir) ??
+          req.ExtraPaths?.Select(SyncService.AgentTemplateError).FirstOrDefault(e => e is not null)
+        : null);
 
 // A refusal the caller can act on (a key taken or retired, the same folder already there) is a 409 with a
 // code, so an agent picks the next key or joins the folder without reading the sentence.
