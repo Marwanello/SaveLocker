@@ -2612,6 +2612,14 @@ plan's *Design (decided)* section lists the picks; all of them together: <https:
 Nothing is built yet. **Next action:** Playthroughs Group 1 per its `implementation-grouping.md`, and version
 history's Group 1 (trash) alongside it.
 
+---
+
+## eMudhra distrust: Node and ca-certificates pinned (2026-10-25, branch `emudhra-trust-pin`)
+
+Ported from upstream (SkorcherX `8199c6b`): the console image builds on `node:22.23.4-alpine`, every CI/release
+`setup-node` step pins `22.23.4`, and the runtime layer force-upgrades `ca-certificates` so a rebuild picks up
+distrusted roots. **Next:** redeploy the console on unRAID once merged; a cached image keeps the old trust store.
+
 ## Where to look
 
 | Topic | File |
