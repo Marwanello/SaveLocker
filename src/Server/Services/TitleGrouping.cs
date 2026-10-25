@@ -68,6 +68,9 @@ public sealed partial class TitleGrouping(AppDbContext db)
         var me = all.FirstOrDefault(i => i.Game.Id == gameId);
         var into = all.FirstOrDefault(i => i.Game.Id == intoId);
         if (me is null || into is null) return "not_found";
+        // The same games automatic grouping would take, less the hand split: never a PC game, a Switch title or a device save.
+        if (new[] { me, into }.FirstOrDefault(i => !Groupable(i, ignoreLock: true)) is { } odd)
+            return $"{odd.Game.Name} is not an emulator's game that can share a title.";
         // Either may be the titled one: a game alone joins the other's title, never pulls it out of its own.
         if (into.Game.TitleId is null && me.Game.TitleId is not null) (me, into) = (into, me);
         if (me.Game.TitleId is { } current && current == into.Game.TitleId) return $"{me.Game.Name} is already in that title.";
@@ -80,6 +83,7 @@ public sealed partial class TitleGrouping(AppDbContext db)
             var lead = new[] { me, into }.OrderBy(i => i.FirstSaved).ThenBy(i => i.Game.Name.Length).First();
             title = NewTitle(lead, [me, into]);
             Join(into, title);
+            into.Game.TitleLocked = false;
         }
         Join(me, title);
         me.Game.TitleLocked = false;
@@ -182,8 +186,8 @@ public sealed partial class TitleGrouping(AppDbContext db)
         TitleNames.SameRegion(a.Game.Region, b.Game.Region);
 
     // A PC game has no emulator; a Switch title is already one game across Switch emulators (D2); a split game stays out.
-    private static bool Groupable(Info i) =>
-        i.Emulator.Length > 0 && !i.Game.TitleLocked && i.Game.EmulatorKey is null && !SwitchEmulator().IsMatch(i.Emulator);
+    private static bool Groupable(Info i, bool ignoreLock = false) =>
+        i.Emulator.Length > 0 && (ignoreLock || !i.Game.TitleLocked) && i.Game.EmulatorKey is null && !SwitchEmulator().IsMatch(i.Emulator);
 
     private async Task<List<Info>> LoadAsync()
     {

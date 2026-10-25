@@ -211,6 +211,12 @@ public sealed class TitleGroupingServerTests : IDisposable
 
         var refused = await http.PostAsync($"/api/games/{prime.Id}/title/join?into={prime.Id}", null);
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, refused.StatusCode);
+
+        // A PC game never shares a title, by hand either.
+        var steam = await Add(pc, trilogy + " (Steam)", "Installed game", null, kind: GameSourceKinds.Steam);
+        refused = await http.PostAsync($"/api/games/{steam.Id}/title/join?into={dolphin.Id}", null);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Null((await Overview())[steam.Id].Game.TitleId);
     }
 
     [Fact]

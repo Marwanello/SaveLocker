@@ -537,9 +537,10 @@ public sealed class SyncService
         if (source is null || version is null) return null;
         if (source.TitleId is null) return [];
         var targets = await _db.Games.Where(g => g.TitleId == source.TitleId && g.Id != gameId).ToListAsync();
+        var emulators = await GetEmulatorMapAsync();
         var result = new List<CopyTargetDto>();
         foreach (var target in targets.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase))
-            result.Add((await PlanCopyAsync(source, version, target)).Dto);
+            result.Add((await PlanCopyAsync(source, version, target, emulators)).Dto);
         return result;
     }
 
@@ -558,7 +559,7 @@ public sealed class SyncService
         if (source is null || target is null || version is null) return (null, "not_found");
         if (source.TitleId is null || source.TitleId != target.TitleId || gameId == targetId)
             return (null, "A save can only be copied to another emulator's tree of the same game.");
-        var plan = await PlanCopyAsync(source, version, target);
+        var plan = await PlanCopyAsync(source, version, target, await GetEmulatorMapAsync());
         if (plan.Dto.Refusal is { } refusal) return (null, refusal);
 
         var newId = Guid.NewGuid();
@@ -643,8 +644,18 @@ public sealed class SyncService
         };
         _db.SaveVersions.Add(created);
         _db.SaveVersionFiles.AddRange(manifest);
-        await SetHeadAndPropagateAsync(target, newId, "version.copy",
-            $"{plan.FromEmulator} {versionId} → {plan.ToEmulator}, by {by}", propagate: true, exceptMachineId: null, ct);
+        try
+        {
+            await SetHeadAndPropagateAsync(target, newId, "version.copy",
+                $"{plan.FromEmulator} {versionId} → {plan.ToEmulator}, by {by}", propagate: false, exceptMachineId: null, ct);
+        }
+        catch
+        {
+            // Nothing points at the published archive until the row is saved: don't leave it behind.
+            _store.TryDelete(rel);
+            throw;
+        }
+        await QueueHeadPullsAsync(targetId, null, ct);
         await PruneVersionsAsync(targetId, ct);
         await LoadMachine(created, ct);
         return (created.ToDto(), null);
@@ -652,9 +663,8 @@ public sealed class SyncService
 
     private sealed record CopyPlan(CopyTargetDto Dto, SaveVersion? Head, string? FromEmulator, string? ToEmulator);
 
-    private async Task<CopyPlan> PlanCopyAsync(Game source, SaveVersion version, Game target)
+    private async Task<CopyPlan> PlanCopyAsync(Game source, SaveVersion version, Game target, Dictionary<Guid, string[]> emulators)
     {
-        var emulators = await GetEmulatorMapAsync();
         var from = emulators.GetValueOrDefault(source.Id)?.FirstOrDefault();
         var to = emulators.GetValueOrDefault(target.Id)?.FirstOrDefault();
         var head = target.HeadVersionId is { } h ? await _db.SaveVersions.Include(v => v.Machine).FirstOrDefaultAsync(v => v.Id == h) : null;

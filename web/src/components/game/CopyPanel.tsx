@@ -32,7 +32,7 @@ export function CopyPanel({ game, emulator, version, onClose, onCopied }: Props)
     let live = true;
     api.copyTargets(game.id, version.id)
       .then(t => { if (live) { setTargets(t); setTarget(t.find(x => !x.refusal)?.gameId ?? null); } })
-      .catch(e => toastError('Could not list where it can go: ' + errorText(e)));
+      .catch(e => { if (live) setTargets([]); toastError('Could not list where it can go: ' + errorText(e)); });
     return () => { live = false; };
   }, [game.id, version.id]);
 
