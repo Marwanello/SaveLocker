@@ -107,14 +107,25 @@ public sealed class SystemdAutoStart : IAutoStart
         try
         {
             if (!File.Exists(UnitPath)) return;
+            // The new unit's ExecStartPre is this script, and systemd ignores a missing one ("-"):
+            // pointing the unit at nothing would stop every future update from installing, silently.
+            if (!File.Exists(Path.Combine(prefix, "savelocker-preflight.sh"))) return;
             var current = File.ReadAllText(UnitPath).Replace("\r\n", "\n");
             // install.sh writes the packaged text as-is (%h paths); this class writes it with the
             // path filled in. Either one is current.
             if (current == ReadTemplate() || current == UnitFile()) return;
 
+            // Flushed before the rename: an empty unit after a power cut is an agent that never starts.
             var tmp = UnitPath + ".tmp";
-            File.WriteAllText(tmp, UnitFile());
+            using (var file = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var writer = new StreamWriter(file))
+            {
+                writer.Write(UnitFile());
+                writer.Flush();
+                file.Flush(flushToDisk: true);
+            }
             File.Move(tmp, UnitPath, overwrite: true);
+            Durable.FlushDirectory(UnitDir);
             ProcessRunner.Run("systemctl", "--user", "daemon-reload");
             log("Updated savelocker.service to this version's unit. It takes effect at the next start.");
         }

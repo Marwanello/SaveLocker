@@ -70,6 +70,13 @@ public static class Updater
     private sealed record AppliedUpdate(
         string Version, string FromVersion, DateTime AppliedAt, string[] Added);
 
+    /// <summary>
+    /// Written by <see cref="InstallStaged"/> before it moves anything, cleared once the install is
+    /// complete. <paramref name="Added"/> is the same list <see cref="AppliedUpdate"/> carries, fixed
+    /// up front so an install resumed after a power cut still knows which files were new.
+    /// </summary>
+    private sealed record InstallingUpdate(string Version, string[]? Added);
+
     private static readonly JsonSerializerOptions _json = new() { WriteIndented = true };
 
     /// <summary>
@@ -169,7 +176,7 @@ public static class Updater
             // The staged tree is what an interrupted install is finished from, so it has to survive
             // the same power cut the install might not.
             foreach (var dir in Directory.EnumerateDirectories(staged, "*", SearchOption.AllDirectories)
-                         .Append(staged).Append(root))
+                         .Append(staged).Append(root).Append(config.StateDir))
                 Durable.FlushDirectory(dir);
 
             var payload = ResolvePayloadRoot(staged);
@@ -408,20 +415,33 @@ public static class Updater
         // Otherwise previous/ is leftover from an install that was committed or rolled back, and
         // would restore the wrong version.
         var resuming = File.Exists(InstallingMarker(config));
+        var earlier = resuming ? ReadJson<InstallingUpdate>(InstallingMarker(config))?.Added ?? [] : [];
         if (!resuming) DeleteDirectory(previous);
         Directory.CreateDirectory(previous);
-        WriteJson(InstallingMarker(config), staged);
+
+        var files = Directory.EnumerateFiles(payload, "*", SearchOption.AllDirectories)
+            .Select(src => (Src: src, Rel: Path.GetRelativePath(payload, src)))
+            .ToList();
+
+        // Decided once, before anything moves, and recorded: a resumed install sees the files the
+        // cut-off one added sitting in the prefix, indistinguishable from old ones. Taken for old,
+        // they would be moved into previous/ and a rollback would restore the new version's copy.
+        var added = new HashSet<string>(earlier, StringComparer.Ordinal);
+        foreach (var (_, rel) in files)
+            if (!File.Exists(Path.Combine(prefix, rel)) && !File.Exists(Path.Combine(previous, rel)))
+                added.Add(rel);
+        WriteJson(InstallingMarker(config), new InstallingUpdate(staged.Version, [.. added.Order(StringComparer.Ordinal)]));
 
         var from = UpdateChecker.CurrentVersionText;
         var moved = 0;
         var copied = 0;
-        var added = new List<string>();
         var touched = new HashSet<string>(StringComparer.Ordinal) { UpdateRoot(config) };
 
-        foreach (var src in Directory.EnumerateFiles(payload, "*", SearchOption.AllDirectories))
+        foreach (var (src, rel) in files)
         {
-            var rel = Path.GetRelativePath(payload, src);
             var dst = Path.Combine(prefix, rel);
+            var keep = Path.Combine(previous, rel);
+            var isNew = added.Contains(rel);
 
             Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
 
@@ -431,10 +451,10 @@ public static class Updater
             // of taking a SIGBUS partway through.
             if (File.Exists(dst))
             {
-                var keep = Path.Combine(previous, rel);
-                if (File.Exists(keep))
+                // Resuming: a copy the cut-off attempt wrote. The real old version, if any, is in keep.
+                if (isNew || File.Exists(keep))
                 {
-                    File.Delete(dst);   // resuming: keep already holds the real old version
+                    File.Delete(dst);
                 }
                 else
                 {
@@ -442,9 +462,8 @@ public static class Updater
                     File.Move(dst, keep);
                     touched.UnionWith(Durable.UpTo(Path.GetDirectoryName(keep)!, previous));
                 }
-                moved++;
             }
-            else added.Add(rel);
+            if (!isNew) moved++;
 
             Durable.CopyFile(src, dst);
             CopyExecutableBit(src, dst);
@@ -458,7 +477,7 @@ public static class Updater
         foreach (var dir in touched) Durable.FlushDirectory(dir);
 
         WriteJson(AppliedMarker(config),
-            new AppliedUpdate(staged.Version, from, DateTime.UtcNow, [.. added]));
+            new AppliedUpdate(staged.Version, from, DateTime.UtcNow, [.. added.Order(StringComparer.Ordinal)]));
         TryDelete(InstallingMarker(config));
         TryDelete(StagedMarker(config));
         DeleteDirectory(StagedDir(config));
@@ -491,6 +510,7 @@ public static class Updater
 
         if (Directory.Exists(previous))
         {
+            var touched = new HashSet<string>(StringComparer.Ordinal);
             foreach (var src in Directory.EnumerateFiles(previous, "*", SearchOption.AllDirectories))
             {
                 var rel = Path.GetRelativePath(previous, src);
@@ -500,13 +520,21 @@ public static class Updater
                     Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
                     if (File.Exists(dst)) File.Delete(dst);   // unlink: the replacement gets no say
                     File.Move(src, dst);
-                    Durable.FlushDirectory(Path.GetDirectoryName(dst)!);
+                    touched.UnionWith(Durable.UpTo(Path.GetDirectoryName(dst)!, prefix));
                     restored++;
                 }
                 catch (Exception ex)
                 {
                     log($"update: could not restore {rel} — {ex.Message}");
                 }
+            }
+
+            // After the loop, not per file: a failed flush is not a failed restore, and must not be
+            // logged as one.
+            foreach (var dir in touched)
+            {
+                try { Durable.FlushDirectory(dir); }
+                catch (Exception ex) { log($"update: {ex.Message}"); }
             }
         }
 
@@ -540,6 +568,10 @@ public static class Updater
         {
             if (ReadApplied(config) is not { } applied) return;
             TryDelete(AppliedMarker(config));
+            // The marker's removal is on the disk before previous/ goes. The other order, after a
+            // crash, is a marker with nothing to restore: the next start "rolls back" by deleting the
+            // working version's new files.
+            Durable.FlushDirectory(UpdateRoot(config));
             DeleteDirectory(PreviousDir(config));
             log($"update: v{applied.Version} started successfully (was v{applied.FromVersion}).");
         }

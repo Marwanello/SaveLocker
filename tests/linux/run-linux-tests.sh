@@ -1207,6 +1207,17 @@ check "the report says how to reinstall"                "$(contains "${out}" "in
 check "the report reaches agent.log"                    "$(grep -qF "no previous version to restore" "${fake_prefix}/agent.log" && echo 0 || echo 1)"
 cp "${scratch}/apphost.bak" "${fake_prefix}/savelocker"
 
+# A previous/ with no update pending is a leftover a failed Commit could not delete, not a rollback
+# copy. Restoring it would put back whatever version it holds.
+mkdir -p "${fake_prefix}/update/previous"
+echo "stale" >"${fake_prefix}/update/previous/savelocker"
+: >"${fake_prefix}/savelocker"
+out="$(run_preflight)"
+check "a leftover previous/ is never restored"          "$(grep -qF "Restoring the previous version" <<<"${out}" && echo 1 || echo 0)"
+check "the leftover stays where it is"                  "$(grep -qx stale "${fake_prefix}/update/previous/savelocker" && echo 0 || echo 1)"
+cp "${scratch}/apphost.bak" "${fake_prefix}/savelocker"
+rm -rf "${fake_prefix}/update/previous"
+
 # An install cut off part-way. The old files it had already moved into previous/ are the only copy
 # left, so finishing the install must keep them rather than wipe previous/ and start again, which
 # used to leave a rollback set holding the half-written copies.
@@ -1214,12 +1225,18 @@ stage_again resume-stage
 mkdir -p "${fake_prefix}/update/previous"
 mv "${fake_prefix}/savelocker" "${fake_prefix}/update/previous/savelocker"
 : >"${fake_prefix}/savelocker"
-echo '{}' >"${fake_prefix}/update/installing.json"
+# The cut-off attempt had also copied a file only the new version carries. Sitting in the prefix, it
+# looks like an old file; the marker is what says it is not.
+: >"${fake_prefix}/newfile.txt"
+echo '{"Version":"resume","Added":["newfile.txt"]}' >"${fake_prefix}/update/installing.json"
 out="$(prefix_agent apply-update)"
 check "an interrupted install is finished"              "$(contains "${out}" "installed (")"
 check "the real old binary is still the rollback copy"  "$([ "$(md5sum "${fake_prefix}/update/previous/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+check "a file the cut-off install added is not kept as old" "$([ ! -e "${fake_prefix}/update/previous/newfile.txt" ] && echo 0 || echo 1)"
+check "and it is still recorded as new"                 "$(grep -qF '"newfile.txt"' "${fake_prefix}/update/applied.json" && echo 0 || echo 1)"
 out="$(prefix_agent apply-update)"
 check "and rolling that back restores the real one"     "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+check "and removes the file the new version added"      "$([ ! -e "${fake_prefix}/newfile.txt" ] && echo 0 || echo 1)"
 
 # ---- A package that cannot be prepared is reported too ----
 # The machine keeps working, so nothing else looks wrong; it simply stops updating. That is exactly

@@ -7,13 +7,15 @@
 # the binary that is now empty, so systemd fails with "Exec format error" on every start, forever.
 # Plain sh, no agent code: it has to work when the agent does not.
 #
-# While an update is unconfirmed, update/previous/ still holds the old version. If the installed
-# agent cannot start, move those files back. `apply-update`, run by the restored agent, then sees the
-# unconfirmed update and finishes the rollback: it removes files only the failed version added and
-# reports it to the console.
+# While an update is unconfirmed (applied.json) or was cut off part-way (installing.json),
+# update/previous/ holds the old files it replaced. If the installed agent cannot start, move those
+# back. `apply-update`, run by the restored agent, then finishes the job: it rolls back an unconfirmed
+# update (removing files only the failed version added, and reporting it to the console), or resumes
+# the cut-off install.
 prefix="$(cd "$(dirname "$0")" && pwd)"
 bin="${prefix}/savelocker"
-previous="${prefix}/update/previous"
+update="${prefix}/update"
+previous="${update}/previous"
 
 say() {
   echo "$1" >&2
@@ -21,17 +23,17 @@ say() {
 }
 
 # Free enough to run on every start: no process, a stat per file. The crash leaves empty files, so
-# an empty binary or assembly is the signature.
+# an empty binary, assembly, native library or the runtime's own json is the signature.
 looks_intact() {
   [ -s "${bin}" ] || return 1
-  for f in "${prefix}"/*.dll; do
+  for f in "${prefix}"/*.dll "${prefix}"/*.so "${prefix}"/savelocker.*.json; do
     [ -e "${f}" ] || continue
     [ -s "${f}" ] || return 1
   done
   return 0
 }
 
-# Only paid for while there is something to restore, which is the one start after an update.
+# Only paid for while an update is pending, which is the one start after it installs.
 starts() {
   if command -v timeout >/dev/null 2>&1; then
     timeout 60 "${bin}" version >/dev/null 2>&1
@@ -40,7 +42,19 @@ starts() {
   fi
 }
 
-if [ -s "${previous}/savelocker" ]; then
+# Without a marker, a previous/ is a leftover the agent failed to delete, not a rollback copy:
+# restoring it would put back whatever version it happens to hold.
+pending() {
+  [ -e "${update}/applied.json" ] || [ -e "${update}/installing.json" ]
+}
+
+# Any file, not just the binary: an install cut off before it reached the binary has still replaced
+# assemblies, and those old ones are only in previous/.
+has_previous() {
+  [ -n "$(find "${previous}" -type f 2>/dev/null | head -n 1)" ]
+}
+
+if pending && has_previous; then
   if ! looks_intact || ! starts; then
     say "preflight: the installed agent cannot start. Restoring the previous version from ${previous}."
     find "${previous}" -type f | while IFS= read -r f; do

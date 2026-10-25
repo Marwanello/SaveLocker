@@ -2564,6 +2564,16 @@ Deck, `run-linux-tests`, Game Mode (by choice). `openapi.json` unchanged on purp
 or DTO shape changed, only a 409 the routes did not declare. **Next:** testenv pass, then PRs for
 both repos.
 
+## Linux update crash safety (PR #87, branch `linux-update-crash-safety`, 2026-10-25)
+
+A Deck that crashed ~30 s after the v0.7.0 self-update came back with every updated file at 0 bytes
+and no rollback copy ([[Gotchas]] → Linux agent, "An update's files came back empty"). The updater
+now fsyncs everything before `applied.json`; `installing.json` records an in-progress install
+(including which files it adds) so a cut-off one resumes safely; `savelocker-preflight.sh` (plain
+sh, the unit's `ExecStartPre`) puts `previous/` back when the installed agent cannot start, but only
+while an update is pending. The daemon refreshes a stale installed unit. **Not on hardware yet**;
+protection starts with the update *after* the one that installs it. `run-linux-tests` covers it.
+
 ---
 
 ## Where to look
