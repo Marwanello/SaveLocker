@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "mockups": "vite --config mockup-features/vite.config.ts",
+    "mockups:build": "vite build --config mockup-features/vite.config.ts && node ../agent-ui/mockup-features/inline.cjs .mockup-features-dist ../mockups/console.html",
     "gen:api": "openapi-typescript ../src/Server/openapi.json -o src/api-types.ts",
     "lint": "oxlint",
     "export:art": "node scripts/export-art.mjs",

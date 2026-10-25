@@ -45,6 +45,8 @@
     <Compile Include="..\..\src\Agent.Linux\ProcessRunner.cs" Link="ProcessRunner.cs" />
     <Compile Include="..\..\src\Agent.Linux\SteamRoots.cs" Link="SteamRoots.cs" />
     <Compile Include="..\..\src\Agent.Linux\Crc32.cs" Link="Crc32.cs" />
+    <!-- Which directories the updater flushes is pure path work; the fsync itself is Linux-only. -->
+    <Compile Include="..\..\src\Agent.Linux\Durable.cs" Link="Durable.cs" />
     <!-- And the menu entry: plain file I/O, with the template it renders embedded under the same name. -->
     <Compile Include="..\..\src\Agent.Linux\DesktopEntry.cs" Link="DesktopEntry.cs" />
     <EmbeddedResource Include="..\..\packaging\linux\savelocker.desktop"

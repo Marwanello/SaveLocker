@@ -1,6 +1,7 @@
 # Playthroughs (named save forks) — summary
 
-Asked for 2026-10-16 by the maintainer, high priority, not planned yet. This is the idea and the questions a `plan.md`
+Asked for 2026-10-16 by the maintainer, high priority. **Planned 2026-10-22: see `plan.md` and
+`implementation-grouping.md` beside this file** (the questions below are answered at the end of `plan.md`). This is the idea and the questions the plan
 has to answer.
 
 ---

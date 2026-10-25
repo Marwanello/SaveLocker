@@ -1,0 +1,11 @@
+{
+  "src/App.tsx": "App.tsx",
+  "src/components/SignIn.tsx": "SignIn.tsx",
+  "src/components/BackupsView.tsx": "BackupsView.tsx",
+  "src/components/ConfigView.tsx": "ConfigView.tsx",
+  "src/components/game/GameDetail.tsx": "GameDetail.tsx",
+  "src/components/game/VersionsCard.tsx": "VersionsCard.tsx",
+  "src/components/game/VersionFiles.tsx": "VersionFiles.tsx",
+  "src/components/game/RulesCard.tsx": "RulesCard.tsx",
+  "src/components/NavBar.tsx": "NavBar.tsx"
+}

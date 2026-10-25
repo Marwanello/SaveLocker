@@ -569,7 +569,7 @@ public sealed class AgentApiServer : IDisposable
                 // TOFU guarantee enrollment provides simply did not exist on this path. WA-04.
                 _config.ApiKey = reg.ApiKey;
                 _config.MachineId = reg.MachineId;
-                if (api.ObservedPin is { } pin) _config.ServerPin = pin;
+                _config.SetPin(api.Observed);
                 _config.Save();
                 _onConnectionChanged?.Invoke();
                 // The key itself is never returned — it is written to config and used from there.

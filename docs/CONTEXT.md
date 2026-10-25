@@ -2077,6 +2077,20 @@ program word (or what `flatpak run` starts) names an emulator; merge also refuse
 testenv and hardware pass (Groups A–J), played Ryujinx and Xenia (launched from EmulationStation) against real games. Left by
 choice: Model 2's real-game check (no game) and the items each plan lists as not built or *Deferred*. The testenv PCSX2 fixture
 with a 0-byte superblock was added afterwards (WSL `Mcd000.ps2`). The next action lines below are history.
+<br>**2026-10-22: v0.8.0 hid every scoped emulator save on a machine that also tracks PC games (branch
+`emulator-saves-hidden-by-pc-games`, not released).** `Enroller.ByFiles` compared a scoped save with `ServerNames(g, …)`,
+which is empty for a game with no own file names, so every PC game (no include patterns) "kept" it: on the real Deck all 101
+non-Switch emulator saves read `enrolled: true` and Add games showed only the Switch ones (unscoped, never matched by files).
+`SrmShortcuts.Backfill` rode the same match and put Super Smash Bros. 3DS's shortcut (`2599779049`) on *Alba* as its
+shortcut and Steam app ID — removed by hand from the Deck's `config.json` (backup `config.json.bak-alba-20261022`); a v0.8.0
+rescan (opening Add games) puts it back until this ships. Fix: an unscoped tracked game never matches by files.
+<br>Same branch, from a review of the other callers: a Steam/Heroic/Playnite game never matches an emulator save by name
+either (a Steam *Undertale* made Yuzu's read as tracked; no source or a hand-mapped folder still matches), and every rescan
+now drops shortcut IDs from a game that is never an emulator's — a store game, or a sourceless one with no scope and no key
+— with an app ID taken from one, so other machines heal themselves once updated. Only a shortcut that same scan gives to
+another save is dropped (review fix): one the scan did not see (SD card out, unreadable Steam folder) is kept, since a
+sourceless game may be a hand-mapped emulator folder whose launches match on it. Unit **798**.
+**Next:** release it; nothing to clean by hand on the Windows PC — its rescan does it.
 <br>**Next action for this item:** the testenv pass with the Windows agent (Phase 17 Earthbound link Windows ⇄ WSL — the Windows
 test agent still maps a real `D:\Emulation` Animal Crossing save; unmap it first), the Deck pass (Forza Horizon listed once;
 launching it from Steam syncs), then merge PR #78. Group H stays open.
@@ -2574,7 +2588,39 @@ Deck, `run-linux-tests`, Game Mode (by choice). `openapi.json` unchanged on purp
 or DTO shape changed, only a 409 the routes did not declare. **Next:** testenv pass, then PRs for
 both repos.
 
+## Linux update crash safety (PR #87, branch `linux-update-crash-safety`, 2026-10-25)
+
+A Deck that crashed ~30 s after the v0.7.0 self-update came back with every updated file at 0 bytes
+and no rollback copy ([[Gotchas]] → Linux agent, "An update's files came back empty"). The updater
+now fsyncs everything before `applied.json`; `installing.json` records an in-progress install
+(including which files it adds) so a cut-off one resumes safely; `savelocker-preflight.sh` (plain
+sh, the unit's `ExecStartPre`) puts `previous/` back when the installed agent cannot start, but only
+while an update is pending. The daemon refreshes a stale installed unit. **Not on hardware yet**;
+protection starts with the update *after* the one that installs it. `run-linux-tests` covers it.
+
+## TLS pin: renewals behind Cloudflare stop warning (2026-10-22)
+
+Found on the maintainer's Deck: "TLS identity has CHANGED" since 2026-10-13 with no certificate
+touched — Cloudflare's Universal SSL renewal rotated the edge key the agent had pinned. The agent now
+records how the pinned cert was vouched for (`ServerPinTrust`) and re-pins quietly when a new key is
+CA-valid for the host *and* carries embedded CT SCTs; a private cert's new key, a public server
+presenting an unlogged cert, or a failing chain still warns, with a reason line. Existing agents fix
+themselves on the next connection. Rule and rejected options: [[Decisions]] (TLS bullet, amendment);
+[[Gotchas]] → Hosting / network. Tests: `ServerTrustTests` (xUnit, 16) and
+`run-enrollment-tls-tests` (now 9). **Next:** watch the Deck's agent log for the one-line "certificate
+was renewed … pin updated" after it updates.
+
 ---
+
+## Playthroughs, version history and storage: planned and designed (2026-10-25)
+
+Three linked tasks, built in this order: [[tasks/save-playthroughs/plan|Playthroughs]],
+[[tasks/version-history-upgrades/plan|Version history upgrades]] (its trash phase first),
+[[tasks/storage-dedup-offsite/plan|Storage: off-site copies and deduplication]]. Every design question was
+settled on mockups of the real agent and console (`agent-ui/mockup-features/`, `web/mockup-features/`), and each
+plan's *Design (decided)* section lists the picks; all of them together: <https://claude.ai/artifact/R3BrsWpzSicoRt4xqqVDtJ>.
+Nothing is built yet. **Next action:** Playthroughs Group 1 per its `implementation-grouping.md`, and version
+history's Group 1 (trash) alongside it.
 
 ## Where to look
 

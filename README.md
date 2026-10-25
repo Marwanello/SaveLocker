@@ -21,7 +21,7 @@
   <a href="#-features">Features</a> ·
   <a href="#-how-a-conflict-is-handled">Conflicts</a> ·
   <a href="#-building-from-source">Build</a> ·
-  <a href="web/src/releases/0.6.0.md">What's new in 0.6</a>
+  <a href="web/src/releases/0.8.0.md">What's new in 0.8</a>
 </p>
 
 <p align="center">
@@ -33,10 +33,11 @@ versioned archive to a server you host. Before you launch on another machine, it
 If two machines ever disagree, nothing is overwritten — you get a clear **this device vs. the cloud**
 choice, on whichever screen you happen to be looking at.
 
-> **New in 0.6 — the Checkpoint redesign.** One design system across the web console, the agent UI,
-> the Windows tray and Steam Deck Game Mode: Archivo type, six accent colours and three app icons the
-> whole fleet follows, light and dark themes that follow your OS, **Sync all** with live progress, real
-> OS notifications, and a Backups page that can now **restore**. [Read the release notes →](web/src/releases/0.6.0.md)
+> **New in 0.8 — emulator saves.** SaveLocker now finds and syncs EmuDeck's saves — RetroArch, PCSX2,
+> DuckStation, Dolphin, PPSSPP, RPCS3, Cemu, Azahar, Xenia, Ryujinx and the Yuzu-based Switch
+> emulators — save states included, with real game names and per-console art. Requires EmuDeck on
+> Linux or Windows; only EmuDeck installs have been tested. Enrollment is now a join link, and an
+> emptied save folder can no longer wipe a game. [Read the release notes →](web/src/releases/0.8.0.md)
 
 ---
 
@@ -113,13 +114,14 @@ A gamepad-native UI that launches from your Steam library — no keyboard, no De
 ### Finds your games for you
 
 - **Game detection** — the community [Ludusavi manifest](https://github.com/mtkennerly/ludusavi-manifest) resolves save paths for thousands of games; Steam libraries, `shortcuts.vdf`, Proton prefixes, Heroic (Epic/GOG) and Playnite's library are all scanned.
+- **Emulator saves — EmuDeck only** — RetroArch, PCSX2, DuckStation, Dolphin, PPSSPP, RPCS3, Vita3K, Cemu, Azahar and Xenia, plus the Switch emulators (Yuzu, Eden, Citron, Suyu, Sudachi, Ryujinx), found through an EmuDeck install on Linux (including SteamOS) or Windows — save states as a second folder of the same game, with names from No-Intro, Redump and eShop title data. Standalone emulator installs are not supported.
 - **Per-machine save paths** — each machine keeps its own folder; the server suggests a canonical one that agents adopt when it exists locally.
 - **Exclude patterns** — gitignore-style globs skip logs, caches and screenshots, with a console-editable default list.
 - **Cover art** — grids, heroes, logos and icons from [SteamGridDB](https://www.steamgriddb.com/), cached on your server. Pick a different cover from the console.
 
 ### Made to run a fleet
 
-- **One-file enrollment** — the console mints a single-use, short-lived policy file; the agent trades it for its own key. No API key is ever copied by hand.
+- **Join links** — the console mints a single-use, short-lived link; opening it walks a new machine through install and enrollment. No API key is ever copied by hand.
 - **Fleet health** — a headless Deck can't pop a toast, so agents report problems to the console: online status, OS, agent version, last sync and queued pushes per machine.
 - **Appearance, fleet-wide** — choose a theme, one of six accents and an app icon in the console; every agent, the tray icon and even the Deck's Steam library art follow it.
 - **Notifications** — real Windows toasts and Linux desktop notifications for conflicts, with a button straight to the decision.
@@ -210,16 +212,15 @@ volume, not just the `.db` file.
 
 </details>
 
-### 2 — Create an enrollment file
+### 2 — Create a join link
 
-In the console: **Configuration → Enroll a machine**. Optionally name the machine (that *binds* the file
-to it), then download the `.json` policy file and copy it to the new machine. It holds a single-use token
-that expires after about 15 minutes — if it does, just make another.
+In the console: **Configuration → Enroll a machine**. You get a short single-use link (and a QR code)
+that expires after about 15 minutes; opening it on the new machine shows a pairing page with its
+installer. If it expires, just make another.
 
 ### 3 — Install the agent
 
-**Windows** — create a join link in the console (**Configuration → Enroll a machine**) and open it on
-the PC: the pairing page downloads the installer and copies the link. On the **Enroll this machine**
+**Windows** — open the join link on the PC: the pairing page downloads the installer and copies the link. On the **Enroll this machine**
 page, paste the link (Ctrl+V); the machine is online in the console before the installer closes.
 (SmartScreen warns because the installer isn't code-signed yet — *More info → Run anyway*.) Unattended:
 `Setup.exe /SILENT /ENROLL-URL="http://your-server:5080/join/K7QM-4H2X"`.
@@ -244,7 +245,8 @@ Steam library art for adding the Game Mode UI as a non-Steam game. To sync a gam
 
 ### 4 — Add games
 
-Open the agent → **Add Games**. It scans Steam, Heroic, Playnite and the Ludusavi manifest; tick the ones
+Open the agent → **Add Games**. It scans Steam, Heroic, Playnite, the Ludusavi manifest and EmuDeck's
+emulator folders; tick the ones
 you want, set a folder for any it couldn't find, and add them. Games added on one machine show up on the
 others at their next poll, ready to have a folder picked.
 
@@ -378,7 +380,7 @@ SaveLocker/
 - [x] Self-updating agents on Windows and Linux
 - [x] Conflict resolution on every surface
 - [x] The Checkpoint redesign
-- [ ] Emulator save detection
+- [x] Emulator saves — RetroArch, PCSX2, Dolphin, the Switch emulators, Xenia and more (v0.8.0)
 - [ ] Code-signing — no more SmartScreen warning on Windows
 - [ ] macOS agent
 

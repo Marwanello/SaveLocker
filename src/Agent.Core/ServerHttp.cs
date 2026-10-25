@@ -27,18 +27,12 @@ public static class ServerHttp
     /// callback still returns the platform's own verdict. Returning true unconditionally here is the
     /// classic way this hook gets misused into disabling TLS validation.
     /// </summary>
-    public static HttpClientHandler CreateHandler(
-        string? expectedPin, Action<string>? onObserved = null, Action<string>? onMismatch = null)
+    public static HttpClientHandler CreateHandler(Action<ObservedCert>? onObserved = null)
     {
         var handler = new HttpClientHandler();
         handler.ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
         {
-            if (ServerTrust.Fingerprint(cert) is { } pin)
-            {
-                onObserved?.Invoke(pin);
-                if (!string.IsNullOrEmpty(expectedPin) && pin != expectedPin)
-                    onMismatch?.Invoke(pin);
-            }
+            if (cert is not null) onObserved?.Invoke(ServerTrust.Observe(cert, errors));
             return errors == SslPolicyErrors.None;
         };
         return handler;
@@ -55,9 +49,7 @@ public static class ServerHttp
     /// </param>
     public static HttpClient Create(AgentConfig config, bool withApiKey)
     {
-        var handler = CreateHandler(
-            config.ServerPin,
-            onMismatch: observed => ServerTrust.WarnMismatch(config.ServerPin!, observed));
+        var handler = CreateHandler(seen => ServerTrust.Check(config, seen));
 
         var http = new HttpClient(handler) { BaseAddress = new Uri(config.ServerUrl) };
         if (withApiKey && !string.IsNullOrEmpty(config.ApiKey))
@@ -69,5 +61,5 @@ public static class ServerHttp
     /// A client for an origin that is <b>not</b> the configured server: no base address, no
     /// credential, and no pin (the pin belongs to the server, not to this host).
     /// </summary>
-    public static HttpClient CreateForeign() => new(CreateHandler(expectedPin: null));
+    public static HttpClient CreateForeign() => new(CreateHandler());
 }

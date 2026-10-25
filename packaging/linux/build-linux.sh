@@ -59,7 +59,8 @@ dotnet publish "${repo_root}/src/Agent.Linux/SaveLocker.Agent.Linux.csproj" \
 cp "${repo_root}/packaging/linux/install.sh" "${out}/SaveLocker/"
 cp "${repo_root}/packaging/linux/savelocker.service" "${out}/SaveLocker/"
 cp "${repo_root}/packaging/linux/savelocker.desktop" "${out}/SaveLocker/"
-chmod +x "${out}/SaveLocker/install.sh" "${out}/SaveLocker/savelocker"
+cp "${repo_root}/packaging/linux/savelocker-preflight.sh" "${out}/SaveLocker/"
+chmod +x "${out}/SaveLocker/install.sh" "${out}/SaveLocker/savelocker" "${out}/SaveLocker/savelocker-preflight.sh"
 
 # Steam Library artwork for the non-Steam shortcut, so a Deck user can replace the grey box with
 # proper cover art by hand (install.sh's banner explains where these land and how to apply them).

@@ -57,3 +57,6 @@ Before commiting, update the vault so the next session starts clean:
 - Target framework is **net10.0** (LTS). EF Core tracks it at 10.0.x. The SDK is pinned in `global.json` — bump it and the Dockerfile's `sdk`/`aspnet` tags together.
 - After any API change: regenerate `web/src/api-types.ts` and commit the updated `src/Server/openapi.json` snapshot.
 - No comments unless the WHY is non-obvious. No trailing summaries after diffs.
+- **Mockups build on the existing ones.** Any agent or console mockup is a feature added to `agent-ui/mockup-features/`
+  or `web/mockup-features/` (the real apps with a fake backend); Decky and Playnite go in `mockups/handheld.html`.
+  Never start a new mockup project or hand-draw an app screen. Improve the base as you go. See `mockups/README.md`.

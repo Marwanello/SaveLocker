@@ -1,9 +1,11 @@
 # Storage: off-site copies, then deduplication — summary
 
-Seeded 2026-10-18 from the competitor gap analysis ([[logs/2026-10-18_competitor-gap-analysis]]). No plan
-file yet. **Priority: Low.** [[Decisions]] → *Per-file delta upload reconstructs by copy-forward, not
-content-addressable storage* defers deduplication "if storage cost ever becomes the complaint" — this task
-does not re-open that; it records what to build if it does, and a cheaper first step.
+Seeded 2026-10-18 from the competitor gap analysis ([[logs/2026-10-18_competitor-gap-analysis]]). **Planned
+2026-10-22: see `plan.md` and `implementation-grouping.md` beside this file.**
+**Priority: Low.** [[Decisions]] → *Per-file delta upload reconstructs by copy-forward, not
+content-addressable storage* defers deduplication "if storage cost ever becomes the complaint". The 2026-10-22
+plan re-opens it at the maintainer's request (local blob store; rclone for off-site copies only). The text below is
+the original seed.
 
 ---
 

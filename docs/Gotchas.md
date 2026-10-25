@@ -636,6 +636,19 @@ documentation that was found. Read before touching the presenter.
   `SyncEngine`'s push catch both use it — before it (found in the PR #50 review), a Cloudflare outage never raised
   the notice and each game's push became a sticky "push failed" toast instead of being queued. A 500 from the server
   itself is still a real refusal.
+- **Behind Cloudflare (or any Let's Encrypt-style renewal) the server's TLS key changes every ~60 days —
+  that is not an attack.** The agent pins the edge's key, so before 2026-10-22 every renewal raised "the
+  server's TLS identity has CHANGED" on every machine. A CA-valid, CT-logged renewal now re-pins by itself
+  ([[Decisions]] → *Plain HTTP is the default*, amendment). If the warning still appears for a public
+  server, read its reason line: "not publicly logged" means something on the path (a corporate/AV TLS
+  inspector, a captive portal) is minting certs with a root this machine trusts — check before syncing.
+  `savelocker trust` (and Linux `doctor`'s `tls:` line) says which rule a machine is on. To see what a
+  server presents: `openssl s_client -connect host:443 -servername host | openssl x509 -noout -text`
+  (look for "CT Precertificate SCTs"), and crt.sh / Cert Spotter to match a pin to a logged cert.
+- **`AgentConfig.Save()` used to write a long-lived host's boot-time `ServerPin` back** — so `trust --accept`
+  from the CLI only stuck after `systemctl --user restart savelocker` (hit on the Deck 2026-10-22). `Save()`
+  now keeps the on-disk pin unless this process changed its own (`_pinOnDisk`); a renewal another process
+  recorded survives the same way. Any new field another process writes needs the same treatment.
 
 ## Testing
 
@@ -893,6 +906,29 @@ documentation that was found. Read before touching the presenter.
 - **The Linux install prefix IS the state directory** (`~/.local/share/SaveLocker`), so
   `config.json` — this machine's server API key — sits inside the tree an update replaces. Anything
   that "replaces the install" must copy file-by-file, never swap or rename the directory.
+- **An update's files came back empty: fsync anything you install.** Seen on a real Deck. The v0.7.0
+  self-update copied its files at boot (2026-10-07 02:20:13), the new agent started and committed,
+  and the Deck went down within ~30 s. Every copied file came back at **0 bytes**, and the agent
+  failed with `Exec format error` on every start for two weeks. ext4's delayed allocation writes a new
+  file's name and size to the journal within 5 s and its data up to ~30 s later, and a crash in
+  between leaves the file empty. The signature is unmistakable:
+  - every file the updater wrote was empty;
+  - the agent log held 619 zero bytes where that boot's lines should be;
+  - the artwork the daemon repainted in the same second was intact. It is written to a temp file
+    and renamed over the old one, which ext4 flushes promptly on its own (`auto_da_alloc`).
+
+  The updater cannot use that rename pattern: it moves the old file aside so a running wrapper keeps
+  its inode. Three things made it unrecoverable: `Commit` deleted `previous/` as soon as the daemon ran
+  (a running daemon proves the files are in memory, not on disk); the rollback lives in the binary
+  that was emptied; and a dead agent cannot tell the console. Fixed: `Durable.CopyFile`/`FlushDirectory`
+  fsync every copied file and every directory touched *before* `applied.json` exists. Staged files and
+  the update markers are flushed too. `installing.json` marks an install in progress, so a cut-off one
+  resumes and keeps the genuine old files in `previous/`. `ExecStartPre` is now
+  `savelocker-preflight.sh`, plain sh, which puts `previous/` back if the binary is empty or will not
+  run, then execs `savelocker apply-update`. The daemon rewrites a stale installed unit
+  (`SystemdAutoStart.RefreshForInstalledAgent`), because a self-updated Deck never runs install.sh.
+  install.sh now runs `sync` after copying. A Deck already in this state needs one manual reinstall.
+  Covered in `run-linux-tests.sh` ("an install whose files never reached the disk").
 - **The daemon never has the desktop session's environment — so a notification click must borrow it.**
   Confirmed on a real Deck 2026-09-27. `savelocker.service`'s `[Install]` is `WantedBy=default.target`,
   which `systemd --user` reaches before SteamOS's desktop session imports its variables into the

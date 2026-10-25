@@ -1,0 +1,5 @@
+{
+  "src/components/GameDetailView.tsx": "GameDetailView.tsx",
+  "src/components/VersionsCard.tsx": "VersionsCard.tsx",
+  "src/components/SettingsView.tsx": "SettingsView.tsx"
+}
