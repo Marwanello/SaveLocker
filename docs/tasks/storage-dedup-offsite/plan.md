@@ -29,48 +29,32 @@ them.
 | 10 — Chunking for large single-file saves | ⏳ Not started — measurement decides |
 | testenv pass | ⏳ Not run |
 
-## Mockups
+## Design (decided)
 
-Clickable mockups, three variants per feature (rebuilt on the real UI 2026-10-22, revised from the maintainer's review 2026-10-23): <https://claude.ai/artifact/MCmZGmK6Bacjhm7zhgzmw3>.
-**All chosen** (every pick on at once, to see how they combine): <https://claude.ai/artifact/R3BrsWpzSicoRt4xqqVDtJ>.
-The page lists this task's features and opens each in the agent, the console, or the Decky and Playnite page. Each
-mockup has a strip at the top to pick the feature and variant, with notes, a “Mock only” switch for the failure cases,
-and my pick.
+Every design question was settled on clickable mockups of the real apps (2026-10-22 to 2026-10-24). The phases
+below describe only the chosen designs.
 
-The agent and console mockups are **the real apps** with a mock backend and the planned features built into copies
-of the real components. Source: `agent-ui/mockup-features/` and `web/mockup-features/` (each has `overrides/` = copied
-real components plus the feature, `features/` = the new pieces, `store.ts` = the feature list and variants). Run one
-with `npx vite --config mockup-features/vite.config.ts` in `agent-ui/` or `web/`. Decky and Playnite can't run
-outside Steam and Playnite, so those two screens are rebuilt by hand and are close, not exact. *Proposed* is my pick;
-*Decision* is the maintainer's, and the build follows it.
-
-| Feature | Where | Phases | A | B | C | Proposed | Decision |
-|---|---|---|---|---|---|---|---|
-| Set up off-site | Storage page | 1–3 | Wizard dialog | One long card | Provider tiles + summary | A | ✅ **A** (2026-10-23); then a tile per remote and *Add another remote* |
-| Off-site status | Storage page | 4, 5 | Compact card + dialogs | Dashboard numbers + games table | Activity log with tabs | A | ✅ **A** (2026-10-23), one per remote; *What's on the remote* is a folder tree |
-| Remote full / pause and ask | Every page | 6 | Banner + Resolve dialog | Banner + panel | Make-room card | A | ✅ **A** (2026-10-23) |
-| Restore a lost server | First run / Storage / sign-in | 7 | First-run screen | On Storage | Link on sign-in | A | ✅ **A and B** (2026-10-23); B searches the remote already set up, and asks which one first when there are several (2026-10-24) |
-| Converting to save space | Storage page | 9 | Popup + progress card | Notice + per-game table | Stacked storage bar | A | ✅ **B with A's big progress bar** (2026-10-23), once after upgrading, per-game rows folded |
-
-### From the review (2026-10-23)
+| Feature | Where | Phases | Chosen |
+|---|---|---|---|
+| Set up off-site | Storage page | 1–3 | **A step-by-step wizard**; afterwards a tile per remote and *Add another remote* |
+| Off-site status | Storage page | 4, 5 | **A compact card per remote** with dialogs; *What's on the remote* is a folder tree |
+| Remote full / pause and ask | Every page | 6 | **A banner + a Resolve dialog** |
+| Restore a lost server | First run + Storage | 7 | **Both:** the first-run screen, and *Restore from off-site…* on Storage, which asks which remote first when there are several |
+| Converting to save space | Every page + Storage | 9 | **A one-time notice after upgrading**, a banner while it runs, and a big progress bar on Storage with per-game rows folded |
 
 - **One Storage tab.** The console's Backups tab is renamed **Storage** (shared with version-history-upgrades) and
   holds, in order: backups, the conversion's progress while it runs, **Space used**, **Off-site copies**, and Trash
   last. *Space used* is the storage-management card: the server's data folder split into save versions, server
   backups, trash and database, against the disk's free space; each remote's use against its cap and its free space;
-  and the biggest games (folded). Off-site setup and status move here from Configuration.
-- **More than one remote.** rclone's config holds any number of named remotes, and nothing stops SaveLocker running
-  one copy job per remote, so the setup wizard can run again from **Add another remote**. Each remote has its own
-  tile, status, history setting, size cap, games list, *Run now* / *Pause* / *Remove*, and its own ownership records
-  (Phase 5). Jobs run one after another, never two at once against the server's disk.
-- **What's on the remote** is a real folder tree (folders expand, files show date and size, *Download*), not a text
-  listing.
-- **Restore a lost server:** both the first-run screen (A) and *Restore from off-site…* on Storage (B). B lists the
-  backups on the remote this server is already set up with at once, with *Look somewhere else* for another. With
-  **several remotes** it first asks which one (each with its backup count and newest backup, plus *Somewhere else*)
-  — added 2026-10-24.
-- **Converting:** shown once, on the first start after upgrading to the version that brings it (a notice), then a
-  banner on every page while it runs and a big progress bar on Storage with the per-game rows folded under it.
+  and the biggest games (folded). Off-site setup and status move here from Configuration, and the storage bar on
+  Configuration's Server card goes: storage use is shown on Storage only.
+- **More than one remote.** rclone's config holds any number of named remotes, so the setup wizard can run again
+  from **Add another remote**. Each remote has its own tile, status, history setting, size cap, games list,
+  *Run now* / *Pause* / *Remove*, and its own ownership records (Phase 5). Jobs run one after another, never two at
+  once against the server's disk.
+
+Mockups: every pick on at once <https://claude.ai/artifact/R3BrsWpzSicoRt4xqqVDtJ>; every variant that was compared
+<https://claude.ai/artifact/MCmZGmK6Bacjhm7zhgzmw3> (source in `web/mockup-features/`).
 
 ---
 
@@ -119,8 +103,7 @@ outside Steam and Playnite, so those two screens are rebuilt by hand and are clo
 
 ## Phase 2 — Off-site setup wizard (non-OAuth providers)
 
-A new **Off-site copies** card on the **Storage** page (the Backups tab renamed, 2026-10-23), set up with a
-step-by-step wizard in the console (mockup A, decided 2026-10-23):
+A new **Off-site copies** card on the **Storage** page, set up with a step-by-step wizard in the console:
 
 1. **Where:** provider tiles: Google Drive, OneDrive, Dropbox (Phase 3); **S3-compatible** with presets (Backblaze
    B2, Cloudflare R2, Wasabi, MinIO, AWS, *Other*), **SFTP**, **SMB / Windows share**, **WebDAV** (Nextcloud
@@ -138,7 +121,7 @@ step-by-step wizard in the console (mockup A, decided 2026-10-23):
 6. **Test connection:** write, read back, list and delete a probe file, and show free space where `about` works.
    Saving requires a passing test.
 
-After setup the card shows **a tile per remote** (mockup A status, decided 2026-10-23): the state (*Up to date* /
+After setup the card shows **a tile per remote**: the state (*Up to date* /
 *Copying 3 of 12* / *Paused: …*), last run, space used against the cap and the remote's free space, *Run now*,
 *Pause*, *Saves and history…*, *What's on the remote* (a folder tree from the remote's `_index.json`, with
 *Download* per file), *Edit*, *Remove* (asks whether to delete the remote's files or leave them; default leave).
@@ -224,7 +207,7 @@ running rclone**, which the player's browser can't reach.
 
 ## Phase 7 — Disaster recovery from the off-site copy
 
-Both entry points are built (A and B, decided 2026-10-23).
+Both entry points are built.
 
 1. **First-run screen** on an empty server: *Restore from an off-site copy*. The same wizard connects, lists
    `_server/` backups, downloads the chosen one and runs the existing restore. Then it **adopts** the remote: reads
@@ -267,7 +250,7 @@ Both entry points are built (A and B, decided 2026-10-23).
 ## Phase 9 — Converting existing versions (automatic, verified, with progress)
 
 1. **Starts by itself after the update**, as a background `ConversionService`. Startup never waits on it.
-2. **Console** (mockup B with A's progress bar, decided 2026-10-23): on the first start after upgrading, a one-time
+2. **Console:** on the first start after upgrading, a one-time
    notice ("Updated to SaveLocker 0.9: converting your saves… You can keep using it normally. Progress is on
    Storage."). While it runs, a banner on every page with the percentage and *Open Storage*. On Storage, a
    *Converting to save space* card: a big progress bar, versions converted / total, space saved so far, estimated
@@ -332,5 +315,5 @@ Both entry points are built (A and B, decided 2026-10-23).
 - **Remote full:** pause and ask. Local sync keeps running.
 - **Games:** all by default, opt-out per game.
 - **Deduplication:** build it (re-opens the Decision), with no-data-loss safeguards. **Convert existing versions
-  automatically**, with a popup and progress on the Config page (moved to the Storage page, 2026-10-23), and sync
-  never paused.
+  automatically**, with a one-time notice and progress on the Storage page (first asked for on the Config page),
+  and sync never paused.

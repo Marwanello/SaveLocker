@@ -2566,6 +2566,16 @@ both repos.
 
 ---
 
+## Playthroughs, version history and storage: planned and designed (2026-10-25)
+
+Three linked tasks, built in this order: [[tasks/save-playthroughs/plan|Playthroughs]],
+[[tasks/version-history-upgrades/plan|Version history upgrades]] (its trash phase first),
+[[tasks/storage-dedup-offsite/plan|Storage: off-site copies and deduplication]]. Every design question was
+settled on mockups of the real agent and console (`agent-ui/mockup-features/`, `web/mockup-features/`), and each
+plan's *Design (decided)* section lists the picks; all of them together: <https://claude.ai/artifact/R3BrsWpzSicoRt4xqqVDtJ>.
+Nothing is built yet. **Next action:** Playthroughs Group 1 per its `implementation-grouping.md`, and version
+history's Group 1 (trash) alongside it.
+
 ## Where to look
 
 | Topic | File |

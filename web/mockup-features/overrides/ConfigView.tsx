@@ -4,7 +4,7 @@ import { renderSVG } from 'uqr';
 import { api, signIn, clearSession, errorText } from '../../src/api';
 import type { GameSummary, Machine, Settings, Enrollment, EffectiveServerUrl, AgentHealth, AdminSession, ServerBuildInfo, BackupStatus } from '../../src/types';
 import { fleetSkew, isNewerThanConsole, isTestBuild, normalizeVersion } from '../../src/versionSkew';
-import { ago, fmtSize, plural, toMs, when } from '../../src/format';
+import { ago, plural, toMs, when } from '../../src/format';
 import { machineOs, osLine } from '../../src/machineOs';
 import { toast, toastError } from '../../src/toast';
 import { AgentUpdatesCard } from '../../src/components/AgentUpdatesCard';
@@ -17,7 +17,6 @@ import { Chip } from '../../src/components/ui/Chip';
 import { Button } from '../../src/components/ui/Button';
 import { Banner } from '../../src/components/ui/Banner';
 import { KV } from '../../src/components/ui/KV';
-import { Meter } from '../../src/components/ui/Meter';
 import { Switch } from '../../src/components/ui/Switch';
 import { InlineConfirm } from '../../src/components/ui/InlineConfirm';
 import { GlobChips } from '../../src/components/ui/GlobChips';
@@ -341,8 +340,6 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
 
   // ── Server card ──
   const [copiedBuild, setCopiedBuild] = useState(false);
-  const volumeUsed = storage?.volumeTotalBytes && storage.volumeFreeBytes != null
-    ? (storage.volumeTotalBytes - storage.volumeFreeBytes) / storage.volumeTotalBytes : null;
 
   const buildText = build ? (build.version === 'dev' ? 'dev' : `v${build.version}`) : '…';
 
@@ -483,18 +480,6 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             },
             { label: 'Escalate', value: storage ? `Conflicts go overdue after ${hours(storage.escalationAfterSeconds)}` : '—' },
           ]} />
-
-          {storage && (
-            <div className="mt-4">
-              {volumeUsed !== null && <Meter value={volumeUsed} tone={volumeUsed > 0.9 ? 'watch' : 'safe'} aria-label="Storage volume used" />}
-              <div className="flex justify-between gap-3 flex-wrap mt-2 font-mono text-[11px] text-faint">
-                <span>{fmtSize(storage.archivesBytes)} of saves across {plural(storage.gamesWithArchives, 'game')}</span>
-                <span>{storage.volumeTotalBytes != null && storage.volumeFreeBytes != null
-                  ? `${fmtSize(storage.volumeFreeBytes)} free of ${fmtSize(storage.volumeTotalBytes)}`
-                  : 'volume size unknown'}</span>
-              </div>
-            </div>
-          )}
 
           {(skew.aheadOfConsole.length > 0 || skew.mixedVersions.length > 0) && (
             <div className="mt-4 flex flex-col gap-2">

@@ -33,8 +33,8 @@ and CLI (Phase 6) are how they're exercised.
 running, a failed push mid-switch, store write-order, verify-on-restore, sweep grace), then the tray against a dev
 server in the browser pane.
 
-**Group 3 — every other surface (large, three PRs).** The console card and device switching (Phase 7), the Decky
-chip and QAM line (Phase 8), the Playnite menu (Phase 9), and delete to trash (Phase 10, once version-history
+**Group 3 — every other surface (large, three PRs).** The console Saves card and device switching (Phase 7), the Decky
+dropdown on the Games row and in the QAM (Phase 8), the Playnite submenu (Phase 9), and delete to trash (Phase 10, once version-history
 Group 1 has shipped trash). If trash hasn't shipped yet, Phase 10 waits and the group closes without it.
 *Test:* the testenv pass from `plan.md`: Windows tray + WSL agent + Deck, fork on Windows, switch the Deck from
 Decky, switch Playnite from its menu, play two playthroughs at once, switch back offline.

@@ -12,7 +12,7 @@ and Group 2 needs its server and agent work.
 ## Groups
 
 **Group 1 — what happens to a version (medium-large).** Trash changes the delete path every later prune uses.
-Labels add the second "never prune this" rule beside `Protected`. Both touch the version row, the Versions cards
+Labels add the second "never prune this" rule beside `Protected`. Both touch the version row, the Versions and Saves cards
 and `PruneVersionsAsync`'s skip list, so they share a review. Neither has a playthrough dependency (a label belongs
 to a version). Playthroughs Group 3's delete waits on this group.
 *Test:* prune → trash → restore → purge round trip, labelled versions surviving a prune, *Empty trash*, and the

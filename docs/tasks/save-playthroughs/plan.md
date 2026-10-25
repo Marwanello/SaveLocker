@@ -18,72 +18,37 @@ implementation-grouping.md]] says which phases share a session and in what order
 | 3 — Server playthrough API + per-device selection | ⏳ Not started |
 | 4 — Agent core: follow a playthrough, switch safely | ⏳ Not started |
 | 5 — Agent local copy store (deduplicated, three modes) | ⏳ Not started |
-| 6 — Agent UI + CLI | ⏳ Not started |
-| 7 — Console: Playthroughs card, fork, switch a device | ⏳ Not started |
-| 8 — Decky: chip and QAM line | ⏳ Not started |
-| 9 — Playnite: menu item | ⏳ Not started |
+| 6 — Agent UI (playthrough tabs, Settings in sections) + CLI | ⏳ Not started |
+| 7 — Console: Saves card, fork, switch a device | ⏳ Not started |
+| 8 — Decky: dropdown on the Games row and in the QAM, icons, List / Grid | ⏳ Not started |
+| 9 — Playnite: Playthrough submenu | ⏳ Not started |
 | 10 — Delete to trash | ⏳ Not started — needs version-history Phase 1 (trash) |
 | testenv pass | ⏳ Not run |
 
-## Mockups
+## Design (decided)
 
-Clickable mockups, three variants per feature (rebuilt on the real UI 2026-10-22, revised from the maintainer's review 2026-10-23): <https://claude.ai/artifact/SUG57iLat2YDhc76qTqZ94>.
-**All chosen** (every pick on at once, to see how they combine): <https://claude.ai/artifact/R3BrsWpzSicoRt4xqqVDtJ>.
-The page lists this task's features and opens each in the agent, the console, or the Decky and Playnite page. Each
-mockup has a strip at the top to pick the feature and variant, with notes, a “Mock only” switch for the failure cases,
-and my pick.
+Every design question was settled on clickable mockups of the real apps (2026-10-22 to 2026-10-25). The phases
+below describe only the chosen designs.
 
-The agent and console mockups are **the real apps** with a mock backend and the planned features built into copies
-of the real components. Source: `agent-ui/mockup-features/` and `web/mockup-features/` (each has `overrides/` = copied
-real components plus the feature, `features/` = the new pieces, `store.ts` = the feature list and variants). Run one
-with `npx vite --config mockup-features/vite.config.ts` in `agent-ui/` or `web/`. Decky and Playnite can't run
-outside Steam and Playnite, so those two are rebuilt by hand: Decky from screenshots and computed styles read off the
-Deck’s live UI (its Steam debug port, over SSH), Playnite from a window capture and the Harmony theme’s Constants.xaml.
-The real Decky page has no status or Sync buttons on game rows (rows open a dialog), so the chip went where it fits. *Proposed* is my pick;
-*Decision* is the maintainer's, and the build follows it.
+| Feature | Where | Phases | Chosen |
+|---|---|---|---|
+| Switch on this device | Agent game page | 4, 6 | **Playthrough tabs**, under the emulator tabs on a multi-emulator game; *Versions on the server* follows the tab on show |
+| Copies on this device | Agent Settings › Sync | 5 | **One row** with a three-way switch |
+| Saves card | Console game page | 7 | **A Saves card on every game**, replacing Versions: a tab per playthrough (Main at least), its devices, its versions and their files |
+| Decky | Games page and QAM | 8 | **A dropdown** on the Games row and in the QAM; game icons and List / Grid |
+| Playnite | Game menu | 9 | **SaveLocker ▸ Playthrough ▸** submenu with the Selected one ticked |
 
-| Feature | Where | Phases | A | B | C | Proposed | Decision |
-|---|---|---|---|---|---|---|---|
-| Switch on this device | Agent game page | 4, 6 | Playthroughs card (table) + dialog | Header chip “Playing: X ▾” + dialog | Segmented tabs + banner | B | ✅ **C** (2026-10-23), under the emulator tabs on a multi-emulator game; Versions on the server follows the playthrough on show (2026-10-24) |
-| Copies on this device | Agent Settings | 5 | One setting row | Explained choices (`sl-plays` cards) | Per-game override table | B | ✅ **A** (2026-10-25): one row in Settings › Sync |
-| Playthroughs card | Console game page | 7 | Table | Lanes over time + side details | List and detail | D / E | ✅ **E** (2026-10-24): a **Saves** card on every game, a tab per playthrough (Main at least), its versions and their files |
-| Decky | Gaming Mode (from live captures) | 8 | A “Playthrough” Field in the game’s dialog | Dropdown button on the Games row | A Playthroughs page in the sidebar | A | ✅ **B** (2026-10-23, confirmed 2026-10-24), plus the same dropdown in the QAM; game icons and List / Grid added |
-| Playnite | Desktop menu (Harmony theme) | 9 | Ticked submenu | Picker window | Submenu title + tag | A | ✅ **A** (2026-10-23, confirmed 2026-10-24): fewest clicks |
-
-### From the review (2026-10-23)
+Across all of them:
 
 - **New playthrough** offers two starts, in the agent, the console and Playnite: **Current save** (a copy of a
-  playthrough's latest save, the agent's default) and **Start fresh** (an empty save folder, so the game starts a new
-  game, keeping the files ticked in a list: a profile or settings file is ticked by default, saves are not).
-- **Agent C with several emulators** (built on `multi-emulator-games`, Phase 6 there): the emulator tabs stay on top,
-  as shipped. Each emulator's save is its own server game, so it has its own playthroughs; the playthrough tabs sit
-  under the emulator tab and name it ("melonDS playthroughs"). Switching one emulator's playthrough leaves the other
-  tabs alone. The mockup shows it on *Metroid Prime - Hunters* (melonDS and RetroArch).
-- **What does the console's Versions card show?** Versions belong to one playthrough (each has its own head and
-  history, Phase 1), so a separate Versions card has no single history to show unless a playthrough is picked. A–C
-  left that open. **D and E** answer it by merging the two cards, as the maintainer suggested: pick a playthrough, and
-  the same card shows the devices that play it, "Switch a device to this…", its actions, and its versions (Name, Set
-  as Latest, Download). D lists playthroughs on the left; E has a tab per playthrough. Both replace the Versions card
-  on a game with playthroughs.
-- **Decky B** also goes in the QAM: a *Playthrough* dropdown under the selected game, and the same row in its Sync
-  options dialog. Switching from the QAM confirms in Big Picture Mode and returns to the QAM.
-- **Decky Games page:** game icons on each row, and a **List / Grid** toggle with posters like the agent (Steam's
-  library art for Steam games by app id; the server's art for the rest).
-- **Playnite:** “New playthrough…” in the Playthrough submenu opens a window (name, Current save or Start fresh,
-  play it now); it didn't work in the first build.
+  playthrough's latest save, the default) and **Start fresh** (an empty save folder, keeping the files ticked in a
+  list: a profile or settings file is ticked by default, saves are not).
+- **Every game has at least one playthrough, Main.** The default playthrough can't be archived or deleted.
+- **Several emulators** (`multi-emulator-games`): each emulator's save is its own server game with its own
+  playthroughs. The playthrough tabs sit under the emulator tab and name it ("melonDS playthroughs"); switching one
+  emulator's playthrough leaves the others alone.
 
-### From the second review (2026-10-24)
-
-- **Agent C:** *Versions on the server* lists the versions of the playthrough on show, titled with its name; another
-  playthrough's tab shows its history read-only.
-- **Console E, named Saves:** it replaces the Versions card on **every** game. Every game has at least one
-  playthrough, **Main**, so a game nobody forked shows a single Main tab with its versions. Each version's chevron
-  opens its files (the Versions card's own file tree). The **default playthrough can't be archived** (Archive is not
-  offered on it; delete was already refused).
-- **Copies on this device:** the card sat outside the Settings page and the page drew over it; it's now the first
-  card inside the real page.
-
-### Settings in sections (2026-10-25)
+### Agent Settings in sections
 
 The agent's Settings page is split into sections, most used first, with a sticky bar under the title to jump
 between them (the one in view is pressed; LB/RB on a controller):
@@ -96,6 +61,14 @@ between them (the one in view is pressed; LB/RB on a controller):
 | Updates | The agent's own version |
 | Look & controls | Appearance, Controller |
 | Emulators | Xbox 360 (Xenia) settings |
+
+### Mockups
+
+Every pick on at once: <https://claude.ai/artifact/R3BrsWpzSicoRt4xqqVDtJ>. Every variant that was compared:
+<https://claude.ai/artifact/SUG57iLat2YDhc76qTqZ94>. The agent and console mockups are the real apps with a mock
+backend and the features built into copies of the real components (`agent-ui/mockup-features/`,
+`web/mockup-features/`; run with `npx vite --config mockup-features/vite.config.ts` in `agent-ui/` or `web/`). Decky
+and Playnite are rebuilt by hand from captures of the live UIs.
 
 ---
 
@@ -225,7 +198,7 @@ An agent setting, **Playthrough copies on this device**:
 
 ## Phase 6 — Agent UI + CLI
 
-1. Game page (`GameDetailView.tsx`): **playthrough tabs** (mockup C, decided 2026-10-23), one segment per
+1. Game page (`GameDetailView.tsx`): **playthrough tabs**, one segment per
    playthrough with a tick on this device's Selected one, and "New". Another tab shows that playthrough read-only
    with "Play this one here" (runs the switch with a progress dialog per the explicit-dialog rule,
    [[playnite-plugin-feedback-ux]]). On a game with several emulators (`multi-emulator-games`) the tabs sit under
@@ -238,14 +211,17 @@ An agent setting, **Playthrough copies on this device**:
 2. The playthrough name on sync status, activity lines and conflict cards once a game has more than one. *Versions
    on the server* follows the playthrough tab on show and is titled with its name: the Selected one by default,
    another one read-only (plus "New playthrough from this version").
-3. Settings: the Phase 5 mode as one row with a three-way switch (mockup A, decided 2026-10-25), under **Sync** in
-   the sectioned Settings page (see *Settings in sections* above).
-4. CLI (`AgentCli.cs`, [[CLI Reference]] KB article): `playthrough list <game>`, `playthrough switch <game> <name>`,
+3. Settings: the Phase 5 mode as one row with a three-way switch, under **Sync**.
+4. Settings in sections (see *Agent Settings in sections* above): `SettingsView.tsx` gets a section header per
+   group and a sticky jump bar; each button is a pad stop and LB/RB move between sections.
+5. CLI (`AgentCli.cs`, [[CLI Reference]] KB article): `playthrough list <game>`, `playthrough switch <game> <name>`,
    `playthrough new <game> <name> [--from-version <id>]`.
-5. No toast at launch: the maintainer doesn't want a launch notification. The Selected name just shows where the
+6. No toast at launch: the maintainer doesn't want a launch notification. The Selected name just shows where the
    game is shown.
 
-1. A **Saves** card replaces the Versions card on **every** game (mockup E, decided 2026-10-24): a tab per
+## Phase 7 — Console: Saves card, fork, switch a device
+
+1. A **Saves** card replaces the Versions card on **every** game: a tab per
    playthrough, with the devices that play it under its name; every game has at least **Main**. Under the tab: the
    devices on it (from `DeviceSelection`), "Switch a device to this…" (picks a machine with `MachineSelect` and
    queues the command from Phase 3), Rename, Archive (not on the default: **the default playthrough can't be
@@ -258,7 +234,7 @@ An agent setting, **Playthrough copies on this device**:
 
 ## Phase 8 — Decky (`SaveLocker-Decky`)
 
-1. `fullPage.tsx` Games rows (mockup B, decided 2026-10-23): when a game has more than one playthrough, a
+1. `fullPage.tsx` Games rows: when a game has more than one playthrough, a
    **dropdown button** on its row shows the Selected name. Picking another asks once, then runs the switch through
    the agent's local API, with progress and an explicit result dialog.
 2. The QAM: a **Playthrough** dropdown under the selected game (Sync section), and the same row in its Sync options
@@ -270,7 +246,7 @@ An agent setting, **Playthrough copies on this device**:
 
 ## Phase 9 — Playnite (`SaveLocker-Playnite`)
 
-`GetGameMenuItems` (mockup A, decided 2026-10-23): **SaveLocker ▸ Playthrough ▸** lists the playthroughs, with the
+`GetGameMenuItems`: **SaveLocker ▸ Playthrough ▸** lists the playthroughs, with the
 Selected one ticked. Choosing one runs the switch through the local API with a real progress/result dialog (not a
 toast, [[playnite-plugin-feedback-ux]]). Refused, with the reason, while the game runs. **New playthrough…** at the
 bottom opens a window: name, Current save or Start fresh (files to keep), and "Play it on this PC now".
@@ -303,5 +279,5 @@ period, and *Restore* brings the playthrough back with them. Archive is the reve
 - **Emulators:** a playthrough always swaps the whole tracked save. Emulator profiles stay as they are.
 - **Retention:** the game's setting applies to each playthrough separately.
 - **Actions:** Select (renamed from "Make main"), Rename, Archive, Delete to trash.
-- **Launch:** picker on the game page. Decky gets a chip by the status/sync buttons when there's more than one, and
-  a QAM line. Playnite gets a menu item. No launch notification.
+- **Launch:** tabs on the game page. Decky gets a dropdown on the Games row and in the QAM. Playnite gets a
+  submenu. No launch notification.
