@@ -23,7 +23,7 @@ import { RemoteCommandsCard } from '../../src/components/game/RemoteCommandsCard
 import { BalancedColumns } from '../../src/components/ui/BalancedColumns';
 import { MergeCard } from '../../src/components/game/MergeCard';
 import { G } from '../fixtures';
-import { useMock } from '../store';
+import { useMock, useVariant } from '../store';
 import { PlaythroughVersionsCard } from '../features/playthroughs';
 import { PlaythroughsCard } from '../features/playthroughs';
 
@@ -49,7 +49,8 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   const feature = useMock(s => s.feature);
   const mockVariant = useMock(s => s.variant);
   // D and E grow the Versions card into playthroughs and their versions.
-  const ptVersions = feature === 'pt-console' && (mockVariant === 'D' || mockVariant === 'E');
+  const ptVariant = useVariant('pt-console');
+  const ptVersions = ptVariant === 'D' || ptVariant === 'E';
   const [versions, setVersions] = useState<Version[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(true);
   const [paths, setPaths] = useState<MachineSavePath[]>([]);

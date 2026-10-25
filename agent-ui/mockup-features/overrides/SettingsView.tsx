@@ -13,8 +13,9 @@ import { Button } from '../../src/components/ui/Button'
 import { Card } from '../../src/components/ui/Card'
 import { Chip } from '../../src/components/ui/Chip'
 import { PageHead } from '../../src/components/ui/PageHead'
-import { useMock } from '../store'
+import { useVariant } from '../store'
 import { CopiesCard } from './CopiesCard'
+import { SettingsNav, SettingsSection } from './SettingsSections'
 
 interface Props {
   state: AgentState | null
@@ -223,177 +224,188 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, 
   const startupLabel = isLinux ? 'Start on login' : 'Start with Windows'
   const busy = saving || registering
 
-  // Mockup: the planned "Playthrough copies" card, first on the page, when that feature is on show.
-  const copies = useMock(st => st.feature) === 'pt-copies'
+  // Mockup: the page in sections, most used first, with the planned "Playthrough copies" card under Sync when on show.
+  const copies = useVariant('pt-copies') !== null
   return (
     <div className="sl-page">
       <PageHead title="Settings" sub={`${state?.machineName ?? '…'} · ${state?.serverUrl ? state.serverUrl.replace(/^https?:\/\//, '') : 'no server'}`} />
 
-      {copies && <CopiesCard />}
+      <SettingsNav />
 
-      <JoinCard state={state} pendingJoin={pendingJoin}
-        onJoined={() => { onJoinHandled(); onSaved() }} />
-
-      <Card title="Connection" headerRight={<TrustChip trust={state?.serverTrust} />}>
-        <div className="sl-stack">
-          <div className="sl-field">
-            <label htmlFor="server-url">Server URL</label>
-            <input
-              id="server-url" className="sl-input sl-input--mono" value={serverUrl}
-              onChange={e => { dirtyFields.current.add('serverUrl'); setServerUrl(e.target.value) }}
-            />
-          </div>
-          <div className="sl-field">
-            <label htmlFor="machine-name">Machine name</label>
-            <input
-              id="machine-name" className="sl-input" style={{ maxWidth: 280 }} value={machineName}
-              onChange={e => { dirtyFields.current.add('machineName'); setMachineName(e.target.value) }}
-            />
-          </div>
-          <div className="sl-field">
-            <label htmlFor="admin-password">Admin password</label>
-            <input
-              id="admin-password" className="sl-input" style={{ maxWidth: 280 }} type="password" autoComplete="off"
-              placeholder="only needed to re-register this name"
-              value={adminPassword} onChange={e => setAdminPassword(e.target.value)}
-            />
-          </div>
-
-          <div className="sl-inline">
-            <Button variant="primary" onClick={() => void save()} disabled={busy}>Save</Button>
-            <Button onClick={() => void testConnection()} disabled={busy || testing}>
-              {testing ? 'Testing…' : 'Test connection'}
-            </Button>
-            <Button onClick={() => void register()} disabled={busy}>Register / Re-register</Button>
-            {test && (
-              <Chip tone={test.ok ? 'ok' : 'warn'}>
-                {test.ok ? `Reachable · ${test.latencyMs} ms` : test.error ?? 'Not reachable'}
-              </Chip>
-            )}
-          </div>
-          {status && <div role="status" style={{ fontSize: 12.5, color: 'var(--color-dim)' }}>{status}</div>}
-
-          <div className="sl-setting__note" style={{ marginTop: 0 }}>
-            {state?.connected
-              ? 'Registered — this machine holds a key for the server. '
-              : 'Not registered yet. '}
-            The key is kept in the agent's config file and never shown here. If it is ever exposed, use
-            Register / Re-register to rotate it.
-          </div>
-        </div>
-      </Card>
-
-      <AppearanceCard appearance={appearance} onChanged={onAppearanceChanged} />
-
-      <ControllerCard />
-      <Xbox360SettingsCard />
-      <SwitchUserCard />
-
-      <Card title="Sync safety">
-        <div className="sl-stack">
-          <div className="sl-field">
-            <label htmlFor="settle">Wait for saves to settle (seconds)</label>
-            <div className="sl-inline">
-              <input
-                id="settle" className="sl-input" style={{ width: 90 }} type="number" min={0} max={300}
-                value={settleQuietSeconds}
-                onChange={e => { dirtyFields.current.add('settleQuietSeconds'); setSettleQuietSeconds(e.target.value) }}
-              />
-              <Button variant="primary" onClick={() => void save()} disabled={busy}>Save</Button>
+      <SettingsSection id="sync">
+        <Card title="Sync safety">
+          <div className="sl-stack">
+            <div className="sl-field">
+              <label htmlFor="settle">Wait for saves to settle (seconds)</label>
+              <div className="sl-inline">
+                <input
+                  id="settle" className="sl-input" style={{ width: 90 }} type="number" min={0} max={300}
+                  value={settleQuietSeconds}
+                  onChange={e => { dirtyFields.current.add('settleQuietSeconds'); setSettleQuietSeconds(e.target.value) }}
+                />
+                <Button variant="primary" onClick={() => void save()} disabled={busy}>Save</Button>
+              </div>
+              <small>
+                After a game closes, SaveLocker waits until its save folder stops changing for this long before
+                backing it up — so a game that keeps writing for a few seconds after exit can't be captured
+                half-finished. Raise it if a game is slow to flush its save. 0 backs up immediately. Manual syncs
+                are never delayed.
+              </small>
             </div>
-            <small>
-              After a game closes, SaveLocker waits until its save folder stops changing for this long before
-              backing it up — so a game that keeps writing for a few seconds after exit can't be captured
-              half-finished. Raise it if a game is slow to flush its save. 0 backs up immediately. Manual syncs
-              are never delayed.
-            </small>
-          </div>
 
-          <div className="sl-setting">
-            <div className="sl-setting__label">
-              {startupLabel}
-              <small>{isLinux ? 'Launch the agent when you sign in.' : 'Launch the agent at login.'}</small>
-            </div>
-            <button
-              type="button" className="sl-switch" role="switch" aria-checked={startWithWindows}
-              aria-label={startupLabel} onClick={() => void toggleStartup(!startWithWindows)}
-            />
-          </div>
-
-          {isLinux && (
             <div className="sl-setting">
               <div className="sl-setting__label">
-                Install agent updates automatically
-                <small>The agent downloads and verifies a newer version and installs it at the next start. Off, it only tells you one is waiting.</small>
+                {startupLabel}
+                <small>{isLinux ? 'Launch the agent when you sign in.' : 'Launch the agent at login.'}</small>
               </div>
               <button
-                type="button" className="sl-switch" role="switch" aria-checked={state?.autoUpdate ?? true}
-                aria-label="Install agent updates automatically"
-                onClick={() => void toggleAutoUpdate(!(state?.autoUpdate ?? true))}
+                type="button" className="sl-switch" role="switch" aria-checked={startWithWindows}
+                aria-label={startupLabel} onClick={() => void toggleStartup(!startWithWindows)}
               />
             </div>
-          )}
-        </div>
-      </Card>
 
-      <Card title="Updates"><UpdateStatus platform={state?.platform} /></Card>
-
-      {/* Moved here from the Overview when it was trimmed to quick info (checkpoint-ui plan.md,
-          Phase 5) — this is where the prototype puts them. The launch-options card is still the
-          supported manual step, so it comes first; the plugin cards are the optional things that can
-          remove it. Each renders nothing where it does not apply (Windows, no Playnite), so there is
-          deliberately no section header here to be left orphaned. */}
-      <div className="sl-collapse-empty" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <LaunchSetupCard />
-        <DeckyPluginCard />
-        <PlaynitePluginCard />
-      </div>
-
-      <Card
-        title="Tracked games"
-        flush
-        headerRight={selectedGames.size > 0 && (
-          confirmingRemove ? (
-            <div className="sl-confirm">
-              <span>Stop syncing {selectedGames.size} here? Their saves stay on the server.</span>
-              <Button size="sm" variant="primary" onClick={() => void removeSelected()}>Stop tracking {selectedGames.size}</Button>
-              <Button size="sm" variant="quiet" onClick={() => setConfirmingRemove(false)}>Keep</Button>
-            </div>
-          ) : (
-            <Button size="sm" onClick={() => setConfirmingRemove(true)}>Remove {selectedGames.size} selected…</Button>
-          )
-        )}
-      >
-        {games.length === 0 ? (
-          <div className="sl-empty">No games tracked yet. Go to Add Games to enroll.</div>
-        ) : (
-          <div className="sl-table-wrap">
-            <table className="sl-table">
-              <tbody>
-                {games.map(g => (
-                  <tr key={g.id}>
-                    <td style={{ width: 28 }}>
-                      <input
-                        type="checkbox" aria-label={`Select ${g.name}`}
-                        checked={selectedGames.has(g.id)} onChange={() => toggleGame(g.id)}
-                      />
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{g.name}</div>
-                      <div className="sl-path">{g.path || 'No save folder set'}</div>
-                    </td>
-                    <td>
-                      {!g.path && <Chip tone="warn">No save folder</Chip>}
-                      {!isLinux && g.processNames.length === 0 && <> <Chip tone="warn">Launch/exit sync off</Chip></>}
-                    </td>
-                    <td className="sl-num"><Button size="sm" onClick={() => onOpenGame(g.id)}>Manage</Button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {isLinux && (
+              <div className="sl-setting">
+                <div className="sl-setting__label">
+                  Install agent updates automatically
+                  <small>The agent downloads and verifies a newer version and installs it at the next start. Off, it only tells you one is waiting.</small>
+                </div>
+                <button
+                  type="button" className="sl-switch" role="switch" aria-checked={state?.autoUpdate ?? true}
+                  aria-label="Install agent updates automatically"
+                  onClick={() => void toggleAutoUpdate(!(state?.autoUpdate ?? true))}
+                />
+              </div>
+            )}
           </div>
-        )}
-      </Card>
+        </Card>
+        {copies && <CopiesCard />}
+      </SettingsSection>
+
+      <SettingsSection id="games">
+        <Card
+          title="Tracked games"
+          flush
+          headerRight={selectedGames.size > 0 && (
+            confirmingRemove ? (
+              <div className="sl-confirm">
+                <span>Stop syncing {selectedGames.size} here? Their saves stay on the server.</span>
+                <Button size="sm" variant="primary" onClick={() => void removeSelected()}>Stop tracking {selectedGames.size}</Button>
+                <Button size="sm" variant="quiet" onClick={() => setConfirmingRemove(false)}>Keep</Button>
+              </div>
+            ) : (
+              <Button size="sm" onClick={() => setConfirmingRemove(true)}>Remove {selectedGames.size} selected…</Button>
+            )
+          )}
+        >
+          {games.length === 0 ? (
+            <div className="sl-empty">No games tracked yet. Go to Add Games to enroll.</div>
+          ) : (
+            <div className="sl-table-wrap">
+              <table className="sl-table">
+                <tbody>
+                  {games.map(g => (
+                    <tr key={g.id}>
+                      <td style={{ width: 28 }}>
+                        <input
+                          type="checkbox" aria-label={`Select ${g.name}`}
+                          checked={selectedGames.has(g.id)} onChange={() => toggleGame(g.id)}
+                        />
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{g.name}</div>
+                        <div className="sl-path">{g.path || 'No save folder set'}</div>
+                      </td>
+                      <td>
+                        {!g.path && <Chip tone="warn">No save folder</Chip>}
+                        {!isLinux && g.processNames.length === 0 && <> <Chip tone="warn">Launch/exit sync off</Chip></>}
+                      </td>
+                      <td className="sl-num"><Button size="sm" onClick={() => onOpenGame(g.id)}>Manage</Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+        {/* Moved here from the Overview when it was trimmed to quick info (checkpoint-ui plan.md,
+            Phase 5) — this is where the prototype puts them. The launch-options card is still the
+            supported manual step, so it comes first; the plugin cards are the optional things that can
+            remove it. Each renders nothing where it does not apply (Windows, no Playnite), so there is
+            deliberately no section header here to be left orphaned. */}
+        <div className="sl-collapse-empty" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <LaunchSetupCard />
+          <DeckyPluginCard />
+          <PlaynitePluginCard />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection id="server">
+        <Card title="Connection" headerRight={<TrustChip trust={state?.serverTrust} />}>
+          <div className="sl-stack">
+            <div className="sl-field">
+              <label htmlFor="server-url">Server URL</label>
+              <input
+                id="server-url" className="sl-input sl-input--mono" value={serverUrl}
+                onChange={e => { dirtyFields.current.add('serverUrl'); setServerUrl(e.target.value) }}
+              />
+            </div>
+            <div className="sl-field">
+              <label htmlFor="machine-name">Machine name</label>
+              <input
+                id="machine-name" className="sl-input" style={{ maxWidth: 280 }} value={machineName}
+                onChange={e => { dirtyFields.current.add('machineName'); setMachineName(e.target.value) }}
+              />
+            </div>
+            <div className="sl-field">
+              <label htmlFor="admin-password">Admin password</label>
+              <input
+                id="admin-password" className="sl-input" style={{ maxWidth: 280 }} type="password" autoComplete="off"
+                placeholder="only needed to re-register this name"
+                value={adminPassword} onChange={e => setAdminPassword(e.target.value)}
+              />
+            </div>
+
+            <div className="sl-inline">
+              <Button variant="primary" onClick={() => void save()} disabled={busy}>Save</Button>
+              <Button onClick={() => void testConnection()} disabled={busy || testing}>
+                {testing ? 'Testing…' : 'Test connection'}
+              </Button>
+              <Button onClick={() => void register()} disabled={busy}>Register / Re-register</Button>
+              {test && (
+                <Chip tone={test.ok ? 'ok' : 'warn'}>
+                  {test.ok ? `Reachable · ${test.latencyMs} ms` : test.error ?? 'Not reachable'}
+                </Chip>
+              )}
+            </div>
+            {status && <div role="status" style={{ fontSize: 12.5, color: 'var(--color-dim)' }}>{status}</div>}
+
+            <div className="sl-setting__note" style={{ marginTop: 0 }}>
+              {state?.connected
+                ? 'Registered — this machine holds a key for the server. '
+                : 'Not registered yet. '}
+              The key is kept in the agent's config file and never shown here. If it is ever exposed, use
+              Register / Re-register to rotate it.
+            </div>
+          </div>
+        </Card>
+        <JoinCard state={state} pendingJoin={pendingJoin}
+          onJoined={() => { onJoinHandled(); onSaved() }} />
+        <SwitchUserCard />
+      </SettingsSection>
+
+      <SettingsSection id="updates">
+        <Card title="Updates"><UpdateStatus platform={state?.platform} /></Card>
+      </SettingsSection>
+
+      <SettingsSection id="look">
+        <AppearanceCard appearance={appearance} onChanged={onAppearanceChanged} />
+        <ControllerCard />
+      </SettingsSection>
+
+      <SettingsSection id="emulators">
+        <Xbox360SettingsCard />
+      </SettingsSection>
     </div>
   )
 }

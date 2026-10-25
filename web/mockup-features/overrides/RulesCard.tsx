@@ -18,7 +18,7 @@ interface Props {
 }
 
 import { G } from '../fixtures';
-import { useMock } from '../store';
+import { useVariant } from '../store';
 
 const fieldCls = `bg-tile text-fg border border-line rounded-lg px-2 py-[5px] text-[12.5px]
   focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1`;
@@ -52,7 +52,7 @@ export function RulesCard({ game, machines, health, onRefresh }: Props) {
   const current = game.conflictPolicy ?? 'Manual';
   const currentPreferred = game.preferredMachineId ?? null;
   const currentKeep = game.retainVersions ?? null;
-  const keepFeature = useMock(s => s.feature) === 'vh-keep' && game.id === G.hollow;
+  const keepFeature = useVariant('vh-keep') !== null && game.id === G.hollow;
   const [policy, setPolicy] = useState<string>(current);
   const [preferred, setPreferred] = useState<string | null>(currentPreferred);
   const [keep, setKeep] = useState(currentKeep?.toString() ?? '');
@@ -148,7 +148,7 @@ export function RulesCard({ game, machines, health, onRefresh }: Props) {
         },
         {
           label: 'Keep',
-          value: keepFeature ? <span className="text-[12.5px] text-dim">Set in <b className="text-fg">Keep history</b> above</span> : (
+          value: keepFeature ? <span className="text-[12.5px] text-dim">Set in <b className="text-fg">Keep history…</b> on the game’s versions</span> : (
             <form className="flex gap-1.5 flex-wrap items-center" onSubmit={e => { e.preventDefault(); if (keepValid && keepDirty) void saveKeep(); }}>
               <input
                 type="number" min={1} inputMode="numeric" value={keep} onChange={e => setKeep(e.target.value)}

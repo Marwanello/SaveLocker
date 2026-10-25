@@ -107,6 +107,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   // Mockup: the planned storage cards, for the feature on show.
   const feature = useMock(s => s.feature);
   const mockVariant = useMock(s => s.variant);
+  const combined = useMock(s => s.combined);
   const [keepDefault, setKeepDefault] = useState(false);
   const healthByMachine = new Map(health.map(h => [h.machineId, h]));
   const skew = fleetSkew(build?.version, health);
@@ -458,7 +459,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           : <Chip tone="warn">Open — no admin password</Chip>}
       />
 
-      {feature === 'vh-trash' && mockVariant === 'C' && <RecentlyDeleted />}
+      {!combined && feature === 'vh-trash' && mockVariant === 'C' && <RecentlyDeleted />}
 
       <div className="grid gap-4 lg:grid-cols-2 items-start">
         <Card title="Server">
@@ -673,7 +674,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                 </span>
               : 'Reading the backup schedule…'} />
 
-          {feature === 'vh-keep' ? (
+          {combined || feature === 'vh-keep' ? (
             <div className="flex items-center justify-between gap-4 py-2.5 border-b border-row">
               <div className="min-w-0">
                 <div className="text-[13px] font-semibold text-fg">History to keep</div>

@@ -48,7 +48,7 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     id: 'pt-copies', task: 'Playthroughs', name: 'Copies on this device', route: '#settings',
-    pick: 'B · Explained choices. The three modes trade disk for offline switching, and B says so with the space each costs.',
+    pick: 'Chosen: A · One setting (2026-10-25).',
     always: ['Default: only until uploaded.', 'Files shared between playthroughs are stored once.', 'A copy not uploaded yet is never cleared.'],
     variants: [
       { id: 'A', name: 'One setting', what: 'One row in Settings with a three-way switch and a line about the space used.', try: 'Pick “Keep for offline”, then “Clear copies…”.' },
@@ -102,6 +102,8 @@ export const DEMO_FILES = [
 ]
 
 interface MockState {
+  /** “All chosen”: every feature on at once, each in the maintainer's chosen variant. */
+  combined: boolean
   feature: string
   variant: Variant
   sim: Sim
@@ -119,7 +121,7 @@ interface MockState {
 
 function fresh(feature = FEATURES[0].id, variant: Variant = 'A'): MockState {
   return {
-    feature, variant, sim: 'online', notes: true,
+    feature, variant, sim: 'online', notes: true, combined: false,
     pts: [
       { id: 'main', name: 'Main', when: ago(2 * HOUR), by: 'Living Room PC', versions: 14, size: 52_000_000, devices: ['Living Room PC'], local: true },
       { id: 'honour', name: 'Honour mode', when: ago(20 * MIN), by: 'Steam Deck — Maro', versions: 6, size: 52_428_800, devices: ['Steam Deck — Maro'], local: true },
@@ -150,7 +152,9 @@ let state: MockState = (() => {
   const hash = location.hash.slice(1)
   if (FEATURES.some(f => f.id === hash)) feature = hash
   if (!FEATURES.some(f => f.id === feature)) feature = FEATURES[0].id
-  return fresh(feature)
+  let combined = hash === 'combined'
+  try { combined ||= !hash && localStorage.getItem('slf:combined') === '1' } catch { /* storage off */ }
+  return { ...fresh(feature), combined }
 })()
 const subs = new Set<() => void>()
 let timer: number | undefined
@@ -163,20 +167,36 @@ export function useMock<T>(pick: (s: MockState) => T): T {
 
 export const featureDef = () => FEATURES.find(f => f.id === state.feature)!
 
+/** The maintainer's picks (2026-10-23 to 2026-10-25), on at once in “All chosen”. */
+export const CHOSEN: Record<string, Variant> = { 'pt-switch': 'C', 'pt-copies': 'A', 'vh-names': 'B', 'vh-restore': 'B' }
+
+/** The variant a feature shows in: its pick in “All chosen”, the strip's variant when it is the feature on show, else
+ *  null (off). */
+export const variantOf = (s: MockState, id: string): Variant | null => (s.combined ? CHOSEN[id] ?? null : s.feature === id ? s.variant : null)
+export const useVariant = (id: string) => useMock(s => variantOf(s, id))
+
+export function chooseCombined(on: boolean) {
+  window.clearTimeout(timer)
+  try { localStorage.setItem('slf:combined', on ? '1' : '0') } catch { /* storage off */ }
+  state = { ...fresh(state.feature, 'A'), notes: state.notes, combined: on }; subs.forEach(f => f())
+  openRoute(on ? `#game:${DEMO_GAME}` : featureDef().route)
+}
+
 /** Open the screen the current feature lives on (the app reads the hash and drops it). */
 export function goToFeature() {
-  openRoute(featureDef().route)
+  openRoute(state.combined ? `#game:${DEMO_GAME}` : featureDef().route)
 }
 
 export function chooseFeature(id: string) {
   window.clearTimeout(timer)
   try { localStorage.setItem('slf:feature', id) } catch { /* storage off */ }
+  try { localStorage.setItem('slf:combined', '0') } catch { /* storage off */ }
   state = fresh(id, 'A'); subs.forEach(f => f())
   goToFeature()
 }
 export function chooseVariant(v: Variant) {
   window.clearTimeout(timer)
-  state = { ...fresh(state.feature, v), notes: state.notes }; subs.forEach(f => f())
+  state = { ...fresh(state.feature, v), notes: state.notes, combined: state.combined }; subs.forEach(f => f())
 }
 
 /** Run a list of steps one by one; `failAt` stops there with `failMsg`. */

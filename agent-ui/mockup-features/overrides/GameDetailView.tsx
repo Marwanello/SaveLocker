@@ -20,7 +20,7 @@ import { Card } from '../../src/components/ui/Card'
 import { Chip } from '../../src/components/ui/Chip'
 import { Stat } from '../../src/components/ui/Stat'
 import { Toast } from '../../src/components/ui/Toast'
-import { DEMO_TREES, HUNTERS_NAME, HUNTERS_TREES, enterTree, ptById, useMock } from '../store'
+import { DEMO_TREES, HUNTERS_NAME, HUNTERS_TREES, enterTree, ptById, useMock, useVariant } from '../store'
 import { EmulatorTabs } from '../features/emulatorTabs'
 import { PlaythroughChipB, PlaythroughTabsC, PlaythroughsCardA } from '../features/playthroughs'
 
@@ -88,7 +88,8 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   const emulator = emulatorSettingsFor(game)
   // Mockup: the planned playthrough switcher on the demo game, in the variant on show.
   const feature = useMock(s => s.feature)
-  const variant = useMock(s => s.variant)
+  const combined = useMock(s => s.combined)
+  const ptVariant = useVariant('pt-switch')
   const selectedPt = useMock(s => s.selected)
   const [viewingPt, setViewingPt] = useState<string | null>(null)
   const demo = DEMO_TREES.includes(game.id)
@@ -100,9 +101,9 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   const [trees, setTrees] = useState<TrackedGame[]>([])
   useEffect(() => { if (titled) void api.games().then(gs => setTrees(gs.filter(g => HUNTERS_TREES.includes(g.id)))) }, [titled])
   const treeName = titled ? game.source?.detail ?? null : null
-  const ptFeature = demo && feature.startsWith('pt-')
-  const ptUi = demo && feature === 'pt-switch' ? variant : null
-  const historyFeature = demo && feature.startsWith('vh-')
+  const ptFeature = demo && (combined || feature.startsWith('pt-'))
+  const ptUi = demo ? ptVariant : null
+  const historyFeature = demo && (combined || feature.startsWith('vh-'))
 
   const load = useCallback(() => {
     api.gameState(game.id)

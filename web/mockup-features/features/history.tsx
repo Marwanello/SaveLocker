@@ -7,7 +7,7 @@ import { Icon } from '../../src/components/ui/Icon'
 import { Seg } from '../../src/components/ui/Seg'
 import { fmtSize } from '../../src/format'
 import { toast } from '../../src/toast'
-import { getState, setState, useMock, type TrashItem } from '../store'
+import { getState, setState, useMock, useVariant, type TrashItem } from '../store'
 import { Choice, Dialog, fieldCls } from './common'
 
 /* ------------------------------------------------------------------ retention planner (plan.md Phase 3–4) */
@@ -51,7 +51,7 @@ const why = (v: HV, p: Policy) => v.head ? 'Latest' : v.label ? `Named “${v.la
 /** “How much to keep”: the planned retention planner, in the variant on show. `game` is one game's own setting (opened from
  *  its Versions card, and it can follow the default); `default` is the server-wide default in Configuration. */
 export function KeepHistory({ scope, onClose }: { scope: 'game' | 'default'; onClose: () => void }) {
-  const variant = useMock(s => s.variant)
+  const variant = useVariant('vh-keep')!
   const [own, setOwn] = useState(false)
   const [mode, setMode] = useState<'count' | 'thin'>('thin')
   const [preset, setPreset] = useState('balanced')

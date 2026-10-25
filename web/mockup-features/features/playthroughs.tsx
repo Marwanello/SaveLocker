@@ -11,6 +11,8 @@ import { toast } from '../../src/toast'
 import type { Game, Version, VersionChanges } from '../../src/types'
 import { VersionFiles } from '../overrides/VersionFiles'
 import { G, filesOf } from '../fixtures'
+import { KeepHistory } from './history'
+import { useVariant } from '../store'
 import { M, MACHINE_NAMES, devicesOn, endFlow, getState, ptById, runFlow, setState, useMock, type Pt } from '../store'
 import { Choice, Dialog, Steps, fieldCls } from './common'
 
@@ -333,16 +335,14 @@ function PtVersionsTable({ p, game, rows }: { p: Pt; game: Game; rows: Version[]
               {v.id === head && <Chip tone="ok">Latest</Chip>}
             </span>
           ) },
-          { head: 'When', kind: 'wrap', cell: v => (
-            <span className="flex flex-col items-start gap-1">
-              <span title={v.createdAt} className="whitespace-nowrap">{ago(v.createdAt)} · {v.machineName}</span>
-              {names[v.id] && <span className="inline-flex items-center gap-1 rounded-full border border-info-line bg-info-soft text-info-ink px-2 py-0.5 text-[11px] font-medium whitespace-nowrap"><Icon name="pencil" size={10} />{names[v.id]}</span>}
-            </span>
-          ) },
+          { head: 'Name', kind: 'wrap', cell: v => names[v.id]
+            ? <button type="button" onClick={() => { setText(names[v.id]); setNaming(v) }} title="Rename" className="cursor-pointer inline-flex items-center gap-1 rounded-full border border-info-line bg-info-soft text-info-ink px-2 py-0.5 text-[11px] font-medium whitespace-nowrap"><Icon name="pencil" size={10} />{names[v.id]}</button>
+            : <button type="button" onClick={() => { setText(''); setNaming(v) }} title="Name this save"
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-line px-2 py-0.5 text-[11px] text-faint hover:text-fg hover:border-faint cursor-pointer whitespace-nowrap"><Icon name="pencil" size={10} />Name</button> },
+          { head: 'When', kind: 'n', cell: v => <span title={v.createdAt} className="whitespace-nowrap">{ago(v.createdAt)} · {v.machineName}</span> },
           { head: 'Size', kind: 'n', cell: v => fmtSize(v.size) },
           { head: '', label: 'Actions', end: true, cell: v => (
             <span className="inline-flex gap-1.5 justify-end flex-nowrap">
-              <Button size="sm" onClick={() => { setText(names[v.id] ?? ''); setNaming(v) }}>{names[v.id] ? 'Rename' : 'Name…'}</Button>
               {v.id !== head && (
                 <InlineConfirm label="Set as Latest" tone="primary"
                   consequence={`${p.name}’s latest becomes this save from ${ago(v.createdAt)}. ${on.length ? `${on.join(', ')} ${on.length > 1 ? 'pull' : 'pulls'} it.` : 'No device plays this playthrough, so nothing is pulled yet.'} Other playthroughs aren’t touched.`}
@@ -388,7 +388,9 @@ function PtHead({ p, onAsk }: { p: Pt; onAsk: (a: Ask) => void }) {
  * one playthrough, Main; Elden Ring has four, every other game shows its Main with its real versions.
  */
 export function PlaythroughVersionsCard({ game, versions, machines }: { game: Game; versions: Version[]; machines: string[] }) {
-  const variant = useMock(s => s.variant)
+  const variant = useVariant('pt-console')!
+  const keepOn = useVariant('vh-keep') !== null
+  const [keeping, setKeeping] = useState(false)
   const pts = useMock(s => s.pts)
   useMock(s => s.plays)
   const [ask, setAsk] = useState<Ask>(null)
@@ -405,6 +407,7 @@ export function PlaythroughVersionsCard({ game, versions, machines }: { game: Ga
       {many && <label className="flex items-center gap-1.5 text-[11.5px] text-dim cursor-pointer">
         <input type="checkbox" className="accent-[var(--color-accent)]" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />Show archived
       </label>}
+      {keepOn && <Button size="sm" onClick={() => setKeeping(true)}><Icon name="sliders-horizontal" size={13} />Keep history…</Button>}
       <Button size="sm" onClick={() => setAsk({ kind: 'new' })}><Icon name="plus" size={13} />New playthrough</Button>
     </span>
   )
@@ -454,6 +457,7 @@ export function PlaythroughVersionsCard({ game, versions, machines }: { game: Ga
       {ask?.kind === 'rename' && <RenameDialog id={ask.id} onClose={() => setAsk(null)} />}
       {ask?.kind === 'delete' && <DeleteDialog id={ask.id} onClose={() => setAsk(null)} />}
       {ask?.kind === 'new' && <NewDialog onClose={() => setAsk(null)} />}
+      {keeping && <KeepHistory scope="game" onClose={() => setKeeping(false)} />}
     </>
   )
 }

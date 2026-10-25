@@ -6,7 +6,7 @@ import type { SaveVersion } from '../../src/types'
 import { Button } from '../../src/components/ui/Button'
 import { Card } from '../../src/components/ui/Card'
 import { Chip } from '../../src/components/ui/Chip'
-import { DEMO_FILES, DEMO_GAME, DEMO_VERSIONS, getState, ptById, runFlow, setState, useMock, type DemoVersion } from '../store'
+import { DEMO_FILES, DEMO_GAME, DEMO_VERSIONS, getState, ptById, runFlow, setState, useMock, useVariant, type DemoVersion } from '../store'
 import { Dialog, Steps, closeFlow } from '../features/common'
 import { PickTree } from '../features/restoreTree'
 
@@ -26,7 +26,8 @@ const SUGGEST = ['Before the final boss', 'Act 3 start', 'Before the Netherbrain
  * restoring one file from a version (vh-restore). Every other game gets the real card unchanged.
  */
 export function VersionsCard({ gameId, headId, refreshKey, onLoaded, playthrough }: Props) {
-  const feature = useMock(s => s.feature)
+  const names = useVariant('vh-names')
+  const restore = useVariant('vh-restore')
   const demo = gameId === DEMO_GAME
   const [real, setReal] = useState<SaveVersion[] | null>(null)
 
@@ -41,10 +42,11 @@ export function VersionsCard({ gameId, headId, refreshKey, onLoaded, playthrough
     return () => { live = false }
   }, [gameId, refreshKey, demo])
 
+  if (playthrough && (names || restore)) return <CombinedCard id={playthrough} />
   if (playthrough) return <DemoPlain id={playthrough} />
   if (!demo) return <PlainCard versions={real} headId={headId} />
-  if (feature === 'vh-names') return <NamesCard />
-  if (feature === 'vh-restore') return <RestoreCard />
+  if (names) return <NamesCard />
+  if (restore) return <RestoreCard />
   return <DemoPlain />
 }
 
@@ -115,7 +117,7 @@ const keptChip = (v: DemoVersion, i: number) =>
   i === 0 ? <Chip tone="ok">Latest</Chip> : labelOf(v) ? <Chip>Kept · named</Chip> : v.protected ? <Chip>Protected</Chip> : null
 
 function NamesCard() {
-  const variant = useMock(s => s.variant)
+  const variant = useVariant('vh-names')!
   useMock(s => s.labels)
   const [edit, setEdit] = useState<string | null>(null)
   const [text, setText] = useState('')
@@ -129,7 +131,7 @@ function NamesCard() {
     return () => document.removeEventListener('mousedown', onDown)
   }, [menu])
 
-  const openDialog = (v: DemoVersion) => { setText(labelOf(v) ?? ''); setDialog(v.id) }
+  const openDialog = (v: DemoVersion) => setDialog(v.id)
   const named = DEMO_VERSIONS.filter(v => labelOf(v))
 
   return (
@@ -191,28 +193,87 @@ function NamesCard() {
           </table>
         </div>
       </Card>
-      {dialog && (
-        <Dialog
-          title={labelOf(DEMO_VERSIONS.find(v => v.id === dialog)!) ? 'Rename this save' : 'Name this save'} onClose={() => setDialog(null)}
-          actions={<>
-            {labelOf(DEMO_VERSIONS.find(v => v.id === dialog)!) && <Button variant="quiet" onClick={() => { saveLabel(dialog, null); setDialog(null) }}>Remove name</Button>}
-            <Button variant="quiet" onClick={() => setDialog(null)}>Cancel</Button>
-            <Button variant="primary" disabled={!text.trim()} onClick={() => { saveLabel(dialog, text); setDialog(null) }}>Save</Button>
-          </>}
-        >
-          <p>{formatDateTime(DEMO_VERSIONS.find(v => v.id === dialog)!.createdAt)} · {DEMO_VERSIONS.find(v => v.id === dialog)!.machineName}</p>
-          <div className="sl-field" style={{ marginBottom: 10 }}>
-            <label htmlFor="slf-label">Name</label>
-            <input id="slf-label" className="sl-input" value={text} maxLength={80} autoFocus placeholder="e.g. Before the final boss" onChange={e => setText(e.target.value)} />
-          </div>
-          <div className="slf-inline" style={{ marginBottom: 10 }}>
-            {SUGGEST.map(s => <button key={s} type="button" className="sl-release__chip" onClick={() => setText(s)}>{s}</button>)}
-          </div>
-          <p className="sl-ask__warn" style={{ borderColor: 'var(--color-safe-line)', background: 'var(--color-safe-soft)', color: 'var(--color-safe-ink)' }}>
-            A named save is never removed when old versions are pruned. Removing the name later leaves Protect as it was.
-          </p>
-        </Dialog>
-      )}
+      {dialog && <NameDialog id={dialog} onClose={() => setDialog(null)} />}
+    </>
+  )
+}
+
+/** B · the name dialog, with suggestions; says a named save is kept. */
+function NameDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const v = DEMO_VERSIONS.find(x => x.id === id)!
+  const [text, setText] = useState(labelOf(v) ?? '')
+  return (
+    <Dialog
+      title={labelOf(v) ? 'Rename this save' : 'Name this save'} onClose={onClose}
+      actions={<>
+        {labelOf(v) && <Button variant="quiet" onClick={() => { saveLabel(id, null); onClose() }}>Remove name</Button>}
+        <Button variant="quiet" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" disabled={!text.trim()} onClick={() => { saveLabel(id, text); onClose() }}>Save</Button>
+      </>}
+    >
+      <p>{formatDateTime(v.createdAt)} · {v.machineName}</p>
+      <div className="sl-field" style={{ marginBottom: 10 }}>
+        <label htmlFor="slf-label">Name</label>
+        <input id="slf-label" className="sl-input" value={text} maxLength={80} autoFocus placeholder="e.g. Before the final boss" onChange={e => setText(e.target.value)} />
+      </div>
+      <div className="slf-inline" style={{ marginBottom: 10 }}>
+        {SUGGEST.map(sg => <button key={sg} type="button" className="sl-release__chip" onClick={() => setText(sg)}>{sg}</button>)}
+      </div>
+      <p className="sl-ask__warn" style={{ borderColor: 'var(--color-safe-line)', background: 'var(--color-safe-soft)', color: 'var(--color-safe-ink)' }}>
+        A named save is never removed when old versions are pruned. Removing the name later leaves Protect as it was.
+      </p>
+    </Dialog>
+  )
+}
+
+/* ------------------------------------------------------------------ all chosen */
+
+/** “All chosen”: the playthrough on show (C), its versions named from a dialog (B) and opened to restore files and
+ *  folders (B). */
+function CombinedCard({ id }: { id: string }) {
+  const selected = useMock(s => s.selected)
+  useMock(s => s.labels)
+  useMock(s => s.pts)
+  const pt = ptById(id)
+  const [open, setOpen] = useState<string | null>(null)
+  const [naming, setNaming] = useState<string | null>(null)
+  return (
+    <>
+      <Card title={`Versions on the server · ${pt.name}`} flush headerRight={<Chip>{pt.versions} kept</Chip>}>
+        {pt.id !== selected && <p className="sl-setting__note" style={{ margin: 0, padding: '10px 17px' }}>{pt.name}’s history. This device plays {ptById(selected).name}; a restore from here still goes into this device’s save folder.</p>}
+        <div className="sl-table-wrap">
+          <table className="sl-table">
+            <thead><tr><th>When</th><th>From</th><th className="sl-num">Size</th><th /></tr></thead>
+            <tbody>
+              {DEMO_VERSIONS.map((v, i) => (
+                <Fragment key={v.id}>
+                  <tr className={open === v.id ? 'slf-sel' : undefined}>
+                    <td title={formatDateTime(v.createdAt)}>
+                      <button type="button" className="sl-tree__twist" aria-expanded={open === v.id} aria-label="Show files"
+                        onClick={() => setOpen(open === v.id ? null : v.id)} style={{ border: 0, background: 'none', marginRight: 6 }}>
+                        <ChevronRight size={14} className={`sl-tree__chev${open === v.id ? ' sl-tree__chev--open' : ''}`} />
+                      </button>
+                      {labelOf(v) ? <><b>{labelOf(v)}</b> <span className="slf-dim">{formatAgo(i === 0 ? pt.when : v.createdAt)}</span></> : formatAgo(i === 0 ? pt.when : v.createdAt)}
+                    </td>
+                    <td className="sl-dim">{i === 0 ? pt.by : v.machineName}</td>
+                    <td className="sl-num sl-dim">{formatBytes(v.size)}</td>
+                    <td>
+                      <span className="slf-inline" style={{ justifyContent: 'flex-end' }}>
+                        {keptChip(v, i)}
+                        <Button size="sm" onClick={() => setNaming(v.id)}><Tag size={12} aria-hidden="true" />{labelOf(v) ? 'Rename' : 'Name…'}</Button>
+                      </span>
+                    </td>
+                  </tr>
+                  {open === v.id && (
+                    <tr><td colSpan={4} style={{ padding: '4px 17px 12px', background: 'var(--color-raise)' }}><PickTree version={v} /></td></tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      {naming && <NameDialog id={naming} onClose={() => setNaming(null)} />}
     </>
   )
 }
@@ -220,7 +281,7 @@ function NamesCard() {
 /* ------------------------------------------------------------------ restore one file */
 
 function RestoreCard() {
-  const variant = useMock(s => s.variant)
+  const variant = useVariant('vh-restore')!
   const flow = useMock(s => s.flow)
   const [open, setOpen] = useState<string | null>('v-3')
   const [ask, setAsk] = useState<string[] | null>(null)

@@ -5,7 +5,7 @@ import { Card } from '../../src/components/ui/Card'
 import { DataTable } from '../../src/components/ui/DataTable'
 import { Icon } from '../../src/components/ui/Icon'
 import { toast } from '../../src/toast'
-import { getState, runFlow, setState, timers, useMock } from '../store'
+import { getState, runFlow, setState, timers, useMock, useVariant } from '../store'
 import { Dialog, Steps } from './common'
 
 const TOTAL = 412
@@ -20,9 +20,25 @@ function tick() {
   else timers.conv = window.setTimeout(tick, 500)
 }
 
+/** The one-time notice after the upgrade. */
+function Notice({ variant }: { variant: string }) {
+  return (
+    <Dialog title={variant === 'B' ? 'Updated to SaveLocker 0.9: converting your saves' : 'SaveLocker is converting your saves to save space'}
+      sub="This update stores each file once, even when many versions share it. It runs once, right after the upgrade."
+      actions={<Button variant="primary" onClick={() => setState({ convSeen: true })}>{variant === 'B' ? 'OK' : 'Got it'}</Button>}>
+      <p>Your 412 versions are converted in the background. You can keep using SaveLocker and syncing normally the whole time. Each version is checked before it switches over, and its original zip stays in trash for 14 days.</p>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-[12.5px]">
+        <dt className="text-faint">Expected saving</dt><dd className="text-fg">about {SAVED_GB} GB of 14.2 GB</dd>
+        <dt className="text-faint">Time</dt><dd className="text-fg">about 20 minutes</dd>
+        <dt className="text-faint">Progress</dt><dd className="text-fg">Storage, at the top</dd>
+      </dl>
+    </Dialog>
+  )
+}
+
 /** The planned conversion of existing versions to stored-once files, in the variant on show. */
 export function ConvertCard() {
-  const variant = useMock(s => s.variant)
+  const variant = useVariant('st-convert')!
   const conv = useMock(s => s.conv)
   const paused = useMock(s => s.convPaused)
   const seen = useMock(s => s.convSeen)
@@ -43,18 +59,8 @@ export function ConvertCard() {
     </span>
   )
   const lowBanner = low && <Banner tone="watch" title="Conversion paused: 4.1 GB free">It needs 5 GB free to carry on safely, because the original zips stay in trash for 14 days. Empty trash or free space and it carries on by itself.</Banner>
-  const popup = !seen && (
-    <Dialog title={variant === 'B' ? 'Updated to SaveLocker 0.9: converting your saves' : 'SaveLocker is converting your saves to save space'}
-      sub="This update stores each file once, even when many versions share it. It runs once, right after the upgrade."
-      actions={<Button variant="primary" onClick={() => setState({ convSeen: true })}>{variant === 'B' ? 'OK' : 'Got it'}</Button>}>
-      <p>Your 412 versions are converted in the background. You can keep using SaveLocker and syncing normally the whole time. Each version is checked before it switches over, and its original zip stays in trash for 14 days.</p>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-[12.5px]">
-        <dt className="text-faint">Expected saving</dt><dd className="text-fg">about {SAVED_GB} GB of 14.2 GB</dd>
-        <dt className="text-faint">Time</dt><dd className="text-fg">about 20 minutes</dd>
-        <dt className="text-faint">Progress</dt><dd className="text-fg">Storage, at the top</dd>
-      </dl>
-    </Dialog>
-  )
+  // B's notice comes with its banner, on every page (ConvertBanner).
+  const popup = !seen && variant !== 'B' && <Notice variant={variant} />
   const revertDialog = revert && (
     <Dialog title="Revert the conversion?" onClose={() => setRevert(false)}
       actions={<><Button variant="quiet" onClick={() => setRevert(false)}>Cancel</Button><Button variant="alert" onClick={() => { setState({ conv: 0, convPaused: true }); setRevert(false); toast('Reverted. Versions use their original zips again.') }}>Revert</Button></>}>
@@ -132,8 +138,11 @@ export function ConvertCard() {
 export function ConvertBanner() {
   const conv = useMock(s => s.conv)
   const seen = useMock(s => s.convSeen)
+  const paused = useMock(s => s.convPaused)
   const low = useMock(s => s.sim) === 'low'
-  if (!seen || conv >= TOTAL) return null
+  useEffect(() => { window.clearTimeout(timers.conv); if (seen && !paused && !low) timers.conv = window.setTimeout(tick, 400) }, [seen, paused, low])
+  if (!seen) return <Notice variant="B" />
+  if (conv >= TOTAL) return null
   const pct = Math.round((conv / TOTAL) * 100)
   return (
     <div className="px-6 pt-3">

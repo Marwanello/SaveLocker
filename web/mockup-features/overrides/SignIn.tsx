@@ -31,7 +31,7 @@ export function SignIn({ notice = null, busy = false, build, onSubmit }: Props) 
   const [remember, setRemember] = useState(true);
   const wrong = notice?.tone === 'error';
   // Mockup: the restore link (st-recover, C).
-  const recoverOn = useMock(s => s.feature) === 'st-recover';
+  const recoverOn = useMock(s => s.feature === 'st-recover' && !s.combined);
   const [recovering, setRecovering] = useState(false);
   if (recovering) return (
     <div className="flex-1 min-h-0 overflow-y-auto p-6 flex justify-center"><div className="w-full max-w-[720px] flex flex-col gap-3">

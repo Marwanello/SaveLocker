@@ -8,7 +8,7 @@ import { Icon } from '../../src/components/ui/Icon'
 import { Seg } from '../../src/components/ui/Seg'
 import { Switch } from '../../src/components/ui/Switch'
 import { toast } from '../../src/toast'
-import { endFlow, getState, runFlow, setState, useMock } from '../store'
+import { endFlow, getState, runFlow, setState, useMock, useVariant } from '../store'
 import { Choice, Dialog, Steps, fieldCls } from './common'
 
 /* ------------------------------------------------------------------ providers and sign-in */
@@ -155,7 +155,7 @@ export function TestBlock({ p }: { p: Provider }) {
 /* ------------------------------------------------------------------ setup (st-setup) */
 
 export function OffsiteSetup() {
-  const variant = useMock(s => s.variant)
+  const variant = useVariant('st-setup')!
   const on = useMock(s => s.offsite.on)
   const flow = useMock(s => s.flow)
   const [prov, setProv] = useState('gdrive')
@@ -402,8 +402,8 @@ function applyFix(o: string, after: () => void) {
 
 /** The console-wide banner (A and B), under the nav like the console’s own errors. */
 export function RemoteFullBanner() {
-  const variant = useMock(s => s.variant)
-  const reason = useMock(s => s.sim)
+  const variant = useVariant('st-full')!
+  const reason = useMock(s => (s.combined ? 'full' : s.sim))
   const fixed = useMock(s => s.offsite.fixed)
   const flow = useMock(s => s.flow)
   const [open, setOpen] = useState(false)

@@ -23,6 +23,7 @@ groups them into sessions.
 ## Mockups
 
 Clickable mockups, three variants per feature (rebuilt on the real UI 2026-10-22, revised from the maintainer's review 2026-10-23): <https://claude.ai/artifact/8VkXiktxDYXL929DVrj4qo>.
+**All chosen** (every pick on at once, to see how they combine): <https://claude.ai/artifact/R3BrsWpzSicoRt4xqqVDtJ>.
 The page lists this task's features and opens each in the agent, the console, or the Decky and Playnite page. Each
 mockup has a strip at the top to pick the feature and variant, with notes, a “Mock only” switch for the failure cases,
 and my pick.

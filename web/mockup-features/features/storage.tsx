@@ -12,10 +12,13 @@ import { AdvancedFields, GamesTable, MakeRoom, OffsiteSetup, OffsiteStatus, PROV
 import { ConvertCard } from './convert'
 import { TrashCard } from './history'
 
+/** Converting to save space is on show: its feature, or “Just upgraded” in All chosen. */
+export const convertOn = (s: { combined: boolean; sim: string; feature: string }) => (s.combined ? s.sim === 'upgraded' : s.feature === 'st-convert')
+
 /** The configured remotes; none while st-recover shows a server with no remote. */
 export function useRemotes() {
   const remotes = useMock(s => s.offsite.remotes)
-  const sim = useMock(s => s.feature === 'st-recover' ? s.sim : null)
+  const sim = useMock(s => s.feature === 'st-recover' && !s.combined ? s.sim : null)
   return sim === 'none' ? [] : sim === 'two' ? [...remotes, NAS] : remotes
 }
 
@@ -28,7 +31,7 @@ export function StorageUse() {
   const trash = useMock(s => s.trash)
   const remotes = useRemotes()
   const conv = useMock(s => s.conv)
-  const converted = useMock(s => s.feature) === 'st-convert' ? conv / 412 : 0
+  const converted = useMock(convertOn) ? conv / 412 : 0
   const trashGb = trash.reduce((n, t) => n + t.size, 0) / 1e9 + 14.2 * converted
   const versionsGb = 14.2 * (1 - converted) + 4.4 * converted
   const parts: [string, number, string][] = [['Save versions', versionsGb, 'bg-info'], ['Server backups', 6.6, 'bg-safe'], ['Trash', trashGb, 'bg-watch'], ['Database', 0.05, 'bg-faint']]
@@ -216,7 +219,7 @@ function OffsiteCard({ children, intro }: { children: ReactNode; intro?: boolean
 
 /** Off-site copies on the Storage page, in the variant on show; once set up (A), a tile per remote. */
 export function OffsiteSection() {
-  const feature = useMock(s => s.feature)
+  const feature = useMock(s => (s.combined ? 'combined' : s.feature))
   const variant = useMock(s => s.variant)
   const remotes = useRemotes()
   const [wizard, setWizard] = useState(false)
@@ -236,14 +239,14 @@ export function OffsiteSection() {
 
 /** Everything the Storage page adds after the backups: conversion, space used, off-site copies, then trash last. */
 export function StorageSections() {
-  const feature = useMock(s => s.feature)
-  const variant = useMock(s => s.variant)
+  const converting = useMock(convertOn)
+  const trash = useMock(s => s.combined || !(s.feature === 'vh-trash' && s.variant !== 'A'))
   return (
     <>
-      {feature === 'st-convert' && <ConvertCard />}
+      {converting && <ConvertCard />}
       <StorageUse />
       <OffsiteSection />
-      {!(feature === 'vh-trash' && variant !== 'A') && <TrashCard />}
+      {trash && <TrashCard />}
     </>
   )
 }

@@ -79,6 +79,8 @@ export default function App() {
   const navSeq = useMock(s => s.navSeq);
   const feature = useMock(s => s.feature);
   const variant = useMock(s => s.variant);
+  const combined = useMock(s => s.combined);
+  const sim = useMock(s => s.sim);
   const screen = where().screen;
   useEffect(() => {
     const w = where();
@@ -321,8 +323,8 @@ export default function App() {
         <div role="alert" className="px-6 py-2.5 text-watch-ink text-[13px]">{error}</div>
       )}
 
-      {feature === 'st-full' && variant !== 'C' && !screen && <RemoteFullBanner />}
-      {feature === 'st-convert' && variant === 'B' && !screen && <ConvertBanner />}
+      {(combined ? sim === 'full' : feature === 'st-full' && variant !== 'C') && !screen && <RemoteFullBanner />}
+      {(combined ? sim === 'upgraded' : feature === 'st-convert' && variant === 'B') && !screen && <ConvertBanner />}
 
       {screen === 'first-run' && <FirstRun />}
 

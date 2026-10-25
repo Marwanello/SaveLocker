@@ -47,7 +47,7 @@ export function VersionFiles({ id, game, version, changes, status }: {
   id: string; game: Game; version: Version; changes: VersionChanges | undefined; status: ChangesStatus;
 }) {
   // Mockup: single-file restore opens on every file of the demo game's version.
-  const restoreOn = useMock(s => s.feature) === 'vh-restore' && game.id === G.hollow;
+  const restoreOn = useMock(s => s.combined || (s.feature === 'vh-restore' && game.id === G.hollow));
   const [all, setAll] = useState(restoreOn);
   const [folders, setFolders] = useState<VersionFolder[] | null>(null);
   const [error, setError] = useState<string | null>(null);

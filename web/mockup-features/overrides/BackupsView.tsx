@@ -48,6 +48,7 @@ export function BackupsView({ onRestored }: Props) {
   // Mockup: Trash (vh-trash, A) and Restore from off-site (st-recover, B).
   const feature = useMock(s => s.feature);
   const mockVariant = useMock(s => s.variant);
+  const combined = useMock(s => s.combined);
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -202,7 +203,7 @@ export function BackupsView({ onRestored }: Props) {
         sub={<>backups, space used and off-site copies · backups {status.enabled ? schedule : 'off'}, the newest {status.retentionCount} kept</>}
         actions={<>
           {lastRun}
-          {feature === 'st-recover' && mockVariant === 'B' && <RestoreFromOffsite />}
+          {(combined || (feature === 'st-recover' && mockVariant === 'B')) && <RestoreFromOffsite />}
           <Button variant="primary" disabled={busy} onClick={() => void backUpNow()}>
             {busy ? 'Backing up…' : 'Back up now'}
           </Button>

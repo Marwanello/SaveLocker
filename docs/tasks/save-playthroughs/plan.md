@@ -28,6 +28,7 @@ implementation-grouping.md]] says which phases share a session and in what order
 ## Mockups
 
 Clickable mockups, three variants per feature (rebuilt on the real UI 2026-10-22, revised from the maintainer's review 2026-10-23): <https://claude.ai/artifact/SUG57iLat2YDhc76qTqZ94>.
+**All chosen** (every pick on at once, to see how they combine): <https://claude.ai/artifact/R3BrsWpzSicoRt4xqqVDtJ>.
 The page lists this task's features and opens each in the agent, the console, or the Decky and Playnite page. Each
 mockup has a strip at the top to pick the feature and variant, with notes, a “Mock only” switch for the failure cases,
 and my pick.
@@ -44,7 +45,7 @@ The real Decky page has no status or Sync buttons on game rows (rows open a dial
 | Feature | Where | Phases | A | B | C | Proposed | Decision |
 |---|---|---|---|---|---|---|---|
 | Switch on this device | Agent game page | 4, 6 | Playthroughs card (table) + dialog | Header chip “Playing: X ▾” + dialog | Segmented tabs + banner | B | ✅ **C** (2026-10-23), under the emulator tabs on a multi-emulator game; Versions on the server follows the playthrough on show (2026-10-24) |
-| Copies on this device | Agent Settings | 5 | One setting row | Explained choices (`sl-plays` cards) | Per-game override table | B | ⏳ Pending — still broken on 2026-10-24 (the card overlapped the Settings page); now inside the real Settings page |
+| Copies on this device | Agent Settings | 5 | One setting row | Explained choices (`sl-plays` cards) | Per-game override table | B | ✅ **A** (2026-10-25): one row in Settings › Sync |
 | Playthroughs card | Console game page | 7 | Table | Lanes over time + side details | List and detail | D / E | ✅ **E** (2026-10-24): a **Saves** card on every game, a tab per playthrough (Main at least), its versions and their files |
 | Decky | Gaming Mode (from live captures) | 8 | A “Playthrough” Field in the game’s dialog | Dropdown button on the Games row | A Playthroughs page in the sidebar | A | ✅ **B** (2026-10-23, confirmed 2026-10-24), plus the same dropdown in the QAM; game icons and List / Grid added |
 | Playnite | Desktop menu (Harmony theme) | 9 | Ticked submenu | Picker window | Submenu title + tag | A | ✅ **A** (2026-10-23, confirmed 2026-10-24): fewest clicks |
@@ -81,6 +82,20 @@ The real Decky page has no status or Sync buttons on game rows (rows open a dial
   offered on it; delete was already refused).
 - **Copies on this device:** the card sat outside the Settings page and the page drew over it; it's now the first
   card inside the real page.
+
+### Settings in sections (2026-10-25)
+
+The agent's Settings page is split into sections, most used first, with a sticky bar under the title to jump
+between them (the one in view is pressed; LB/RB on a controller):
+
+| Section | Holds |
+|---|---|
+| Sync | Sync safety (settle time, start at login), Playthrough copies |
+| Games | Tracked games, launch options, the Decky and Playnite plugin cards |
+| Server | Connection, Join, Switch user |
+| Updates | The agent's own version |
+| Look & controls | Appearance, Controller |
+| Emulators | Xbox 360 (Xenia) settings |
 
 ---
 
@@ -223,7 +238,8 @@ An agent setting, **Playthrough copies on this device**:
 2. The playthrough name on sync status, activity lines and conflict cards once a game has more than one. *Versions
    on the server* follows the playthrough tab on show and is titled with its name: the Selected one by default,
    another one read-only (plus "New playthrough from this version").
-3. Settings: the Phase 5 mode.
+3. Settings: the Phase 5 mode as one row with a three-way switch (mockup A, decided 2026-10-25), under **Sync** in
+   the sectioned Settings page (see *Settings in sections* above).
 4. CLI (`AgentCli.cs`, [[CLI Reference]] KB article): `playthrough list <game>`, `playthrough switch <game> <name>`,
    `playthrough new <game> <name> [--from-version <id>]`.
 5. No toast at launch: the maintainer doesn't want a launch notification. The Selected name just shows where the

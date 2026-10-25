@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Button } from '../../src/components/ui/Button'
 import { Card } from '../../src/components/ui/Card'
 import { Chip } from '../../src/components/ui/Chip'
-import { setState, useMock } from '../store'
+import { setState, useMock, useVariant } from '../store'
 import { Dialog } from '../features/common'
 
 type Mode = 'until' | 'keep' | 'off'
@@ -20,7 +20,7 @@ const space = (m: Mode) => (m === 'keep' ? '310 MB on this device for 436 MB of 
 
 /** The planned "Playthrough copies" card, in the variant on show (SettingsView puts it first on the page). */
 export function CopiesCard() {
-  const variant = useMock(s => s.variant)
+  const variant = useVariant('pt-copies')
   const mode = useMock(s => s.copies)
   const overrides = useMock(s => s.copyOverrides)
   const [clear, setClear] = useState(false)

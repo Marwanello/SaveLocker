@@ -133,6 +133,8 @@ export interface Remote { id: string; provider: string; where: string; used: num
 export interface TrashItem { id: string; game: string; pt: string; made: string; why: string; size: number; left: number; ptGone?: boolean }
 
 interface MockState {
+  /** “All chosen”: every feature on at once, each in the maintainer's chosen variant. */
+  combined: boolean
   feature: string
   variant: Variant
   sim: string
@@ -157,7 +159,7 @@ export const GDRIVE: Remote = { id: 'r1', provider: 'Google Drive', where: 'marw
 function fresh(feature: string, variant: Variant, navSeq: number): MockState {
   const f = FEATURES.find(x => x.id === feature)!
   return {
-    feature, variant, sim: f.sims?.[0][0] ?? 'ok', notes: true, navSeq,
+    feature, variant, sim: f.sims?.[0][0] ?? 'ok', notes: true, navSeq, combined: false,
     pts: [
       { id: 'main', name: 'Main', when: iso(9 * MIN), by: 'Steam Deck', versions: 9, size: 2_830_000 },
       { id: 'hard', name: 'Hard mode run', when: iso(2 * HOUR), by: 'Battlestation', versions: 6, size: 2_790_000 },
@@ -190,7 +192,9 @@ let state: MockState = (() => {
   const hash = location.hash.slice(1)
   if (FEATURES.some(f => f.id === hash)) feature = hash
   if (!FEATURES.some(f => f.id === feature)) feature = FEATURES[0].id
-  return fresh(feature, 'A', 1)
+  let combined = hash === 'combined'
+  try { combined ||= !FEATURES.some(f => f.id === hash) && localStorage.getItem('slc:combined') === '1' } catch { /* storage off */ }
+  return { ...fresh(feature, 'A', 1), combined, sim: combined ? 'ok' : fresh(feature, 'A', 1).sim }
 })()
 const subs = new Set<() => void>()
 let timer: number | undefined
@@ -202,17 +206,44 @@ export function useMock<T>(pick: (s: MockState) => T): T {
   return useSyncExternalStore(cb => { subs.add(cb); return () => subs.delete(cb) }, () => pick(state))
 }
 export const featureDef = () => FEATURES.find(f => f.id === state.feature)!
-export const where = () => featureDef().where(state.variant)
+export const where = (): Where => state.combined
+  ? (state.sim === 'empty' ? { view: 'games', screen: 'first-run' } : { view: 'games', game: G.elden })
+  : featureDef().where(state.variant)
+
+/** The maintainer's picks (2026-10-23 to 2026-10-25), on at once in “All chosen”. st-recover is A and B: B is the
+ *  Storage page's button, A the first-run screen (Mock only › Empty server). */
+export const CHOSEN: Record<string, Variant> = {
+  'pt-console': 'E', 'vh-trash': 'A', 'vh-names': 'B', 'vh-keep': 'B', 'vh-restore': 'B',
+  'st-setup': 'A', 'st-status': 'A', 'st-full': 'A', 'st-recover': 'B', 'st-convert': 'B',
+}
+export const COMBINED_SIMS: [string, string][] = [['ok', 'Normal'], ['upgraded', 'Just upgraded'], ['full', 'Remote full'], ['running', 'Game running on a device'], ['empty', 'Empty server']]
+
+/** The variant a feature shows in: its pick in “All chosen”, the strip's variant when it is the feature on show, else
+ *  null (off). */
+export const variantOf = (s: MockState, id: string): Variant | null => (s.combined ? CHOSEN[id] ?? null : s.feature === id ? s.variant : null)
+export const useVariant = (id: string) => useMock(s => variantOf(s, id))
+
+export function chooseCombined(on: boolean) {
+  stopTimers()
+  try { localStorage.setItem('slc:combined', on ? '1' : '0') } catch { /* storage off */ }
+  state = { ...fresh(state.feature, 'A', state.navSeq + 1), notes: state.notes, combined: on, sim: on ? 'ok' : fresh(state.feature, 'A', 0).sim }
+  subs.forEach(f => f())
+}
+/** A Mock-only switch in “All chosen”: Empty server is a different screen, so it navigates. */
+export function chooseSim(k: string) {
+  setState({ sim: k, navSeq: state.combined && (k === 'empty' || state.sim === 'empty') ? state.navSeq + 1 : state.navSeq })
+}
 
 function stopTimers() { window.clearTimeout(timer); window.clearTimeout(timers.conv) }
 export function chooseFeature(id: string) {
   stopTimers()
+  try { localStorage.setItem('slc:combined', '0') } catch { /* storage off */ }
   try { localStorage.setItem('slc:feature', id) } catch { /* storage off */ }
   state = fresh(id, 'A', state.navSeq + 1); subs.forEach(f => f())
 }
 export function chooseVariant(v: Variant) {
   stopTimers()
-  state = { ...fresh(state.feature, v, state.navSeq + 1), notes: state.notes }; subs.forEach(f => f())
+  state = { ...fresh(state.feature, v, state.navSeq + 1), notes: state.notes, combined: state.combined }; subs.forEach(f => f())
 }
 
 export function runFlow(steps: { t: string; d?: string }[], opts: { failAt?: number; failMsg?: string; done?: (ok: boolean) => void } = {}) {

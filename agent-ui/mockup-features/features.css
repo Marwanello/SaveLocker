@@ -78,3 +78,12 @@ a.mock-btn { text-decoration: none; }
 .slf-keep label { display: flex; align-items: center; gap: 9px; font-size: 12.5px; padding: 4px 2px; cursor: pointer; }
 .slf-keep small { margin-left: auto; color: var(--color-dim); font-size: 11px; }
 .sl-ask__label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--color-faint); margin-bottom: -6px; }
+
+/* Settings in sections (planned 2026-10-25): a sticky section bar under the title, a heading per section */
+.slf-setnav { position: sticky; top: 0; z-index: 4; margin: -4px 0 0; padding: 8px 0; background: var(--color-ink); }
+.slf-setnav .sl-seg { flex-wrap: wrap; }
+.slf-setsec { display: flex; flex-direction: column; gap: 12px; scroll-margin-top: 56px; }
+.slf-setsec + .slf-setsec { margin-top: 10px; }
+.slf-setsec__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 0 2px; }
+.slf-setsec__head h3 { margin: 0; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--color-fg); }
+.slf-setsec__head span { font-size: 12px; color: var(--color-faint); }

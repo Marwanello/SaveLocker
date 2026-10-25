@@ -5,7 +5,7 @@ import { Icon } from '../../src/components/ui/Icon'
 import { when } from '../../src/format'
 import { toast } from '../../src/toast'
 import type { Version } from '../../src/types'
-import { M, MACHINE_NAMES, endFlow, getState, runFlow, useMock, type Variant } from '../store'
+import { M, MACHINE_NAMES, endFlow, getState, runFlow, useMock, useVariant, type Variant } from '../store'
 import { Dialog, Steps } from './common'
 import { G, filesOf } from '../fixtures'
 
@@ -24,7 +24,7 @@ const parents = (p: string) => p.split('/').slice(0, -1).map((_, i, a) => a.slic
 
 /** Wraps an opened version's file tree with the planned file restore, in the variant on show. */
 export function RestoreProvider({ version, isLatest, children }: { version: Version; isLatest: boolean; children: ReactNode }) {
-  const variant = useMock(s => s.variant)
+  const variant = useVariant('vh-restore')!
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [asked, setAsked] = useState<string[] | null>(null)
   const toggle = (paths: string[], on: boolean) => setPicked(s => { const n = new Set(s); for (const p of paths) { if (on) n.add(p); else n.delete(p) } return n })
