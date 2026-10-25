@@ -123,11 +123,16 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
     catch (e) { toastError('Could not download: ' + errorText(e)); }
   }
 
+  // Beside the state, not instead of it: a copy is usually the Latest (tasks/multi-emulator-games Phase 6).
+  function copied(v: Version) {
+    if (!v.copiedFrom) return null;
+    return <span title={`Copied from ${v.copiedFrom}'s save of this game.`}><Chip>From {v.copiedFrom}</Chip></span>;
+  }
+
   function state(v: Version) {
     if (v.id === headId) return <Chip tone="ok">Latest</Chip>;
     if (conflicting.has(v.id)) return <Chip tone="crit">Conflicting</Chip>;
     if (v.mergedFrom) return <span title={`Made as ${v.mergedFrom}, merged into this game. Read-only history: it can be downloaded, never made Latest.`}><Chip>From {v.mergedFrom}</Chip></span>;
-    if (v.copiedFrom) return <span title={`Copied from ${v.copiedFrom}'s save of this game.`}><Chip>From {v.copiedFrom}</Chip></span>;
     if (v.protected) return <Chip tone="warn">Protected</Chip>;
     return <Chip>{view === 'main' ? 'Kept' : 'Backup'}</Chip>;
   }
@@ -196,7 +201,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
               { head: 'Size', kind: 'n', cell: v => fmtSize(v.size) },
               {
                 head: 'State', kind: 'wrap',
-                cell: v => <span className="flex gap-1 items-center flex-wrap min-w-[10.5rem]">{state(v)}<ChangeChips changes={changes.get(v.id)} /></span>,
+                cell: v => <span className="flex gap-1 items-center flex-wrap min-w-[10.5rem]">{state(v)}{copied(v)}<ChangeChips changes={changes.get(v.id)} /></span>,
               },
               {
                 head: '', label: 'Actions', end: true,
