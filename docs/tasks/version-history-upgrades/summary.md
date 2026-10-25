@@ -1,7 +1,8 @@
 # Version history upgrades — summary
 
-Seeded 2026-10-18 from the competitor gap analysis ([[logs/2026-10-18_competitor-gap-analysis]]). No plan
-file yet. **Priority: Medium.** Several small, independent pieces; each can ship on its own.
+Seeded 2026-10-18 from the competitor gap analysis ([[logs/2026-10-18_competitor-gap-analysis]]). **Planned
+2026-10-22: see `plan.md` and `implementation-grouping.md` beside this file.**
+**Priority: Medium.** Several small, independent pieces; each can ship on its own.
 
 ---
 

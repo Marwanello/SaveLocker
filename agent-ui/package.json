@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "mockup": "vite build --config mockup/vite.config.ts && node mockup/inline.cjs",
+    "mockups": "vite --config mockup-features/vite.config.ts",
+    "mockups:build": "vite build --config mockup-features/vite.config.ts && node mockup-features/inline.cjs .mockup-features-dist ../mockups/agent.html",
     "gen:api": "openapi-typescript http://localhost:5178/openapi/v1.json -o src/api-types.ts",
     "lint": "oxlint",
     "preview": "vite preview"

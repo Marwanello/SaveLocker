@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Decky and Playnite Mockups</title>
+<style>
+/* Mockup strip: the same as the agent and console mockups. Decky frame: Steam Gaming Mode as measured on the Deck
+   (854×534 CSS px, values read from the live UI). Playnite frame: Harmony, the theme this PC runs, from its
+   Constants.xaml and a window capture. */
+:root {
+  color-scheme: dark;
+  --strip: #141416; --strip-line: #26262a; --strip-fg: #f0eee9; --strip-dim: #a09d97; --strip-faint: #817e78; --accent: #e0533c; --on-accent: #160f0e;
+  --st-bg: #0e141b; --st-side: #2b2d33; --st-field: #23262e; --st-field-focus: #383a41; --st-fg: #dcdedf; --st-white: #ffffff; --st-dim: #b8bcbf;
+  --st-btn: rgba(255,255,255,.15); --st-input: rgba(255,255,255,.1); --st-blue: #1a9fff; --st-dialog-line: #23262e;
+  --pn-window: #0c0d0d; --pn-top: #1d1c1e; --pn-list: #030202; --pn-detail: #040404; --pn-fg: #f0f5ff; --pn-dim: #a3a3a3;
+  --pn-glyph: #e3da4f; --pn-sel: #403d1f; --pn-popup: #33343d; --pn-popup-line: #262c38; --pn-btn: #363742; --pn-card: #1b1b1a;
+  --pn-play-fg: #16171a; --pn-winbg: #1f2026;
+  --steam: 'Motiva Sans', Arial, Helvetica, sans-serif;
+  --trebuchet: 'Trebuchet MS', 'Segoe UI', sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: #09090a; color: var(--strip-fg); font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; display: flex; flex-direction: column; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.strip { flex: none; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 6px max(16px, env(safe-area-inset-left, 0px)) 6px max(16px, env(safe-area-inset-right, 0px)); background: var(--strip); border-bottom: 1px solid var(--strip-line); font-size: 12px; color: var(--strip-dim); }
+.strip h1 { margin: 0; font-size: 13px; font-weight: 700; color: var(--strip-fg); }
+.strip h1 small { margin-left: 8px; font-weight: 400; color: var(--strip-faint); }
+.grp { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.lbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--strip-faint); margin-right: 2px; }
+.mbtn { font-size: 11.5px; padding: 4px 10px; border-radius: 99px; border: 1px solid #303034; background: #1d1d20; color: var(--strip-fg); cursor: pointer; text-decoration: none; }
+.mbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.sp { flex: 1; }
+.notes { flex: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 24px; padding: 8px max(16px, env(safe-area-inset-left, 0px)) 10px max(16px, env(safe-area-inset-right, 0px)); background: var(--strip); border-bottom: 1px solid var(--strip-line); color: var(--strip-dim); font-size: 12px; }
+.notes p { margin: 0; } .notes b { color: var(--strip-fg); }
+.stage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 16px; overflow: auto; }
+.scaler { position: relative; flex: none; }
+.scaler > * { position: absolute; top: 0; left: 0; transform-origin: top left; }
+
+/* ---------------- Steam Gaming Mode (Decky) ---------------- */
+.deck { position: relative; width: 854px; height: 534px; background: var(--st-bg); color: var(--st-fg); font: 16px var(--steam); overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #000, 0 20px 60px rgba(0,0,0,.6); }
+.st-top { position: absolute; inset: 0 0 auto; height: 40px; display: flex; align-items: center; justify-content: flex-end; gap: 20px; padding: 0 22px; font-size: 15px; color: #fff; background: rgba(14,20,27,.85); z-index: 3; }
+.st-bottom { position: absolute; inset: auto 0 0; height: 42px; display: flex; align-items: center; gap: 22px; padding: 0 24px; font-size: 12.5px; letter-spacing: .04em; color: #fff; background: #0b0f14; z-index: 3; }
+.st-bottom .r { margin-left: auto; display: flex; gap: 22px; }
+.st-pill { background: #fff; color: #0e141b; font-weight: 700; border-radius: 99px; padding: 3px 10px; margin-right: 6px; font-size: 11.5px; }
+.st-key { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #fff; color: #0e141b; font-weight: 700; font-size: 12px; margin-right: 6px; }
+.st-page { position: absolute; top: 40px; bottom: 42px; left: 0; right: 0; display: grid; grid-template-columns: 240px 1fr; }
+.st-side { background: var(--st-side); padding-bottom: 42px; }
+.st-side h2 { margin: 0; padding: 8px 16px 0 24px; font-size: 22px; line-height: 28px; font-weight: 700; color: #fff; height: 36px; }
+.st-nav { padding: 16px 0; display: flex; flex-direction: column; }
+.st-nav button { display: flex; align-items: center; gap: 18px; padding: 10px 24px; line-height: 22px; font-size: 16px; color: var(--st-dim); background: none; border: 0; text-align: left; cursor: pointer; }
+.st-nav button[aria-current="page"] { color: #fff; background-image: linear-gradient(90deg, rgba(26,159,255,.22) 0%, rgba(26,159,255,0) 100%); box-shadow: inset 3px 0 0 var(--st-blue); }
+.st-nav hr { border: 0; border-top: 1px solid rgba(255,255,255,.12); margin: 6px 24px; }
+.st-nav svg { width: 18px; height: 18px; flex: none; }
+.st-content { padding: 24px 24px 0; overflow: auto; scrollbar-width: none; }
+.st-title { font-size: 22px; font-weight: 700; color: #fff; margin: 0 0 14px; }
+.st-sec { font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: rgba(255,255,255,.7); margin: 0 0 12px; }
+.st-label { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: rgba(255,255,255,.7); margin: 0 0 6px; }
+.st-input { height: 40px; border-radius: 10px; background: var(--st-input); padding: 10px 16px; color: #fff; margin-bottom: 16px; }
+.st-count { font-size: 12px; padding: 6px 0 10px; }
+.field { display: flex; align-items: center; gap: 12px; background: var(--st-field); border-radius: 2px; padding: 12px; margin-top: 6px; min-height: 64px; cursor: pointer; border: 0; width: 100%; text-align: left; color: var(--st-fg); }
+.field:hover, .field.focus { background: var(--st-field-focus); color: #fff; }
+.field .t { flex: 1; min-width: 0; }
+.field .l { display: block; font-size: 16px; line-height: 20px; }
+.field .d { display: block; font-size: 12px; line-height: 16px; margin-top: 4px; color: var(--st-dim); overflow-wrap: anywhere; }
+.dbtn { background: var(--st-btn); color: var(--st-fg); border: 0; border-radius: 10px; padding: 8px 14px; font-size: 16px; line-height: 20px; cursor: pointer; white-space: nowrap; font-family: var(--steam); }
+.dbtn:hover, .dbtn.focus { background: #fff; color: #0e141b; }
+.dbtn.primary { background: var(--st-blue); color: #fff; }
+.dbtn.small { font-size: 14px; padding: 6px 12px; }
+.chev { font-size: 12px; margin-left: 6px; }
+.toggle { width: 44px; height: 24px; border-radius: 99px; background: var(--st-blue); position: relative; flex: none; }
+.toggle::after { content: ""; position: absolute; right: 2px; top: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; }
+.st-scrim { position: absolute; inset: 40px 0 42px; background: rgba(0,0,0,.6); z-index: 2; display: grid; place-items: start center; }
+.st-dialog { margin-top: 24px; width: 660px; max-height: calc(100% - 48px); overflow: auto; scrollbar-width: none; background: var(--st-bg); border: 2px solid var(--st-dialog-line); border-radius: 10px; padding: 24px; }
+.st-dialog.narrow { width: 480px; }
+.st-dialog h3 { margin: 0 0 4px; font-size: 16px; font-weight: 700; color: var(--st-fg); }
+.st-dialog .sub { font-size: 13px; margin: 0 0 16px; opacity: .9; }
+.st-row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; flex-wrap: wrap; }
+.st-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.st-steps li { display: flex; gap: 10px; align-items: flex-start; color: rgba(255,255,255,.45); }
+.st-steps li.done, .st-steps li.run { color: #fff; }
+.st-steps li.fail { color: #ff8f7a; }
+.st-steps small { display: block; font-size: 12px; color: var(--st-dim); }
+.st-mark { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); flex: none; margin-top: 1px; display: grid; place-items: center; font-size: 11px; }
+.st-steps li.done .st-mark { background: #59bf40; border-color: #59bf40; color: #0e141b; }
+.st-steps li.fail .st-mark { background: #d94126; border-color: #d94126; color: #fff; }
+.st-steps li.run .st-mark { border-color: var(--st-blue); border-top-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .st-steps li.run .st-mark { animation: none; } }
+.dropdown { position: absolute; z-index: 4; background: #3d4450; border-radius: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.6); padding: 4px 0; min-width: 240px; }
+.dropdown button { display: flex; gap: 8px; align-items: baseline; width: 100%; background: none; border: 0; padding: 8px 14px; font-size: 15px; color: #fff; text-align: left; cursor: pointer; font-family: var(--steam); }
+.dropdown button:hover { background: rgba(255,255,255,.12); }
+.dropdown small { color: var(--st-dim); font-size: 12px; margin-left: auto; }
+.st-tools { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; }
+.st-tools .st-input { flex: 1; margin: 0; }
+.st-seg { display: flex; gap: 4px; background: rgba(255,255,255,.08); border-radius: 10px; padding: 3px; }
+.st-seg button { background: none; border: 0; border-radius: 8px; padding: 6px 12px; font: 14px var(--steam); color: var(--st-dim); cursor: pointer; }
+.st-seg button[aria-pressed="true"] { background: var(--st-btn); color: #fff; }
+.gicon { width: 40px; height: 40px; border-radius: 4px; flex: none; display: grid; place-items: center; font-weight: 700; font-size: 18px; color: rgba(255,255,255,.9); }
+.st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 14px; padding: 8px 0 24px; }
+.tile { position: relative; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; color: var(--st-fg); font-family: var(--steam); }
+.tile .poster { aspect-ratio: 2 / 3; border-radius: 4px; display: grid; place-items: center; font-size: 40px; font-weight: 700; color: rgba(255,255,255,.88); box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+.tile.focus .poster, .tile:hover .poster { outline: 3px solid #fff; outline-offset: 2px; }
+.tile .n { display: block; font-size: 13px; line-height: 16px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .dbtn { position: absolute; left: 6px; right: 6px; bottom: 30px; text-align: center; font-size: 12px; padding: 4px 6px; background: rgba(14,20,27,.85); }
+/* QAM */
+.qam { position: absolute; top: 40px; bottom: 42px; right: 0; width: 360px; display: grid; grid-template-columns: 48px 1fr; background: #0e141b; z-index: 2; box-shadow: -10px 0 30px rgba(0,0,0,.5); }
+.qam-tabs { background: #0b0f14; display: flex; flex-direction: column; align-items: center; gap: 34px; padding-top: 18px; color: #8b929a; }
+.qam-tabs .on { color: #fff; background: #23262e; width: 48px; display: grid; place-items: center; padding: 10px 0; }
+.qam-body { padding: 14px 16px; overflow: auto; }
+.qam-head { display: flex; align-items: center; gap: 26px; margin-bottom: 12px; }
+.qam-back { width: 40px; height: 28px; border-radius: 6px; background: #3d4450; display: grid; place-items: center; color: #fff; }
+.qam-head h4 { margin: 0; font-size: 20px; color: #fff; }
+.qam-status { background: #23262e; border-radius: 2px; padding: 10px 14px; margin: 0 -16px 16px; box-shadow: 0 0 0 10px #2b2d33; }
+.qam-status b { display: flex; align-items: center; gap: 8px; color: #fff; }
+.qam-status b::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #59bf40; }
+.qam-status span { font-size: 12px; color: var(--st-dim); }
+.qam-sec { font-size: 15px; font-weight: 700; letter-spacing: .5px; color: #b8bcbf; margin: 14px 0 10px; }
+.qam-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.1); }
+.qam-wide { width: 100%; margin: 10px 0; }
+
+/* ---------------- Playnite (Harmony) ---------------- */
+.pn { position: relative; width: 1100px; height: 640px; background: var(--pn-window); color: var(--pn-fg); font: 14px var(--trebuchet); overflow: hidden; border-radius: 4px; box-shadow: 0 0 0 1px #000, 0 20px 60px rgba(0,0,0,.6); }
+.pn-top { height: 44px; background: var(--pn-top); display: flex; align-items: center; gap: 18px; padding: 0 14px; color: var(--pn-glyph); }
+.pn-search { width: 210px; height: 28px; border: 1px solid var(--pn-glyph); border-radius: 8px; background: #0e0e0f; }
+.pn-top .pn-glyphs { display: flex; gap: 18px; font-size: 16px; }
+.pn-top .pn-win { margin-left: auto; display: flex; gap: 18px; color: var(--pn-dim); }
+.pn-main { position: absolute; top: 44px; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: 44px 270px 1fr; gap: 10px; padding: 0 10px 10px 0; }
+.pn-rail { display: flex; flex-direction: column; align-items: center; gap: 24px; padding-top: 14px; color: var(--pn-glyph); }
+.pn-list { background: var(--pn-list); border-radius: 5px; padding: 4px; overflow: hidden; }
+.pn-group { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; font-size: 14px; }
+.pn-group i { background: #268243; color: #fff; font-style: normal; font-size: 11px; border-radius: 7px; padding: 0 7px; }
+.pn-game { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 5px; cursor: default; }
+.pn-game .ic { width: 22px; height: 22px; border-radius: 4px; background: linear-gradient(135deg, #3b3a2b, #1a1a14); flex: none; }
+.pn-game.sel { background: var(--pn-sel); outline: 1px solid rgba(227,218,79,.35); }
+.pn-detail { background: var(--pn-detail); border-radius: 5px; padding: 24px 28px; position: relative; overflow: hidden; }
+.pn-cover { width: 108px; height: 160px; border-radius: 5px; background: linear-gradient(160deg, #3d3a24, #121209); margin-bottom: 14px; display: grid; place-items: center; font-size: 46px; font-weight: 700; color: rgba(255,255,255,.85); }
+.pn-name { font-size: 29px; margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
+.pn-actions { display: flex; gap: 10px; align-items: center; }
+.pn-play { background: var(--pn-glyph); color: var(--pn-play-fg); border: 0; border-radius: 14px; padding: 9px 40px; font: 15px var(--trebuchet); font-weight: 700; }
+.pn-more { background: var(--pn-btn); color: var(--pn-fg); border: 0; border-radius: 14px; padding: 9px 40px; font: 15px var(--trebuchet); font-weight: 700; cursor: pointer; }
+.pn-sq { width: 38px; height: 38px; border-radius: 8px; background: #2c2931; display: grid; place-items: center; color: var(--pn-glyph); }
+.pn-card { background: var(--pn-card); border-radius: 8px; padding: 12px 16px; margin-top: 18px; max-width: 520px; font-size: 13px; }
+.pn-card b { color: var(--pn-glyph); font-weight: 400; border-bottom: 2px solid var(--pn-glyph); padding-bottom: 4px; display: inline-block; margin-bottom: 10px; }
+.pn-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.pn-tag { background: #262d27; border-radius: 8px; padding: 2px 10px; font-size: 12.5px; }
+.cmenu { position: absolute; z-index: 5; background: var(--pn-popup); border: 1px solid var(--pn-popup-line); border-radius: 5px; padding: 10px 0; min-width: 230px; box-shadow: 0 8px 24px rgba(0,0,0,.55); font: 14px var(--trebuchet); }
+.cmi { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; width: 100%; background: none; border: 0; color: var(--pn-fg); text-align: left; padding: 5px 10px 5px 4px; cursor: pointer; font: 14px var(--trebuchet); position: relative; }
+.cmi:hover, .cmi.hl { background: rgba(227,218,79,.5); }
+.cmi .gl { text-align: center; color: var(--pn-glyph); }
+.cmi:hover .gl, .cmi.hl .gl { color: var(--pn-fg); }
+.cmi .arr { font-size: 11px; opacity: .8; }
+.cmi .sc { opacity: .6; font-size: 12.5px; margin-left: 20px; }
+.csep { height: 1px; background: var(--pn-glyph); opacity: .5; margin: 2px 0; }
+.pwin-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.45); z-index: 6; display: grid; place-items: center; }
+.pwin { width: 480px; background: var(--pn-winbg); border: 1px solid var(--pn-popup-line); box-shadow: 0 20px 50px rgba(0,0,0,.6); font: 14px var(--trebuchet); }
+.pwin-title { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #17181d; font-size: 13px; color: var(--pn-dim); }
+.pwin-body { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.pwin-body .h { font-weight: 600; }
+.pwin-body .small { font-size: 12px; opacity: .8; }
+.pwin-list { display: flex; flex-direction: column; border: 1px solid var(--pn-popup-line); border-radius: 5px; overflow: hidden; margin: 6px 0; }
+.pwin-list button { display: flex; justify-content: space-between; gap: 10px; background: none; border: 0; color: var(--pn-fg); padding: 8px 10px; text-align: left; cursor: pointer; font: 14px var(--trebuchet); }
+.pwin-list button:hover { background: rgba(227,218,79,.2); }
+.pwin-list button[aria-pressed="true"] { background: rgba(227,218,79,.5); }
+.pwin-list small { opacity: .7; }
+.pwin-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 16px 16px; }
+.pbtn { background: var(--pn-btn); color: var(--pn-fg); border: 0; border-radius: 8px; padding: 5px 12px; cursor: pointer; font: 14px var(--trebuchet); }
+.pbtn:hover { background: #45465a; }
+.pbtn.go { background: var(--pn-glyph); color: var(--pn-play-fg); }
+.pbtn:disabled { opacity: .45; cursor: default; }
+.pinput { background: #0e0e0f; border: 1px solid var(--pn-popup-line); border-radius: 5px; color: var(--pn-fg); font: 14px var(--trebuchet); padding: 6px 8px; }
+.pinput:focus { outline: 1px solid var(--pn-glyph); }
+.pradio { display: flex; gap: 8px; align-items: flex-start; padding: 6px 2px; cursor: pointer; }
+.pradio input, .pcheck input { accent-color: var(--pn-glyph); margin-top: 3px; }
+.pcheck { display: flex; gap: 8px; align-items: center; padding: 3px 2px 3px 24px; font-size: 13px; cursor: pointer; }
+.pwin .st-steps li { color: rgba(240,245,255,.45); }
+.pwin .st-steps li.done, .pwin .st-steps li.run { color: var(--pn-fg); }
+.pwin .st-steps li.run .st-mark { border-color: var(--pn-glyph); border-top-color: transparent; }
+.pwin .st-steps li.done .st-mark { background: var(--pn-glyph); border-color: var(--pn-glyph); }
+</style>
+<div class="strip">
+  <h1>Decky &amp; Playnite<small>rebuilt from the Deck’s live UI and this PC’s Playnite theme</small></h1>
+  <div class="grp"><span class="lbl">Where</span><span id="where"></span></div>
+  <span class="sp"></span>
+  <a class="mbtn" href="agent.html">Agent mockups</a>
+  <a class="mbtn" href="console.html">Console mockups</a>
+</div>
+<div class="strip">
+  <div class="grp"><span class="lbl">Variant</span><span id="variants"></span></div>
+  <div class="grp"><span class="lbl">Mock only</span><span id="sims"></span></div>
+  <span class="sp"></span>
+  <button class="mbtn" id="notesBtn" aria-pressed="true">Notes</button>
+  <button class="mbtn" id="reset">Start again</button>
+</div>
+<div class="notes" id="notes"></div>
+<div class="stage" id="stage"><div class="scaler" id="scaler"></div></div>
+<script>
+(function () {
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const FEATURES = {
+    decky: {
+      name: 'Decky (Steam Deck)', pick: 'Chosen: B · On the Games row (2026-10-23): fast and responsive. The same dropdown is in the QAM, under the selected game and in its Sync options. Also planned: game icons on the Games list, and List / Grid with posters like the agent.',
+      always: 'Matches the live plugin: Steam’s sidebar page, Field rows and dialogs, measured on the Deck. Games has game icons and a List / Grid toggle (posters, like the agent). The QAM names the selected game’s playthrough and can switch it. Switching is refused while the game runs; no notification at launch.',
+      variants: {
+        A: ['In the game’s dialog', 'Games → a game opens its dialog, as today. A new “Playthrough” Field shows the one this Deck plays, with “Switch…”. Hidden when the game has only one playthrough.', 'Open “Baldur’s Gate 3” → Switch… → Main → Switch. Then open the QAM’s Advanced.'],
+        B: ['On the Games row', 'Games with more than one playthrough get a small dropdown button on their row (or under their poster in Grid), showing the playthrough; picking one switches after a confirm. The QAM has the same dropdown for the selected game, and so does its Sync options dialog.', 'Press “Honour mode” on Baldur’s Gate 3 and pick Main. Switch to Grid. Then open Quick Access and use its Playthrough dropdown.'],
+        C: ['A Playthroughs page', 'A new page in the sidebar lists every game that has playthroughs; a game opens its playthroughs as Fields, with A to play one here.', 'Open Playthroughs → Baldur’s Gate 3 → Main.'],
+      },
+    },
+    playnite: {
+      name: 'Playnite', pick: 'Chosen: A · Ticked submenu (2026-10-23): fewest clicks.',
+      always: 'Matches this PC: the Harmony theme’s menu (popup #33343d, yellow at half opacity on hover, Trebuchet MS 14) and its window colors. Progress and result are a real window, never a toast. Refused, with the reason, while the game runs.',
+      variants: {
+        A: ['Ticked submenu', 'Right-click → SaveLocker → Playthrough ▸ lists them with a tick on the current one. Picking one runs the switch in a SaveLocker window; “New playthrough…” opens a window to name one and start it from the current save or fresh.', 'Right-click Baldur’s Gate 3 → SaveLocker → Playthrough → Main. Then Playthrough → New playthrough… → “Start fresh”.'],
+        B: ['Picker window', '“Switch playthrough…” in the SaveLocker submenu opens a window listing them with their latest save; Switch runs it.', 'Right-click → SaveLocker → Switch playthrough… → Main → Switch.'],
+        C: ['Submenu + tag', 'The submenu title says which playthrough plays here, and the game gets a “SaveLocker: <playthrough>” tag Playnite can filter on.', 'Note the tag in Details, then right-click → SaveLocker: Playing Honour mode ▸ → Main.'],
+      },
+    },
+  }
+  let PTS = [
+    { id: 'main', name: 'Main', when: '2 h ago', by: 'Living Room PC' },
+    { id: 'honour', name: 'Honour mode', when: '20 min ago', by: 'this device' },
+    { id: 'durge', name: 'Sara’s Durge run', when: '3 days ago', by: 'Sara’s laptop', remote: true },
+  ]
+  const PTS0 = PTS.slice()
+  const st = { where: 'decky', v: 'A', sim: 'online', notes: true, sel: 'honour', page: 'games', dlg: null, target: null, menu: null, sub: null, flow: null, view: 'list', back: null, np: null }
+  try { const w = localStorage.getItem('slh:where'); if (w) st.where = w } catch (e) {}
+  { const m = /^#(decky|playnite)-([ABC])$/.exec(location.hash); if (m) { st.where = m[1]; st.v = m[2] } }
+  const pt = id => PTS.find(p => p.id === id)
+  let timer
+  function reset() { clearTimeout(timer); PTS = PTS0.slice(); Object.assign(st, { sel: 'honour', page: st.where === 'decky' && st.v === 'C' ? 'playthroughs' : 'games', dlg: null, target: null, ptGame: false, menu: null, sub: null, flow: null, view: 'list', back: null, np: null }) }
+
+  function startSwitch(target, after) {
+    const cur = pt(st.sel), tgt = pt(target), off = st.sim === 'offline'
+    const steps = [
+      ['Check that Baldur’s Gate 3 isn’t running'],
+      ...(tgt.fresh ? [[`Make “${tgt.name}”`, tgt.keep.length ? `An empty save folder, keeping ${tgt.keep.join(', ')}` : 'An empty save folder: the game starts a new game']] : []),
+      [`Upload “${cur.name}” first`, off ? 'The server can’t be reached; a copy is kept here and uploads later' : 'Changed 20 minutes ago · 50 MB'],
+      [`Put “${tgt.name}” in the save folder`, off ? 'From the copy on this device; it may be older than the server’s' : `Latest: ${tgt.when} on ${tgt.by}`],
+      [`This device now plays “${tgt.name}”`],
+    ]
+    let failAt = -1, msg = ''
+    if (st.sim === 'running') { failAt = 0; msg = 'Baldur’s Gate 3 is running. Close the game, then switch. Nothing changed.' }
+    else if (off && tgt.remote) { failAt = steps.length - 2; msg = `There’s no copy of “${tgt.name}” on this device. Connect to the server to switch. You’re still on “${cur.name}”.` }
+    st.flow = { steps, i: 0, state: 'run', failAt, msg }
+    render()
+    const tick = () => {
+      const f = st.flow; if (!f) return
+      if (f.i === f.failAt) { f.state = 'fail'; render(); return }
+      if (f.i + 1 >= f.steps.length) { f.i = f.steps.length; f.state = 'ok'; st.sel = target; render(); after && after(); return }
+      f.i++; render(); timer = setTimeout(tick, 650)
+    }
+    timer = setTimeout(tick, 650)
+  }
+  const stepsHtml = () => {
+    const f = st.flow; if (!f) return ''
+    return '<ol class="st-steps">' + f.steps.map((s, i) => {
+      const c = f.state === 'ok' || i < f.i ? 'done' : i === f.i ? (f.state === 'fail' ? 'fail' : 'run') : ''
+      const d = c === 'fail' ? f.msg : s[1]
+      return `<li class="${c}"><span class="st-mark">${c === 'done' ? '✓' : c === 'fail' ? '✕' : ''}</span><span>${esc(s[0])}${d ? `<small>${esc(d)}</small>` : ''}</span></li>`
+    }).join('') + '</ol>'
+  }
+
+  /* ---------------- Decky ---------------- */
+  const ICONS = {
+    status: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3z"/></svg>',
+    games: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10a5 5 0 0 1 0 10c-1.6 0-2.4-1-3-2h-4c-.6 1-1.4 2-3 2A5 5 0 0 1 7 7zm1 3v2H6v2h2v2h2v-2h2v-2h-2v-2H8zm8 1a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm2 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>',
+    launch: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 3c4 0 7 3 7 7l-7 7-3-1-1-3-4 1 3-5-2-1 7-5zm1 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM5 16l3 3-4 2 1-5z"/></svg>',
+    branch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M6 3v12.5M18 8.5a9 9 0 0 1-9 9"/></svg>',
+    activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>',
+    diag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 3v6a5 5 0 0 0 10 0V3M10 14v2a5 5 0 0 0 10 0v-2"/><circle cx="20" cy="12" r="2"/></svg>',
+  }
+  const GAMES = [
+    ['Hot Brass', 'alias: Hot Brass · no Steam Cloud', false, 12],
+    ['Baldur’s Gate 3', 'alias: Baldur’s Gate 3 · Steam Cloud', true, 280],
+    ['Overcooked!', 'alias: Overcooked! · no Steam Cloud', false, 200],
+    ['Alba: A Wildlife Adventure', 'alias: Alba: A Wildlife Adventure · no Steam Cloud', false, 140],
+    ['Cyberpunk 2077', 'alias: Cyberpunk 2077 · Steam Cloud', false, 330],
+    ['Hades II', 'alias: Hades II · Steam Cloud', false, 20],
+    ['Stardew Valley', 'alias: Stardew Valley · Steam Cloud', false, 95],
+    ['Celeste', 'alias: Celeste · Steam Cloud', false, 300],
+  ]
+  // Mockup art: the plugin would show Steam's own library art for the app id (and the server's art for the rest).
+  const art = (hue, deg) => `background:linear-gradient(${deg}deg,hsl(${hue} 42% 34%),hsl(${(hue + 40) % 360} 46% 12%))`
+  function deckChrome(inner, extra) {
+    return `<div class="deck"><div class="st-top"><span>99%</span><span>3:06 PM</span></div>${inner}${extra || ''}
+      <div class="st-bottom"><span><span class="st-pill">STEAM</span>MENU</span><span class="r"><span><span class="st-key">A</span>SELECT</span><span><span class="st-key">B</span>BACK</span></span></div></div>`
+  }
+  function deckSidebar() {
+    const items = [['status', 'Status'], ['games', 'Games'], ['launch', 'Launch options']]
+    if (st.v === 'C') items.push(['playthroughs', 'Playthroughs'])
+    return `<div class="st-side"><h2>SaveLocker</h2><nav class="st-nav">` +
+      items.map(([k, l]) => `<button data-act="page" data-k="${k}" ${st.page === k ? 'aria-current="page"' : ''}>${ICONS[k === 'playthroughs' ? 'branch' : k]}${l}</button>`).join('') +
+      `<hr><button data-act="page" data-k="activity">${ICONS.activity}Activity</button><button data-act="page" data-k="diag">${ICONS.diag}Diagnostics</button></nav></div>`
+  }
+  function gamesPage() {
+    const dd = multi => st.v === 'B' && multi ? `<span class="dbtn small" data-act="dd" role="button" tabindex="0">${esc(pt(st.sel).name)}<span class="chev">▼</span></span>` : ''
+    const head = `<div class="st-content"><div class="st-title">Games</div><div class="st-sec">Games</div><div class="st-label">Search games</div>
+      <div class="st-tools"><div class="st-input"></div><div class="st-seg" role="group" aria-label="View"><button data-act="view" data-k="list" aria-pressed="${st.view === 'list'}">☰ List</button><button data-act="view" data-k="grid" aria-pressed="${st.view === 'grid'}">▦ Grid</button></div></div>
+      <div class="st-count">40 tracked</div>`
+    if (st.view === 'grid') {
+      return head + '<div class="st-grid">' + GAMES.map(([n, , multi, hue]) =>
+        `<button class="tile${multi ? ' focus' : ''}" data-act="${multi ? 'open' : 'noop'}"><span class="poster" style="${art(hue, 160)}">${esc(n[0])}</span>${dd(multi)}<span class="n">${esc(n)}</span></button>`).join('') + '</div></div>'
+    }
+    return head + GAMES.map(([n, d, multi, hue]) => {
+      const desc = st.v === 'B' && multi ? d + ' · 3 playthroughs' : d
+      return `<button class="field${multi ? ' focus' : ''}" data-act="${multi ? 'open' : 'noop'}"><span class="gicon" style="${art(hue, 135)}">${esc(n[0])}</span><span class="t"><span class="l">${esc(n)}</span><span class="d">${esc(desc)}</span></span>${dd(multi)}</button>`
+    }).join('') + '</div>'
+  }
+  function playthroughsPage() {
+    if (st.ptGame) {
+      return `<div class="st-content"><div class="st-title">Baldur’s Gate 3</div><div class="st-sec">Playthroughs</div>` +
+        PTS.map(p => `<button class="field${p.id === st.sel ? ' focus' : ''}" data-act="${p.id === st.sel ? 'noop' : 'ask'}" data-k="${p.id}"><span class="t"><span class="l">${esc(p.name)}${p.id === st.sel ? ' · plays here' : ''}</span><span class="d">Latest ${esc(p.when)} on ${esc(p.by)}</span></span>${p.id === st.sel ? '' : '<span class="dbtn small">Play here</span>'}</button>`).join('') + '</div>'
+    }
+    return `<div class="st-content"><div class="st-title">Playthroughs</div><div class="st-sec">Games with more than one</div>` +
+      `<button class="field focus" data-act="ptgame"><span class="t"><span class="l">Baldur’s Gate 3</span><span class="d">Plays ${esc(pt(st.sel).name)} here · 3 playthroughs</span></span></button>` +
+      `<button class="field" data-act="noop"><span class="t"><span class="l">Cyberpunk 2077</span><span class="d">Plays Main here · 2 playthroughs</span></span></button></div>`
+  }
+  function gameDialog() {
+    const ptRow = `<div class="field focus" style="cursor:default"><span class="t"><span class="l">Playthrough</span><span class="d">${esc(pt(st.sel).name)} · this Steam Deck plays it. 3 playthroughs.</span></span><span class="dbtn" data-act="pick" role="button" tabindex="0">Switch…</span></div>`
+    return `<div class="st-scrim"><div class="st-dialog"><h3>Baldur’s Gate 3</h3><p class="sub">Steam Cloud saves this game too.</p>
+      <div class="field" style="cursor:default"><span class="t"><span class="l">Save folder</span><span class="d">/home/deck/.local/share/Steam/steamapps/compatdata/1086940/pfx/drive_c/users/steamuser/AppData/Local/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/Savegames/Story</span></span></div>
+      ${st.v === 'A' ? ptRow : ''}
+      <div class="field" style="cursor:default"><span class="t"><span class="l">Pull before launch</span><span class="d">On: the save is current before the game starts.</span></span><span class="toggle"></span></div>
+      <div class="field" style="cursor:default"><span class="t"><span class="l">Alias</span><span class="d">Used when matching a launch to this game.</span></span><span style="opacity:.8">Baldur’s Gate 3</span><span class="dbtn">Edit alias</span></div>
+      <div class="st-row"><span class="dbtn" data-act="close" role="button" tabindex="0">Close</span></div></div></div>`
+  }
+  function pickerDialog() {
+    return `<div class="st-scrim"><div class="st-dialog narrow"><h3>Playthrough for Baldur’s Gate 3</h3><p class="sub">This Steam Deck plays one at a time. Your other devices keep theirs.</p>` +
+      PTS.map(p => `<button class="field${p.id === st.sel ? ' focus' : ''}" data-act="${p.id === st.sel ? 'noop' : 'ask'}" data-k="${p.id}"><span class="t"><span class="l">${p.id === st.sel ? '✓ ' : ''}${esc(p.name)}</span><span class="d">Latest ${esc(p.when)} on ${esc(p.by)}</span></span></button>`).join('') +
+      `<div class="st-row"><span class="dbtn" data-act="back" role="button" tabindex="0">Back</span></div></div></div>`
+  }
+  function confirmDialog() {
+    const t = pt(st.target)
+    if (st.flow) {
+      const s = st.flow.state
+      return `<div class="st-scrim"><div class="st-dialog narrow"><h3>${s === 'fail' ? 'Couldn’t switch' : s === 'ok' ? 'Switched to ' + esc(t.name) : 'Switching to ' + esc(t.name) + '…'}</h3><p class="sub"></p>${stepsHtml()}
+        ${s !== 'run' ? '<div class="st-row"><span class="dbtn primary" data-act="done" role="button" tabindex="0">OK</span></div>' : ''}</div></div>`
+    }
+    return `<div class="st-scrim"><div class="st-dialog narrow"><h3>Play ${esc(t.name)} on this Steam Deck?</h3><p class="sub">${esc(pt(st.sel).name)} is uploaded to its own playthrough first, so nothing is lost.</p>
+      <div class="st-row"><span class="dbtn" data-act="back" role="button" tabindex="0">Cancel</span><span class="dbtn primary" data-act="go" role="button" tabindex="0">Switch</span></div></div></div>`
+  }
+  function qam() {
+    if (st.dlg !== 'qam' && st.dlg !== 'advanced') return ''
+    const ptDrop = where => `<span class="dbtn small" data-act="qdd" data-k="${where}" role="button" tabindex="0">${esc(pt(st.sel).name)}<span class="chev">▼</span></span>`
+    const qdd = st.sub && st.sub.startsWith('q') ? `<div class="dropdown" style="${st.sub === 'qadv' ? 'top:150px;left:330px' : 'top:170px;right:24px'};z-index:6">${PTS.map(p => `<button data-act="ask" data-k="${p.id}">${p.id === st.sel ? '✓ ' : ''}${esc(p.name)}<small>${esc(p.when)}</small></button>`).join('')}</div>` : ''
+    const adv = st.dlg === 'advanced' ? `<div class="st-scrim" style="z-index:5"><div class="st-dialog narrow"><h3>Sync options</h3><p class="sub">Baldur’s Gate 3 · plays <b style="color:#fff">${esc(pt(st.sel).name)}</b> on this Steam Deck</p>
+        ${st.v === 'B' ? `<div class="field" style="cursor:default;min-height:52px;margin:0 0 14px"><span class="t"><span class="l">Playthrough</span><span class="d">3 playthroughs · switching uploads this one first</span></span>${ptDrop('qadv')}</div>` : ''}
+        <div style="display:flex;flex-direction:column;gap:10px"><span class="dbtn" style="text-align:center">Sync now (pull, then push)</span><div style="display:flex;gap:10px"><span class="dbtn" style="flex:1;text-align:center">Push only</span><span class="dbtn" style="flex:1;text-align:center">Pull only</span></div>
+        <div style="font-size:12px;opacity:.6;margin-top:6px;text-transform:uppercase;letter-spacing:.5px">Force — replaces one side completely</div><div style="display:flex;gap:10px"><span class="dbtn" style="flex:1;text-align:center">Force push…</span><span class="dbtn" style="flex:1;text-align:center">Force pull…</span></div></div>
+        <div class="st-row"><span class="dbtn" data-act="qam" role="button" tabindex="0">Close</span></div></div></div>` : ''
+    return `<div class="qam"><div class="qam-tabs"><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span class="on" style="width:48px">${ICONS.launch.replace('<svg ', '<svg width="18" height="18" ')}</span></div>
+      <div class="qam-body"><div class="qam-head"><span class="qam-back">←</span><h4>SaveLocker</h4></div>
+      <div class="qam-status"><b>SaveLocker is running</b><span>Steam Deck · 38 games · synced 2h ago</span></div>
+      <div class="qam-sec">SYNC</div><div class="qam-row"><span>Games</span><span class="dbtn">Baldur’s Gate 3 ▾</span></div>
+      ${st.v === 'B' ? `<div class="qam-row"><span>Playthrough<br><small style="font-size:12px;color:#b8bcbf">3 for this game</small></span>${ptDrop('qam')}</div>` : ''}
+      <span class="dbtn qam-wide" style="display:block;text-align:center">Sync now</span>
+      <button class="qam-row" data-act="advanced" style="width:100%;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.1);color:inherit;text-align:left;cursor:pointer;font:inherit"><span>Advanced<br><small style="font-size:12px;color:#b8bcbf">Push or pull one direction, force actions</small></span><span>›</span></button>
+      </div></div>${adv}${qdd}`
+  }
+  function deck() {
+    let content
+    if (st.page === 'playthroughs') content = playthroughsPage()
+    else content = st.page === 'games' ? gamesPage() : `<div class="st-content"><div class="st-title">${esc({ status: 'Status', launch: 'Launch options', activity: 'Activity', diag: 'Diagnostics' }[st.page])}</div><div class="st-count">Not part of this mockup.</div></div>`
+    let overlay = ''
+    if (st.dlg === 'game') overlay = gameDialog()
+    else if (st.dlg === 'pick') overlay = pickerDialog()
+    else if (st.dlg === 'confirm') overlay = confirmDialog()
+    else if (st.dlg === 'dd') overlay = `<div class="dropdown" style="top:${st.view === 'grid' ? 330 : 270}px;${st.view === 'grid' ? 'left:440px' : 'right:40px'}">${PTS.map(p => `<button data-act="ask" data-k="${p.id}">${p.id === st.sel ? '✓ ' : ''}${esc(p.name)}<small>${esc(p.when)}</small></button>`).join('')}</div>`
+    const qamBtn = `<button class="mbtn" data-act="qam" style="position:absolute;right:12px;bottom:52px;z-index:3">${st.dlg === 'qam' || st.dlg === 'advanced' ? 'Close Quick Access' : 'Open Quick Access (…)'}</button>`
+    // A switch asked from the QAM confirms in Big Picture Mode, over the page (as a modal from the QAM does on the Deck).
+    if (st.back && (st.dlg === 'confirm')) overlay = confirmDialog()
+    return deckChrome(`<div class="st-page">${deckSidebar()}${content}</div>`, overlay + qam() + qamBtn)
+  }
+
+  /* ---------------- Playnite ---------------- */
+  function pnMenus() {
+    if (!st.menu) return ''
+    const cur = pt(st.sel)
+    const base = `<div class="cmenu" style="left:330px;top:150px">
+      <button class="cmi"><span class="gl">▶</span>Play</button><button class="cmi"><span class="gl"></span>Open Game Location</button><button class="cmi"><span class="gl"></span>Create Desktop Shortcut</button>
+      <div class="csep"></div><button class="cmi"><span class="gl"></span>Add to Favorites</button><button class="cmi"><span class="gl"></span>Hide</button><button class="cmi"><span class="gl"></span>Edit…<span class="sc">F3</span></button><button class="cmi"><span class="gl"></span>Set Category…</button>
+      <div class="csep"></div><button class="cmi${st.sub ? ' hl' : ''}" data-act="sub" data-k="sl"><span class="gl"></span>${st.v === 'C' ? 'SaveLocker: Playing ' + esc(cur.name) : 'SaveLocker'}<span class="arr">▶</span></button>
+      <div class="csep"></div><button class="cmi"><span class="gl"></span>Remove</button></div>`
+    let sl = ''
+    if (st.sub) {
+      if (st.v === 'C') sl = `<div class="cmenu" style="left:560px;top:372px">${PTS.map(p => `<button class="cmi" data-act="pnpick" data-k="${p.id}"><span class="gl">${p.id === st.sel ? '✓' : ''}</span>${esc(p.name)}<span class="sc">${esc(p.when)}</span></button>`).join('')}<div class="csep"></div><button class="cmi" data-act="pnnew"><span class="gl">+</span>New playthrough…</button><div class="csep"></div><button class="cmi"><span class="gl"></span>Sync now</button><button class="cmi"><span class="gl"></span>Resolve conflict…</button></div>`
+      else sl = `<div class="cmenu" style="left:560px;top:372px"><button class="cmi"><span class="gl"></span>Link to SaveLocker</button><button class="cmi"><span class="gl"></span>Sync now</button><button class="cmi"><span class="gl"></span>Resolve conflict…</button><div class="csep"></div>` +
+        (st.v === 'A' ? `<button class="cmi${st.sub === 'pt' ? ' hl' : ''}" data-act="sub" data-k="pt"><span class="gl"></span>Playthrough<span class="arr">▶</span></button>` : `<button class="cmi" data-act="win"><span class="gl"></span>Switch playthrough…<span class="sc">${esc(cur.name)}</span></button>`) + '</div>'
+    }
+    const pts = st.sub === 'pt' ? `<div class="cmenu" style="left:790px;top:470px">${PTS.map(p => `<button class="cmi" data-act="pnpick" data-k="${p.id}"><span class="gl">${p.id === st.sel ? '✓' : ''}</span>${esc(p.name)}<span class="sc">${esc(p.when)}</span></button>`).join('')}<div class="csep"></div><button class="cmi" data-act="pnnew"><span class="gl">+</span>New playthrough…</button></div>` : ''
+    return base + sl + pts
+  }
+  function pnWindow() {
+    if (st.dlg === 'pnwin' && !st.flow) {
+      const pick = st.target || st.sel
+      return `<div class="pwin-scrim"><div class="pwin"><div class="pwin-title"><span>SaveLocker — playthrough for "Baldur's Gate 3"</span><span>✕</span></div>
+        <div class="pwin-body"><div>This PC plays one playthrough at a time. Your other devices keep theirs.</div><div class="pwin-list">${PTS.map(p => `<button data-act="pnsel" data-k="${p.id}" aria-pressed="${p.id === pick}"><span>${p.id === st.sel ? '✓ ' : ''}${esc(p.name)}</span><small>${esc(p.when)} · ${esc(p.by)}</small></button>`).join('')}</div></div>
+        <div class="pwin-foot"><button class="pbtn" data-act="pnnew" style="margin-right:auto">New playthrough…</button><button class="pbtn" data-act="pnclose">Cancel</button><button class="pbtn go" data-act="pngo">Switch</button></div></div></div>`
+    }
+    if (st.dlg === 'pnnew' && !st.flow) {
+      const n = st.np
+      const files = [['profile8.lsf', 'Profile and settings'], ['HonourMode.lsv', 'Save'], ['QuickSave_12.lsv', 'Save']]
+      return `<div class="pwin-scrim"><div class="pwin"><div class="pwin-title"><span>SaveLocker — new playthrough for "Baldur's Gate 3"</span><span data-act="pnclose" style="cursor:pointer">✕</span></div>
+        <div class="pwin-body"><label class="small" for="pnname">Name</label><input id="pnname" class="pinput" value="${esc(n.name)}" placeholder="e.g. Dark Urge" data-act="noop">
+          <label class="pradio" data-act="pnfrom" data-k="current"><input type="radio" name="pnfrom" ${n.from === 'current' ? 'checked' : ''}><span><span class="h">Current save</span><br><span class="small">A copy of ${esc(pt(st.sel).name)}’s latest save</span></span></label>
+          <label class="pradio" data-act="pnfrom" data-k="fresh"><input type="radio" name="pnfrom" ${n.from === 'fresh' ? 'checked' : ''}><span><span class="h">Start fresh</span><br><span class="small">An empty save folder, so the game starts a new game. Keep:</span></span></label>
+          ${n.from === 'fresh' ? files.map(([f, why]) => `<label class="pcheck" data-act="pnkeep" data-k="${f}"><input type="checkbox" ${n.keep.includes(f) ? 'checked' : ''}><span>${esc(f)}</span><span class="small" style="margin-left:auto">${why}</span></label>`).join('') : ''}
+          <label class="pcheck" style="padding-left:2px;margin-top:6px" data-act="pnnow"><input type="checkbox" ${n.now ? 'checked' : ''}><span>Play it on this PC now (uploads ${esc(pt(st.sel).name)} first)</span></label></div>
+        <div class="pwin-foot"><button class="pbtn" data-act="pnclose">Cancel</button><button class="pbtn go" data-act="pncreate" ${n.name.trim() ? '' : 'disabled'}>Create</button></div></div></div>`
+    }
+    if (!st.flow) return ''
+    const s = st.flow.state, t = pt(st.target)
+    return `<div class="pwin-scrim"><div class="pwin"><div class="pwin-title"><span>SaveLocker — switch playthrough</span><span>✕</span></div>
+      <div class="pwin-body"><div class="h">${s === 'fail' ? 'Couldn’t switch' : s === 'ok' ? 'Switched to "' + esc(t.name) + '"' : 'Switching to "' + esc(t.name) + '"…'}</div>${stepsHtml()}</div>
+      ${s !== 'run' ? '<div class="pwin-foot"><button class="pbtn" data-act="pnclose">Close</button></div>' : ''}</div></div>`
+  }
+  function playnite() {
+    const games = [['Legendary (Epic)', ['Calico', 'Fez', 'HITMAN 3']], ['Steam', ['Baldur’s Gate 3', 'Cyberpunk 2077', 'Slay the Spire']]]
+    const tags = ['SaveLocker: Linked'].concat(st.v === 'C' ? ['SaveLocker: ' + pt(st.sel).name] : [])
+    return `<div class="pn"><div class="pn-top"><span style="font-size:18px">◆</span><span class="pn-search"></span><span class="pn-glyphs">⌕ ▤ ☰ ▦ ⇄ ◷</span><span style="color:var(--pn-glyph)">▼ Filter Active</span><span class="pn-win">— ▢ ✕</span></div>
+      <div class="pn-main"><div class="pn-rail">▥<br>◔<br>▮<br>♛</div>
+      <div class="pn-list">${games.map(([g, list]) => `<div class="pn-group"><span>⌄ ${esc(g)}</span><i>${list.length}</i></div>` + list.map(n => `<div class="pn-game${n === 'Baldur’s Gate 3' ? ' sel' : ''}" ${n === 'Baldur’s Gate 3' ? 'data-act="ctx" title="Right-click"' : ''}><span class="ic"></span>${esc(n)}</div>`).join('')).join('')}</div>
+      <div class="pn-detail" data-act="ctx"><div class="pn-cover">B</div><div class="pn-name">Baldur’s Gate 3</div>
+        <div class="pn-actions"><button class="pn-play">▶ &nbsp;Play</button><button class="pn-more" data-act="ctx">More</button><span class="pn-sq">✎</span></div>
+        <div class="pn-card"><b>Details</b><div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px"><span style="color:var(--pn-dim)">Recent Activity</span><span>Yesterday</span><span style="color:var(--pn-dim)">Tags</span><span class="pn-tags">${tags.map(t => `<span class="pn-tag">${esc(t)}</span>`).join('')}</span></div></div>
+        <div style="position:absolute;bottom:14px;left:28px;font-size:12px;color:var(--pn-dim)">Right-click the game (or press More) for its menu.</div></div></div>
+      ${pnMenus()}${pnWindow()}</div>`
+  }
+
+  /* ---------------- shell ---------------- */
+  function fit() {
+    const sc = document.getElementById('scaler'), stage = document.getElementById('stage')
+    const w = st.where === 'decky' ? 854 : 1100, h = st.where === 'decky' ? 534 : 640
+    const s = Math.min((stage.clientWidth - 32) / w, (stage.clientHeight - 32) / h, st.where === 'decky' ? 1.6 : 1.15)
+    const k = Math.max(0.3, s)
+    sc.style.width = w * k + 'px'; sc.style.height = h * k + 'px'
+    if (sc.firstElementChild) sc.firstElementChild.style.transform = `scale(${k})`
+  }
+  function render() {
+    const F = FEATURES[st.where], V = F.variants[st.v]
+    document.getElementById('where').innerHTML = Object.entries(FEATURES).map(([k, f]) => `<button class="mbtn" data-act="where" data-k="${k}" aria-pressed="${st.where === k}">${f.name}</button>`).join(' ')
+    document.getElementById('variants').innerHTML = Object.entries(F.variants).map(([k, v]) => `<button class="mbtn" data-act="var" data-k="${k}" aria-pressed="${st.v === k}">${k} · ${v[0]}</button>`).join(' ')
+    document.getElementById('sims').innerHTML = [['online', 'Online'], ['offline', 'Server unreachable'], ['running', 'Game running']].map(([k, l]) => `<button class="mbtn" data-act="sim" data-k="${k}" aria-pressed="${st.sim === k}">${l}</button>`).join(' ')
+    const n = document.getElementById('notes'); n.hidden = !st.notes
+    n.innerHTML = `<p><b>${st.v} · ${esc(V[0])}.</b> ${esc(V[1])}</p><p><span class="lbl">Try it</span> ${esc(V[2])}</p><p><span class="lbl">In every variant</span> ${esc(F.always)}</p><p><span class="lbl">My pick</span> ${esc(F.pick)}</p>`
+    document.getElementById('notesBtn').setAttribute('aria-pressed', st.notes)
+    document.getElementById('scaler').innerHTML = st.where === 'decky' ? deck() : playnite()
+    fit()
+  }
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-act]'); if (!t) { if (st.menu) { st.menu = null; st.sub = null; render() } return }
+    const a = t.dataset.act, k = t.dataset.k
+    if (a === 'where') { st.where = k; st.v = 'A'; try { localStorage.setItem('slh:where', k) } catch (er) {} reset() }
+    else if (a === 'var') { st.v = k; reset() }
+    else if (a === 'sim') { st.sim = k }
+    else if (a === 'page') { st.page = k; st.ptGame = false }
+    else if (a === 'open') { st.dlg = 'game' }
+    else if (a === 'dd') { e.stopPropagation(); st.dlg = st.dlg === 'dd' ? null : 'dd' }
+    else if (a === 'pick') st.dlg = 'pick'
+    else if (a === 'ask') { st.back = st.sub && st.sub.startsWith('q') ? st.dlg : null; st.sub = null; st.target = k; st.dlg = 'confirm' }
+    else if (a === 'back') { st.dlg = st.back || (st.v === 'A' ? 'pick' : null); st.back = null }
+    else if (a === 'go') { startSwitch(st.target); return }
+    else if (a === 'done') { st.flow = null; st.dlg = st.back || (st.v === 'A' ? 'game' : null); st.back = null }
+    else if (a === 'close') st.dlg = null
+    else if (a === 'ptgame') st.ptGame = true
+    else if (a === 'qam') st.dlg = st.dlg === 'qam' || st.dlg === 'advanced' ? null : 'qam'
+    else if (a === 'advanced') st.dlg = 'advanced'
+    else if (a === 'ctx') { st.menu = 'pn'; st.sub = null }
+    else if (a === 'sub') { e.stopPropagation(); st.menu = 'pn'; st.sub = k === 'pt' ? 'pt' : (st.sub ? (k === 'sl' ? 'sl' : st.sub) : 'sl') }
+    else if (a === 'pnpick') { st.menu = null; st.sub = null; if (k !== st.sel) { st.target = k; startSwitch(k); return } }
+    else if (a === 'win') { st.menu = null; st.sub = null; st.dlg = 'pnwin'; st.target = st.sel }
+    else if (a === 'pnsel') st.target = k
+    else if (a === 'pngo') { st.dlg = null; if (st.target !== st.sel) { startSwitch(st.target); return } }
+    else if (a === 'pnclose') { st.dlg = null; st.flow = null }
+    else if (a === 'view') st.view = k
+    else if (a === 'qdd') { e.stopPropagation(); st.sub = st.sub === k ? null : k; render(); return }
+    else if (a === 'pnnew') { st.menu = null; st.sub = null; st.dlg = 'pnnew'; st.np = { name: '', from: 'current', keep: ['profile8.lsf'], now: true } }
+    else if (a === 'pnfrom') { st.np.from = k }
+    else if (a === 'pnkeep') { e.preventDefault(); st.np.keep = st.np.keep.includes(k) ? st.np.keep.filter(x => x !== k) : st.np.keep.concat(k) }
+    else if (a === 'pnnow') { e.preventDefault(); st.np.now = !st.np.now }
+    else if (a === 'pncreate') {
+      const n = st.np, id = 'new' + PTS.length
+      PTS = PTS.concat({ id, name: n.name.trim(), when: 'just now', by: 'this PC', fresh: n.from === 'fresh', keep: n.from === 'fresh' ? n.keep : [] })
+      st.dlg = null
+      if (n.now) { st.target = id; startSwitch(id); return }
+    }
+    else if (a === 'noop') return
+    if (a !== 'ctx' && a !== 'sub') { if (!['pnpick', 'win'].includes(a)) { st.menu = st.menu && (a === 'where' || a === 'var') ? null : st.menu } }
+    render()
+  })
+  document.addEventListener('contextmenu', e => { if (st.where === 'playnite' && e.target.closest('.pn')) { e.preventDefault(); st.menu = 'pn'; st.sub = null; render() } })
+  document.addEventListener('input', e => {
+    if (e.target.id !== 'pnname') return
+    st.np.name = e.target.value
+    const go = document.querySelector('[data-act="pncreate"]'); if (go) go.disabled = !st.np.name.trim()
+  })
+  document.getElementById('notesBtn').onclick = () => { st.notes = !st.notes; render() }
+  document.getElementById('reset').onclick = () => { reset(); render() }
+  window.addEventListener('resize', fit)
+  reset(); render()
+})()
+</script>
