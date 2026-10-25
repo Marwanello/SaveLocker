@@ -18,6 +18,16 @@ and 1 — both resolve to the same rollout: the console and fleet are now curren
 which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
 fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
+**One console entry per game, one save tree per emulator (2026-10-21, branch `multi-emulator-games`, PR open, not
+merged).** All six phases of [[tasks/multi-emulator-games/plan]] are built: a console-side `GameTitle` groups the
+server games one title is saved as (melonDS + RetroArch's Hunters, Dolphin + PrimeHack's Trilogy); the console and
+the agent UI list it once with a tab per emulator; Group with / Split out by hand; and **Copy this save to another
+emulator** (server-side, melonDS ⇄ RetroArch and Dolphin ⇄ PrimeHack only — see [[Decisions]]). Sync is unchanged:
+each tree is still its own game. Migration `AddGameTitles` (also `SaveVersion.CopiedFrom`); help article
+*Games saved with more than one emulator*. **Next action:** the maintainer's testenv pass (steps in the PR), then
+merge. **Gotcha found:** `run-console-security-tests` aborts mid-run if its server (:5215) is killed — never stop
+"every SaveLocker.Server.dll" while a suite runs; match on the port or the state dir.
+
 **Per-file delta upload shipped (2026-08-22, this session, branch `worktree-per-file-delta-upload`,
 `f7d2a58`) — on `main` but NOT yet in a tagged release.** The backlog item "upload only changed
 files, not the whole save folder": a normal push now diffs a per-file manifest against the server's

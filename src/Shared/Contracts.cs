@@ -57,7 +57,14 @@ public record GameDto(
     string? EmulatorKey = null,
     // The games merged into this one (tasks/emulator-saves Phase 17): an agent that synced one of them here moves to
     // this game. Null when none was.
-    Guid[]? MergedGameIds = null);
+    Guid[]? MergedGameIds = null,
+    // The title this game is one emulator's tree of (tasks/multi-emulator-games), null for a game shown on its own; the
+    // title's name (the first game's without its emulator suffix); what tells it from another tree of the same emulator
+    // ("Rev 0"); and whether it is the title's first game, whose art the title shows.
+    Guid? TitleId = null,
+    string? TitleName = null,
+    string? TitleEdition = null,
+    bool TitleLead = false);
 
 /// <summary>
 /// Which release of a console game an emulator save belongs to, read from the game ID the save is filed under
@@ -199,6 +206,10 @@ public static class MergeOutcomes
 
 /// <summary>Merge a game into another. <paramref name="ConfirmName"/> must be the merged game's name, typed.</summary>
 public record MergeGamesRequest(Guid IntoId, string ConfirmName);
+
+/// <summary>A game "＋ Group with…" can put with another (tasks/multi-emulator-games Phase 4): same console, not already in
+/// its title. <see cref="SameName"/> when its name without the emulator suffix is the other game's.</summary>
+public record TitleCandidateDto(Guid GameId, string Name, string Emulator, string? Platform, string? Region, bool SameName);
 
 /// <summary>
 /// A save folder a machine's <c>scan</c> <b>found but has not adopted</b> — the game is tracked
@@ -531,7 +542,22 @@ public record SaveVersionDto(
     ContentPackageDto[]? Content = null,
     // The game this version was made under before it was merged into this one (tasks/emulator-saves Phase 17): read-only
     // history, never Latest again. Null for the game's own versions.
-    string? MergedFrom = null);
+    string? MergedFrom = null,
+    // Made by copying another emulator's save of the same title (tasks/multi-emulator-games Phase 6): that emulator's
+    // name and the version copied. Null for a version a machine uploaded.
+    string? CopiedFrom = null,
+    Guid? CopiedFromVersionId = null);
+
+/// <summary>
+/// Where one version of a title's tree can be copied (tasks/multi-emulator-games Phase 6): another emulator's tree of the
+/// same title. <see cref="Refusal"/> says why not; otherwise <see cref="Files"/> is what each file becomes and
+/// <see cref="TargetHead"/> the target's current Latest, which stays as an older version.
+/// </summary>
+public record CopyTargetDto(Guid GameId, string GameName, string? Emulator, string? How, string? Refusal,
+    CopyFileDto[] Files, SaveVersionDto? TargetHead);
+
+/// <summary>One file of a copy: its name in the source save, its name in the target's, and its size.</summary>
+public record CopyFileDto(string From, string To, long Size);
 
 /// <summary>
 /// One installed package of a game — DLC (<see cref="Dlc"/>) or a title update (<see cref="Update"/>) — as the DLC check
@@ -783,7 +809,9 @@ public record GameStateDto(
     bool HasOpenConflict,
     long TotalStorageBytes = 0,
     Guid[]? MachineIds = null,
-    GameSourceDto[]? Sources = null);
+    GameSourceDto[]? Sources = null,
+    // The emulator its sources name ("RetroArch"), null for a PC game: what a title's tab is called.
+    string? Emulator = null);
 
 // ----- Agent command channel (dashboard → agent) -----
 

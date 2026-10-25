@@ -354,39 +354,26 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add("Open SaveLocker…", null, (_, _) => OpenWindow());
         menu.Items.Add(new ToolStripSeparator());
 
-        foreach (var g in _config.Games.Where(g => g.IsEnrolledHere))
+        // One entry per game (tasks/multi-emulator-games): a game saved with several emulators here is one item, opening to
+        // one item per emulator, each with its own sync actions — every emulator's save still syncs on its own.
+        foreach (var title in _config.Games.Where(g => g.IsEnrolledHere).GroupBy(g => g.Title?.Id ?? g.GameId))
         {
-            var game = g;
-            var sub = new ToolStripMenuItem(game.Name);
-            sub.DropDownItems.Add("Force Pull (get latest)", null, (_, _) => FireAndForget(async () =>
+            var trees = title.ToList();
+            if (trees.Count == 1)
             {
-                // Checked here as well as in the engine so the toast names the real reason. The
-                // engine refuses regardless; this is only about what the user is told.
-                if (GameActivity.IsActive(game, out var proc))
-                {
-                    Notify($"{game.Name}: can't pull while the game is running" +
-                           (proc is null ? "" : $" ({proc}.exe)") + ". Close it and try again.");
-                    return;
-                }
-                // The engine's own answer, not an assumption: a server that did not reply used to
-                // be announced as "force-pulled latest save".
-                Notify(await _engine.PullAsync(game, force: true) switch
-                {
-                    PullOutcome.Restored => $"{game.Name}: force-pulled latest save.",
-                    var other => SyncEngine.DescribePull(game, other),
-                });
-                // A force-pull never resolves an open ConflictFlag itself (unlike force-push, which
-                // Phase 2 already closes server-side) — it only overwrites this machine's local copy.
-                // Surface it rather than leave the user thinking Force Pull was the fix.
-                await CheckConflictsAndRaiseAsync();
-            }));
-            sub.DropDownItems.Add("Force Push (send mine)", null, (_, _) => FireAndForget(async () =>
+                var item = new ToolStripMenuItem(trees[0].Title?.Name ?? trees[0].Name);
+                AddGameActions(item, trees[0]);
+                menu.Items.Add(item);
+                continue;
+            }
+            var entry = new ToolStripMenuItem(trees[0].Title?.Name ?? trees[0].Name);
+            foreach (var tree in trees.OrderBy(t => TreeLabel(t, trees), StringComparer.OrdinalIgnoreCase))
             {
-                await _engine.PushAsync(game, force: true);
-                Notify($"{game.Name}: force-pushed local save.");
-                await CheckConflictsAndRaiseAsync();
-            }));
-            menu.Items.Add(sub);
+                var item = new ToolStripMenuItem(TreeLabel(tree, trees));
+                AddGameActions(item, tree);
+                entry.DropDownItems.Add(item);
+            }
+            menu.Items.Add(entry);
         }
         if (_config.Games.Any(g => g.IsEnrolledHere))
             menu.Items.Add(new ToolStripSeparator());
@@ -409,6 +396,58 @@ internal sealed class TrayContext : ApplicationContext
         var old = _icon.ContextMenuStrip;
         _icon.ContextMenuStrip = menu;
         old?.Dispose();
+    }
+
+    /// <summary>A tree's name inside its title: its emulator and edition ("RetroArch · Rev 0"), the game's own name when two
+    /// trees here would read alike.</summary>
+    private static string TreeLabel(TrackedGame tree, IReadOnlyList<TrackedGame> trees)
+    {
+        static string Base(TrackedGame t) =>
+            string.Join(" · ", new[] { (t.Source?.Kind == GameSourceKinds.Emulator ? t.Source.Detail : null) ?? t.Emulators.FirstOrDefault() ?? t.Name, t.Title?.Edition }
+                .Where(s => !string.IsNullOrWhiteSpace(s)));
+        return trees.Any(t => t != tree && Base(t) == Base(tree)) ? tree.Name : Base(tree);
+    }
+
+    /// <summary>Sync, Push now and Pull latest — what the game's page offers, never forced — then the forced pair.</summary>
+    private void AddGameActions(ToolStripMenuItem sub, TrackedGame game)
+    {
+        void Run(GameSyncMode mode) => FireAndForget(async () =>
+        {
+            Notify($"{game.Name}: {await _engine.SyncGameAsync(game, mode, CancellationToken.None)}");
+            await CheckConflictsAndRaiseAsync();
+        });
+        sub.DropDownItems.Add("Sync", null, (_, _) => Run(GameSyncMode.Sync));
+        sub.DropDownItems.Add("Push now", null, (_, _) => Run(GameSyncMode.Push));
+        sub.DropDownItems.Add("Pull latest", null, (_, _) => Run(GameSyncMode.Pull));
+        sub.DropDownItems.Add(new ToolStripSeparator());
+        sub.DropDownItems.Add("Force Pull (get latest)", null, (_, _) => FireAndForget(async () =>
+        {
+            // Checked here as well as in the engine so the toast names the real reason. The
+            // engine refuses regardless; this is only about what the user is told.
+            if (GameActivity.IsActive(game, out var proc))
+            {
+                Notify($"{game.Name}: can't pull while the game is running" +
+                       (proc is null ? "" : $" ({proc}.exe)") + ". Close it and try again.");
+                return;
+            }
+            // The engine's own answer, not an assumption: a server that did not reply used to
+            // be announced as "force-pulled latest save".
+            Notify(await _engine.PullAsync(game, force: true) switch
+            {
+                PullOutcome.Restored => $"{game.Name}: force-pulled latest save.",
+                var other => SyncEngine.DescribePull(game, other),
+            });
+            // A force-pull never resolves an open ConflictFlag itself (unlike force-push, which
+            // Phase 2 already closes server-side) — it only overwrites this machine's local copy.
+            // Surface it rather than leave the user thinking Force Pull was the fix.
+            await CheckConflictsAndRaiseAsync();
+        }));
+        sub.DropDownItems.Add("Force Push (send mine)", null, (_, _) => FireAndForget(async () =>
+        {
+            await _engine.PushAsync(game, force: true);
+            Notify($"{game.Name}: force-pushed local save.");
+            await CheckConflictsAndRaiseAsync();
+        }));
     }
 
     private void StartFolderWatchers()

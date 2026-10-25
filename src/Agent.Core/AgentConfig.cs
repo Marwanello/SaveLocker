@@ -1052,6 +1052,9 @@ public sealed class TrackedGame
     /// <summary>The emulators any machine found the game through, as the server keeps them (<see cref="GameDto.Emulators"/>); empty
     /// for every other game. A pull waits while one of them runs here (<see cref="EmulatorProcesses"/>).</summary>
     public List<string> Emulators { get; set; } = new();
+    /// <summary>The title this game is one emulator's tree of, as the server groups it (tasks/multi-emulator-games); null for a
+    /// game shown on its own. Display only: the agent UI lists a title once, with a tab per tree.</summary>
+    public TitleInfo? Title { get; set; }
     /// <summary>The emulator profile the server keeps for the game (<see cref="EmulatorProfiles"/>); for a Switch game, which
     /// save its main folder is. Null when no machine has said.</summary>
     public string? EmulatorProfile { get; set; }
@@ -1330,4 +1333,10 @@ public sealed record EmulatorCopy
     public string? LastHash { get; set; }
     public bool Conflict { get; set; }
     public bool TellWhenReady { get; set; }
+}
+
+/// <summary>A tracked game's title (<see cref="GameDto.TitleId"/> and the fields beside it), as the server last said.</summary>
+public sealed record TitleInfo(Guid Id, string? Name, string? Edition, bool Lead)
+{
+    public static TitleInfo? From(GameDto g) => g.TitleId is { } id ? new(id, g.TitleName, g.TitleEdition, g.TitleLead) : null;
 }

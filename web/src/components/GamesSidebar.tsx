@@ -13,6 +13,8 @@ import { regionLabel } from './game/gameState';
 import { LAYOUT_OPTIONS, liveCommand, standing } from './game/gameState';
 import type { Layout } from './game/gameState';
 import type { OrganizeGroup } from './game/organize';
+import { EmulatorBadges } from './game/EmulatorTabs';
+import { holds, treesOf } from './game/titles';
 
 interface Props {
   games: GameSummary[];
@@ -43,9 +45,10 @@ interface Props {
 export function GamesSidebar({ games, groups, grouped, collapsed, onToggleGroup, controls, selectedId, onSelect, onAddGame, layout, onLayoutChange, commands, problems, empty }: Props) {
   function row(s: GameSummary) {
     const { game, head, totalStorageBytes } = s;
-    const current = game.id === selectedId;
+    const trees = treesOf(s);
+    const current = holds(s, selectedId);
     const st = standing(s, problems);
-    const live = liveCommand(game.id, commands);
+    const live = trees.map(t => liveCommand(t.game.id, commands)).find(Boolean) ?? null;
     // Two releases of one game share its name; the region tells them apart.
     const region = game.release ? regionLabel(game.release) : null;
     return (
@@ -64,8 +67,11 @@ export function GamesSidebar({ games, groups, grouped, collapsed, onToggleGroup,
       >
         <span className="row-span-2 self-center"><GameCover game={game} size="s" /></span>
         <span className="col-start-2 row-start-1 self-end text-[13px] font-semibold tracking-[-0.015em] truncate">{game.name}</span>
-        <span className="col-start-2 row-start-2 self-start text-[10.5px] text-dim truncate tabular-nums">
-          {region ? `${region} · ` : ''}{head ? ago(head.createdAt) : 'no saves yet'} · {fmtSize(totalStorageBytes)}
+        <span className="col-start-2 row-start-2 self-start flex items-center gap-1.5 min-w-0 text-[10.5px] text-dim tabular-nums">
+          {trees.length > 1 && <EmulatorBadges trees={trees} />}
+          <span className="truncate">
+            {trees.length > 1 ? `${trees.length} emulators · ` : region ? `${region} · ` : ''}{head ? ago(head.createdAt) : 'no saves yet'} · {fmtSize(totalStorageBytes)}
+          </span>
         </span>
         <span className="col-start-3 row-start-1 row-span-2 self-center flex items-center">
           {live

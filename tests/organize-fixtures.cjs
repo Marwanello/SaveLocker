@@ -26,6 +26,7 @@ if (!dir) {
 }
 const { organize, sortGames, DEFAULT_ORGANIZE } = require(path.join(dir, 'components', 'game', 'organize.js'));
 const { standing } = require(path.join(dir, 'components', 'game', 'gameState.js'));
+const { groupTitles } = require(path.join(dir, 'components', 'game', 'titles.js'));
 
 let pass = 0, fail = 0;
 function check(name, actual, expected) {
@@ -42,7 +43,12 @@ function mk(name, opts = {}) {
       enabled: opts.enabled ?? true,
       release: opts.release ?? null,
       emulators: opts.emulators ?? null,
+      titleId: opts.titleId ?? null,
+      titleName: opts.titleName ?? null,
+      titleLead: opts.titleLead ?? false,
+      titleEdition: opts.titleEdition ?? null,
     },
+    emulator: opts.emulator ?? null,
     head: opts.head ?? null,
     lease: null,
     hasOpenConflict: opts.conflict ?? false,
@@ -154,6 +160,39 @@ check('Status: Conflict, Needs attention, Synced, No saves yet, Disabled',
    ['Synced', [['', ['Synced']]]], ['No saves yet', [['', ['Fresh']]]], ['Disabled', [['', ['Disabled']]]]]);
 check('Status: every heading equals the row dot\'s own label',
   stGroups.every(g => g.subGroups[0].entries.every(s => standing(s, problems).label === g.label)), true);
+
+// ---- titles (tasks/multi-emulator-games): one row per game, one tree per emulator ----------------------
+const ds = { console: 'Nintendo DS', region: 'USA' }, wii = { console: 'Wii', region: 'USA' };
+const trees = [
+  mk('Metroid Prime - Hunters', { id: 'mph-md', titleId: 'T1', titleName: 'Metroid Prime - Hunters', titleLead: true, emulator: 'melonDS',
+    release: ds, size: 100, machineIds: ['m1'], head: { createdAt: at(2), machineId: 'm1' } }),
+  mk('Metroid Prime - Hunters (RetroArch)', { id: 'mph-ra', titleId: 'T1', titleName: 'Metroid Prime - Hunters', emulator: 'RetroArch',
+    release: ds, size: 50, machineIds: ['m2'], head: { createdAt: at(0), machineId: 'm2' } }),
+  mk('Metroid Prime Trilogy (PrimeHack)', { id: 'mpt-ph', titleId: 'T2', titleName: 'Metroid Prime Trilogy', emulator: 'PrimeHack',
+    release: wii, conflict: true, head: { createdAt: at(1), machineId: 'm1' } }),
+  mk('Metroid Prime Trilogy', { id: 'mpt-do', titleId: 'T2', titleName: 'Metroid Prime Trilogy', titleLead: true, emulator: 'Dolphin',
+    release: wii, head: { createdAt: at(3), machineId: 'm1' } }),
+  mk('Tomb Raider', { emulator: 'DuckStation', release: { console: 'PlayStation' }, head: { createdAt: at(1), machineId: 'm2' } }),
+];
+const titles = groupTitles(trees);
+check('Titles: one row each, named without the emulator suffix', names(titles),
+  ['Metroid Prime - Hunters', 'Metroid Prime Trilogy', 'Tomb Raider']);
+check('Titles: trees ordered by emulator', titles.map(t => t.trees.map(x => x.emulator)),
+  [['melonDS', 'RetroArch'], ['Dolphin', 'PrimeHack'], ['DuckStation']]);
+check('Titles: size is the sum, last synced the newest, machines the union',
+  [titles[0].totalStorageBytes, titles[0].head.machineId, titles[0].machineIds], [150, 'm2', ['m1', 'm2']]);
+check("Titles: a conflict in one tree is the title's status", standing(titles[1], new Set()).label, 'Conflict');
+check('Titles: a problem on one tree needs attention', standing(titles[0], new Set(['mph-ra'])).label, 'Needs attention');
+check('Titles: a game with no title is its own, unchanged', titles[2].game.name === 'Tomb Raider' && titles[2].trees.length === 1, true);
+check('Titles: Platform grouping lists a title under each emulator',
+  layout(organize(titles, { groupBy: 'platform', sortBy: 'name', dir: 1 }, { machines: [], problems: new Set() })),
+  [['Nintendo DS', [['melonDS', ['Metroid Prime - Hunters']], ['RetroArch', ['Metroid Prime - Hunters']]]],
+   ['PlayStation', [['', ['Tomb Raider']]]],
+   ['Wii', [['Dolphin', ['Metroid Prime Trilogy']], ['PrimeHack', ['Metroid Prime Trilogy']]]]]);
+check("Titles: Device grouping is the union of the trees' machines",
+  layout(organize(titles, { groupBy: 'device', sortBy: 'name', dir: 1 },
+    { machines: [{ id: 'm1', name: 'WinTest' }, { id: 'm2', name: 'DeckTest' }], problems: new Set() })),
+  [['WinTest', [['', ['Metroid Prime - Hunters', 'Metroid Prime Trilogy']]]], ['DeckTest', [['', ['Metroid Prime - Hunters', 'Tomb Raider']]]]]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

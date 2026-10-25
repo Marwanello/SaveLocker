@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Emulator Trees</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* tasks/multi-emulator-games Phase 6 — the agent UI (Windows tray and Deck Game Mode) showing a title as one game with
+   one tab per emulator tree, and "Copy this save to another emulator". Drawn with agent-ui's own tokens
+   (agent-ui/src/tokens.css) and a copy of the ui.css classes it uses, so it reads like the real thing. */
+:root {
+  color-scheme: dark;
+  --color-ink: #0f0f10; --color-panel: #141416; --color-raise: #191a1c; --color-tile: #1b1c1f; --color-hover: #202124;
+  --color-fg: #f0eee9; --color-dim: #a09d97; --color-faint: #817e78; --color-line: #242427; --color-row: #1d1d20;
+  --color-safe: #7fa96a; --color-watch: #d9a63f; --color-info: #7b9fd0; --color-accent: #e0533c; --color-on-accent: #160f0e;
+  --frame: #08080a;
+  --font-sans: 'Archivo', system-ui, sans-serif; --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --ease: cubic-bezier(.2, .8, .25, 1);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-ink: #f5f3ef; --color-panel: #fffefc; --color-raise: #f0ede8; --color-tile: #ebe7e0; --color-hover: #e8e3dc;
+  --color-fg: #191719; --color-dim: #57534d; --color-faint: #79756f; --color-line: #e2ddd5; --color-row: #eeeae3;
+  --color-safe: #4c7b3e; --color-watch: #8a6212; --color-info: #3d6aa8; --color-accent: #c0432c; --color-on-accent: #fff8f6; --frame: #dcd7cf;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --color-ink: #f5f3ef; --color-panel: #fffefc; --color-raise: #f0ede8; --color-tile: #ebe7e0; --color-hover: #e8e3dc;
+    --color-fg: #191719; --color-dim: #57534d; --color-faint: #79756f; --color-line: #e2ddd5; --color-row: #eeeae3;
+    --color-safe: #4c7b3e; --color-watch: #8a6212; --color-info: #3d6aa8; --color-accent: #c0432c; --color-on-accent: #fff8f6; --frame: #dcd7cf;
+  }
+}
+:root {
+  --color-accent-soft: color-mix(in oklab, var(--color-accent) 14%, var(--color-panel));
+  --color-accent-line: color-mix(in oklab, var(--color-accent) 42%, var(--color-panel));
+  --color-accent-ink:  color-mix(in oklab, var(--color-accent) 80%, var(--color-fg));
+  --color-safe-soft:   color-mix(in oklab, var(--color-safe) 14%, var(--color-panel));
+  --color-safe-line:   color-mix(in oklab, var(--color-safe) 40%, var(--color-panel));
+  --color-safe-ink:    color-mix(in oklab, var(--color-safe) 82%, var(--color-fg));
+  --color-watch-soft:  color-mix(in oklab, var(--color-watch) 14%, var(--color-panel));
+  --color-watch-line:  color-mix(in oklab, var(--color-watch) 40%, var(--color-panel));
+  --color-watch-ink:   color-mix(in oklab, var(--color-watch) 82%, var(--color-fg));
+  --color-info-soft:   color-mix(in oklab, var(--color-info) 16%, var(--color-panel));
+  --color-info-line:   color-mix(in oklab, var(--color-info) 40%, var(--color-panel));
+  --color-info-ink:    color-mix(in oklab, var(--color-info) 82%, var(--color-fg));
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--color-ink); color: var(--color-fg); font-family: var(--font-sans); font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+button { font: inherit; color: inherit; }
+@keyframes sl-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sl-toast-in { 0% { opacity: 0; transform: translateY(8px) scale(.97); } 60% { opacity: 1; transform: translateY(-2px) scale(1.01); } 100% { opacity: 1; transform: none; } }
+@keyframes sl-sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+
+/* ---- the page around the mockup ---- */
+.wrap { max-width: 1340px; margin: 0 auto; padding: 32px 16px 80px; display: flex; flex-direction: column; gap: 22px; }
+h1 { font-size: 28px; letter-spacing: -.03em; text-wrap: balance; line-height: 1.15; }
+.lede { max-width: 82ch; color: var(--color-dim); }
+.lede b, .notes b { color: var(--color-fg); }
+.eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-accent-ink); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; position: sticky; top: 0; z-index: 60;
+  background: var(--color-ink); padding: 10px 0; border-bottom: 1px solid var(--color-line); }
+.toolbar label { font-size: 11px; color: var(--color-faint); letter-spacing: .1em; text-transform: uppercase; margin-right: -8px; }
+.seg { display: inline-flex; border: 1px solid var(--color-line); border-radius: 999px; padding: 2px; background: var(--color-raise); flex-wrap: wrap; }
+.seg button { background: transparent; color: var(--color-dim); border: 0; font-size: 12.5px; padding: 5px 14px; border-radius: 999px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--color-panel); color: var(--color-fg); font-weight: 600; box-shadow: inset 0 0 0 1px var(--color-line); }
+.seg button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 8px 24px; list-style: none; }
+.notes li { font-size: 12.5px; color: var(--color-dim); padding-left: 14px; position: relative; }
+.notes li::before { content: ''; position: absolute; left: 0; top: .62em; width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); }
+.notes li.q::before { background: var(--color-info); }
+.vtitle { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.vtitle h2 { font-size: 20px; letter-spacing: -.02em; }
+.frame { background: var(--frame); border-radius: 16px; padding: 10px; overflow-x: auto; }
+.win { background: var(--color-ink); border: 1px solid var(--color-line); border-radius: 11px; overflow: hidden; margin: 0 auto; position: relative; }
+.win--tray { width: 1120px; height: 760px; }
+.win--deck { width: 1280px; height: 800px; border-radius: 6px; }
+.chrome { height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--color-panel); border-bottom: 1px solid var(--color-line);
+  font-size: 11.5px; color: var(--color-faint); }
+.chrome i { width: 10px; height: 10px; border-radius: 3px; background: var(--color-accent); }
+.chrome span:last-child { margin-left: auto; letter-spacing: .4em; }
+
+/* ---- agent-ui classes (copied from agent-ui/src/ui.css) ---- */
+.sl-app { height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--color-ink); position: relative; }
+.win--tray .sl-app { height: calc(100% - 30px); }
+.sl-topbar { display: flex; align-items: center; gap: 14px; flex: none; height: 52px; padding: 0 18px; background: var(--color-panel); border-bottom: 1px solid var(--color-line); }
+.sl-brand { display: flex; align-items: center; gap: 11px; }
+.sl-brand__mark { width: 30px; height: 30px; border-radius: 8px; background: var(--color-accent); display: grid; place-items: center; color: var(--color-on-accent); font-weight: 700; font-size: 14px; }
+.sl-brand__name { font-size: 15px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; }
+.sl-brand__sub { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--color-faint); line-height: 1.3; }
+.sl-body { flex: 1; min-height: 0; display: flex; }
+.sl-content { flex: 1; min-width: 0; position: relative; overflow: hidden; background: var(--color-ink); }
+.sl-page { position: absolute; inset: 0; overflow-y: auto; padding: 22px 24px 28px; display: flex; flex-direction: column; gap: 14px; }
+.sl-page > * { flex-shrink: 0; animation: sl-rise 260ms var(--ease) both; }
+.sl-page > :nth-child(2) { animation-delay: 26ms; } .sl-page > :nth-child(3) { animation-delay: 52ms; }
+.sl-page > :nth-child(4) { animation-delay: 78ms; } .sl-page > :nth-child(n+5) { animation-delay: 104ms; }
+.sl-grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.sl-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.sl-aside { width: 196px; flex: none; display: flex; flex-direction: column; gap: 3px; padding: 14px 10px; background: var(--color-panel); border-right: 1px solid var(--color-line); }
+.sl-nav { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; font-size: 13.5px; padding: 9px 12px; border-radius: 10px;
+  border: 1px solid transparent; background: none; color: var(--color-dim); cursor: pointer; transition: background-color .15s var(--ease), color .15s var(--ease), transform .15s var(--ease); }
+.sl-nav:hover { background: var(--color-raise); color: var(--color-fg); transform: translateX(2px); }
+.sl-nav[aria-current="page"] { background: var(--color-tile); border-color: var(--color-line); color: var(--color-fg); font-weight: 600; }
+.sl-count { margin-left: auto; font-size: 10px; font-weight: 700; line-height: 1.4; padding: 1px 7px; border-radius: 99px; background: var(--color-accent); color: var(--color-on-accent); }
+.sl-count--quiet { background: var(--color-tile); color: var(--color-dim); border: 1px solid var(--color-line); }
+.sl-aside__foot { margin-top: auto; padding: 10px 12px 0; border-top: 1px solid var(--color-line); font-size: 10.5px; line-height: 1.6; color: var(--color-dim); }
+.sl-aside__foot b { display: block; font-weight: 600; color: var(--color-fg); }
+.sl-hero { display: flex; align-items: center; gap: 14px; flex: none; padding: 13px 20px; background: var(--color-panel); border-bottom: 1px solid var(--color-line); }
+.sl-hero__badge { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; flex: none; font-weight: 700; }
+.sl-hero__badge--ok { background: var(--color-safe-soft); border: 1px solid var(--color-safe-line); color: var(--color-safe-ink); }
+.sl-hero__badge--crit { background: var(--color-accent-soft); border: 1px solid var(--color-accent-line); color: var(--color-accent-ink); }
+.sl-hero__main { flex: 1; min-width: 0; }
+.sl-hero__title { font-size: 18px; font-weight: 700; letter-spacing: -.03em; line-height: 1.2; }
+.sl-hero__detail { font-size: 11.5px; color: var(--color-dim); margin-top: 3px; }
+.sl-hero__right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.sl-meter { height: 6px; border-radius: 99px; background: var(--color-tile); overflow: hidden; margin-top: 9px; }
+.sl-meter > i { display: block; height: 100%; width: 40%; background: var(--color-safe); border-radius: 99px; animation: sl-sweep 1.4s ease-in-out infinite; }
+.sl-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; line-height: 1.2; padding: 8px 15px; border-radius: 99px;
+  border: 1px solid var(--color-line); background: var(--color-raise); color: var(--color-fg); cursor: pointer; white-space: nowrap;
+  transition: background-color .15s var(--ease), transform .15s var(--ease), filter .15s var(--ease); }
+.sl-btn:hover:not(:disabled) { background: var(--color-hover); transform: translateY(-1px); }
+.sl-btn:active:not(:disabled) { transform: scale(.96); }
+.sl-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-btn:disabled { opacity: .5; cursor: default; }
+.sl-btn--primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); font-weight: 600; }
+.sl-btn--primary:hover:not(:disabled) { background: var(--color-accent); filter: brightness(1.1); }
+.sl-btn--quiet { background: transparent; border-color: transparent; color: var(--color-dim); }
+.sl-btn--sm { padding: 5px 11px; font-size: 12px; }
+.sl-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; line-height: 1.3; white-space: nowrap; padding: 4px 10px; border-radius: 99px;
+  border: 1px solid var(--color-line); color: var(--color-dim); background: var(--color-raise); }
+.sl-chip--ok { color: var(--color-safe-ink); border-color: var(--color-safe-line); background: var(--color-safe-soft); }
+.sl-chip--warn { color: var(--color-watch-ink); border-color: var(--color-watch-line); background: var(--color-watch-soft); }
+.sl-chip--crit { color: var(--color-accent-ink); border-color: var(--color-accent-line); background: var(--color-accent-soft); }
+.sl-chip--info { color: var(--color-info-ink); border-color: var(--color-info-line); background: var(--color-info-soft); }
+button.sl-chip { cursor: pointer; }
+.sl-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; background: var(--color-faint); }
+.sl-dot--ok { background: var(--color-safe); } .sl-dot--warn { background: var(--color-watch); }
+.sl-dot--crit { background: var(--color-accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 22%, transparent); }
+.sl-card { background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 14px; overflow: hidden; }
+.sl-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 17px; border-bottom: 1px solid var(--color-line); }
+.sl-card > header h3 { font-size: 14px; font-weight: 600; letter-spacing: -.02em; display: flex; gap: 8px; align-items: center; }
+.sl-card__body { padding: 18px; }
+.sl-stat { background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 14px; padding: 15px 16px; }
+.sl-stat dt { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--color-faint); }
+.sl-stat dd:nth-of-type(1) { margin-top: 8px; font-size: 25px; font-weight: 700; letter-spacing: -.03em; line-height: 1; }
+.sl-stat dd + dd { margin-top: 6px; font-size: 11.5px; color: var(--color-dim); }
+.sl-banner { --tone-soft: var(--color-tile); --tone-line: var(--color-line); --tone-ink: var(--color-fg);
+  display: flex; align-items: center; gap: 13px; padding: 13px 16px; border-radius: 14px; border: 1px solid var(--tone-line); background: var(--tone-soft); }
+.sl-banner--warn { --tone-soft: var(--color-watch-soft); --tone-line: var(--color-watch-line); --tone-ink: var(--color-watch-ink); }
+.sl-banner--crit { --tone-soft: var(--color-accent-soft); --tone-line: var(--color-accent-line); --tone-ink: var(--color-accent-ink); }
+.sl-banner--info { --tone-soft: var(--color-info-soft); --tone-line: var(--color-info-line); --tone-ink: var(--color-info-ink); }
+.sl-banner__txt { flex: 1; min-width: 0; }
+.sl-banner__txt strong { color: var(--tone-ink); font-weight: 600; font-size: 13.5px; }
+.sl-banner__txt span { display: block; color: var(--color-dim); font-size: 12px; line-height: 1.5; margin-top: 3px; }
+.sl-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px 16px; font-size: 12.5px; }
+.sl-kv dt { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--color-faint); padding-top: 3px; }
+.sl-kv dd { color: var(--color-fg); min-width: 0; overflow-wrap: anywhere; }
+.sl-empty { padding: 26px 18px; text-align: center; color: var(--color-dim); font-size: 12.5px; }
+.sl-toast { position: absolute; right: 20px; bottom: 20px; z-index: 50; max-width: 440px; background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 12px;
+  padding: 12px 16px; font-size: 13px; line-height: 1.5; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .6); animation: sl-toast-in 340ms var(--ease) both; }
+.sl-pad .sl-toast { bottom: 64px; }
+.sl-seg { display: inline-flex; background: var(--color-raise); border: 1px solid var(--color-line); border-radius: 99px; padding: 3px; gap: 2px; }
+.sl-seg button { font-size: 12.5px; font-weight: 600; padding: 6px 14px; border-radius: 99px; border: 0; cursor: pointer; background: transparent; color: var(--color-dim); }
+.sl-seg button[aria-pressed="true"] { background: var(--color-panel); color: var(--color-fg); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+.sl-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 12px; row-gap: 3px; align-items: center; width: 100%;
+  text-align: left; padding: 10px 12px; background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 12px; cursor: pointer;
+  transition: transform .15s var(--ease), background-color .15s var(--ease); }
+.sl-row:hover { transform: translateX(2px); background: var(--color-raise); }
+.sl-row:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-row__cover { grid-row: span 2; width: 38px; height: 38px; border-radius: 9px; overflow: hidden; display: flex; }
+.sl-row__title { grid-column: 2; font-size: 13px; font-weight: 600; align-self: end; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-row__sub { grid-column: 2; font-size: 11px; color: var(--color-dim); align-self: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+.sl-row__end { grid-column: 3; grid-row: 1 / span 2; display: flex; align-items: center; gap: 8px; }
+.sl-art { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: #fff; font-weight: 700; letter-spacing: -.02em; }
+.sl-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sl-search { flex: 1; min-width: 160px; max-width: 320px; padding: 7px 12px; font: inherit; font-size: 12.5px; color: var(--color-fg); background: var(--color-raise);
+  border: 1px solid var(--color-line); border-radius: 99px; }
+.sl-search::placeholder { color: var(--color-dim); }
+.sl-search:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-list { display: flex; flex-direction: column; gap: 8px; }
+.sl-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px; }
+.sl-tile { display: flex; flex-direction: column; gap: 8px; text-align: left; cursor: pointer; background: none; border: 0; padding: 0; transition: transform .15s var(--ease); }
+.sl-tile:hover { transform: translateY(-2px); }
+.sl-tile__cover { aspect-ratio: 2 / 3; border-radius: 12px; overflow: hidden; border: 1px solid var(--color-line); position: relative; display: flex; }
+.sl-tile__cover .sl-art { font-size: 30px; }
+.sl-tile__badge { position: absolute; left: 8px; bottom: 8px; display: inline-flex; padding: 4px; border-radius: 8px; background: color-mix(in oklab, var(--color-ink) 72%, transparent); }
+.sl-tile__pin { position: absolute; top: 8px; right: 8px; }
+.sl-tile__name { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-tile__sub { font-size: 11px; color: var(--color-dim); margin-top: -5px; }
+.sl-gamehead { display: flex; align-items: center; gap: 16px; }
+.sl-gamehead__cover { width: 88px; aspect-ratio: 2 / 3; border-radius: 12px; overflow: hidden; border: 1px solid var(--color-line); flex: none; display: flex; }
+.sl-gamehead__cover .sl-art { font-size: 24px; }
+.sl-gamehead__main { min-width: 0; flex: 1; }
+.sl-gamehead__title { font-size: 22px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; }
+.sl-gamehead__chips { display: flex; gap: 7px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+.sl-source { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.3; white-space: nowrap; padding: 4px 11px 4px 9px; border-radius: 99px;
+  border: 1px solid var(--color-line); background: var(--color-raise); color: var(--color-fg); }
+.sl-source__kind { color: var(--color-dim); } .sl-source__sep { color: var(--color-faint); } .sl-source__detail { font-weight: 600; }
+.sl-release__dot { width: 4px; height: 4px; border-radius: 50%; background: var(--color-accent); }
+.sl-tag { font-size: 11px; line-height: 1.3; color: var(--color-dim); white-space: nowrap; border: 1px solid var(--color-line); border-radius: 6px; padding: 2px 7px; }
+.sl-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sl-back { align-self: flex-start; }
+.sl-group { display: flex; flex-direction: column; gap: 8px; }
+.sl-group__head { display: flex; align-items: baseline; gap: 10px; margin-top: 6px; }
+.sl-group__head h3 { font-size: 13px; font-weight: 700; }
+.sl-group__head span { font-size: 12px; color: var(--color-dim); }
+.sl-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.sl-table th { text-align: left; font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--color-faint); padding: 10px 17px; border-bottom: 1px solid var(--color-line); }
+.sl-table td { padding: 10px 17px; border-bottom: 1px solid var(--color-row); vertical-align: middle; }
+.sl-table tr:last-child td { border-bottom: 0; }
+.sl-table td.sl-dim { color: var(--color-dim); }
+.sl-num { text-align: right !important; }
+.sl-mono { font-family: var(--font-mono); font-size: 11.5px; }
+.sl-path { font-family: var(--font-mono); font-size: 11.5px; color: var(--color-dim); overflow-wrap: anywhere; }
+.sl-plays { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.sl-plays__opt { display: flex; align-items: flex-start; gap: 11px; text-align: left; background: var(--color-raise); border: 1px solid var(--color-line); border-radius: 12px; padding: 13px 14px; cursor: pointer; }
+.sl-plays__opt:hover:not(:disabled) { border-color: var(--color-accent-line); background: var(--color-hover); }
+.sl-plays__opt:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-plays__opt[aria-checked="true"] { background: var(--color-accent-soft); border-color: var(--color-accent-line); }
+.sl-plays__opt:disabled { cursor: not-allowed; border-style: dashed; background: transparent; }
+.sl-plays__opt:disabled b { color: var(--color-dim); }
+.sl-plays__radio { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--color-faint); display: grid; place-items: center; }
+.sl-plays__opt[aria-checked="true"] .sl-plays__radio { border-color: var(--color-accent); }
+.sl-plays__opt[aria-checked="true"] .sl-plays__radio::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); }
+.sl-plays__txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sl-plays__txt b { font-size: 14px; font-weight: 600; display: flex; gap: 7px; align-items: center; }
+.sl-plays__txt span { font-size: 12px; color: var(--color-dim); line-height: 1.4; }
+.sl-plays__txt .emu { color: #fff; font-size: 9px; }
+.sl-plays__txt .ok { color: var(--color-safe-ink); } .sl-plays__txt .no { color: var(--color-watch-ink); }
+.sl-scrim { position: absolute; inset: 0; z-index: 40; background: rgba(8, 8, 9, .62); display: grid; place-items: center; padding: 24px; }
+.sl-ask { width: 100%; max-width: 620px; max-height: calc(100% - 24px); overflow: auto; background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 14px;
+  padding: 18px 20px; animation: sl-rise 200ms var(--ease) both; box-shadow: 0 30px 80px -30px rgba(0, 0, 0, .9); }
+.sl-ask__title { font-size: 15px; font-weight: 700; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; }
+.sl-ask__body { font-size: 12.5px; color: var(--color-dim); line-height: 1.55; display: flex; flex-direction: column; gap: 12px; }
+.sl-ask__body b { color: var(--color-fg); }
+.sl-ask__label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--color-faint); margin-bottom: -4px; }
+.sl-ask__warn { padding: 8px 10px; border: 1px solid var(--color-watch-line); border-radius: 8px; background: var(--color-watch-soft); color: var(--color-watch-ink); }
+.sl-ask__info { padding: 8px 10px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-raise); }
+.sl-ask__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.sl-vpick { display: flex; flex-direction: column; gap: 2px; background: var(--color-raise); border: 1px solid var(--color-line); border-radius: 10px; padding: 5px; }
+.sl-vpick button { display: flex; align-items: center; gap: 10px; text-align: left; border: 0; background: transparent; border-radius: 7px; padding: 7px 9px; cursor: pointer; font-size: 12.5px; }
+.sl-vpick button:hover, .sl-vpick button[aria-checked="true"] { background: var(--color-hover); }
+.sl-vpick i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--color-faint); flex: none; }
+.sl-vpick button[aria-checked="true"] i { border-color: var(--color-accent); background: var(--color-accent); }
+.sl-vpick small { margin-left: auto; color: var(--color-dim); font-size: 11.5px; }
+.sl-map { display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: 11.5px; background: var(--color-ink); border: 1px solid var(--color-line); border-radius: 10px; padding: 9px 11px; }
+.sl-map div { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 8px; align-items: center; color: var(--color-dim); }
+.sl-map span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-map .to { color: var(--color-fg); } .sl-map .arr { color: var(--color-accent-ink); }
+
+/* ---- new in Phase 6: emulator badge + the tab strip ---- */
+.emu { display: inline-flex; align-items: center; justify-content: center; height: 16px; min-width: 18px; padding: 0 4px; border-radius: 5px;
+  font-family: var(--font-mono); font-size: 9px; font-weight: 500; color: #fff; flex: none; }
+.emu--l { height: 22px; min-width: 24px; font-size: 10.5px; border-radius: 6px; }
+.stack { display: inline-flex; }
+.stack .emu { box-shadow: 0 0 0 2px var(--color-panel); }
+.stack .emu + .emu { margin-left: -3px; }
+.sl-emutabs { display: flex; gap: 6px; border-bottom: 1px solid var(--color-line); align-items: stretch; }
+.sl-emutab { display: flex; align-items: center; gap: 10px; padding: 9px 14px 11px; background: transparent; border: 0; border-bottom: 2px solid transparent; cursor: pointer;
+  margin-bottom: -1px; color: var(--color-dim); text-align: left; border-radius: 10px 10px 0 0; transition: background-color .15s var(--ease), color .15s var(--ease); }
+.sl-emutab:hover { color: var(--color-fg); background: var(--color-raise); }
+.sl-emutab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.sl-emutab[aria-selected="true"] { border-bottom-color: var(--color-accent); color: var(--color-fg); }
+.sl-emutab__t1 { display: block; font-size: 13px; font-weight: 600; }
+.sl-emutab__t2 { display: block; font-size: 10.5px; color: var(--color-faint); }
+.sl-emutab__t2.away { font-style: italic; }
+.sl-emutab__pad { margin-left: auto; align-self: center; display: inline-flex; gap: 6px; align-items: center; font-size: 11px; color: var(--color-faint); }
+.sl-treelist { display: flex; flex-direction: column; }
+.sl-treelist button { display: flex; align-items: center; gap: 10px; padding: 11px 17px; border: 0; border-bottom: 1px solid var(--color-row); background: transparent; text-align: left; cursor: pointer; }
+.sl-treelist button:last-child { border-bottom: 0; }
+.sl-treelist button:hover { background: var(--color-hover); }
+.sl-treelist button.on { background: var(--color-raise); }
+.sl-treelist b { font-size: 13px; font-weight: 600; }
+.sl-treelist small { display: block; font-size: 11px; color: var(--color-dim); }
+.sl-treelist .end { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+/* ---- Deck: controller glyphs and the hint bar ---- */
+.gl { display: none; }
+.sl-pad .gl { display: inline-grid; place-items: center; flex: none; width: 19px; height: 19px; border-radius: 50%; background: #2a2b2f; color: #fff;
+  font-family: var(--font-sans); font-size: 10px; font-weight: 700; line-height: 1; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+.sl-pad .gl--a { color: #7cc35a; } .sl-pad .gl--b { color: #e5574a; } .sl-pad .gl--x { color: #5b9de8; } .sl-pad .gl--y { color: #e8c349; }
+.sl-pad .gl--lb, .sl-pad .gl--rb, .sl-pad .gl--lt, .sl-pad .gl--rt { width: auto; padding: 0 6px; border-radius: 6px; font-size: 9px; }
+.sl-pad .gl--r3 { font-size: 8.5px; }
+.sl-btn--primary .gl { background: rgba(0, 0, 0, .28); }
+.sl-hintbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 45; display: flex; align-items: center; gap: 18px; padding: 7px 18px; min-height: 44px;
+  background: var(--color-panel); border-top: 1px solid var(--color-line); font-size: 12px; color: var(--color-dim); }
+.sl-hint { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; background: none; border: 0; color: inherit; cursor: default; }
+.sl-hint--hot { color: var(--color-fg); cursor: pointer; }
+.sl-hint--hot:hover b { text-decoration: underline; text-underline-offset: 3px; }
+.sl-hint b { font-weight: 500; }
+.sl-hintbar__spacer { flex: 1; }
+.sl-hintbar__pad { font-size: 10.5px; color: var(--color-faint); }
+.sl-pad .sl-app { padding-bottom: 44px; }
+.sl-pad .sl-emutab:hover { background: transparent; }
+.sl-pad .pad-focused { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.win--deck .sl-nav { font-size: 14.5px; padding: 11px 13px; }
+.win--deck .sl-emutab { padding: 11px 16px 13px; }
+.win--deck .sl-emutab__t1 { font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <span class="eyebrow">tasks/multi-emulator-games · Phase 6</span>
+    <h1>The agent shows one game per title, and copies a save to another emulator</h1>
+    <p class="lede">The console already shows <b>Metroid Prime - Hunters</b> once, with a tab per emulator (Phases 1–5, variation A).
+      Phase 6 brings the same to the <b>agent UI</b>: the Windows tray window and the Deck in Game Mode, which run the same React app.
+      It also adds <b>Copy this save to another emulator</b>, for pairs whose formats match: DS <span class="sl-mono">.sav</span> ⇄ RetroArch
+      <span class="sl-mono">.srm</span>, and Dolphin ⇄ PrimeHack. Everything in the window is clickable. Open a game, switch emulator tabs, and use
+      <b>Copy to…</b> on a version. Switch the surface to see the Deck's view with controller hints.</p>
+  </div>
+
+  <div class="toolbar">
+    <label>Surface</label>
+    <div class="seg" role="group" aria-label="Surface">
+      <button data-surface="tray" aria-pressed="true">Windows tray · WinTest</button>
+      <button data-surface="deck" aria-pressed="false">Deck Game Mode · DeckTest</button>
+    </div>
+    <label>Theme</label>
+    <div class="seg" role="group" aria-label="Theme">
+      <button data-theme-btn="auto" aria-pressed="true">Auto</button>
+      <button data-theme-btn="dark" aria-pressed="false">Dark</button>
+      <button data-theme-btn="light" aria-pressed="false">Light</button>
+    </div>
+    <div class="seg" role="group" aria-label="Jump to" style="margin-left:auto">
+      <button data-jump="list" aria-pressed="false">Games list</button>
+      <button data-jump="mph" aria-pressed="false">Hunters</button>
+      <button data-jump="mpt" aria-pressed="false">Trilogy (conflict)</button>
+      <button data-jump="copy" aria-pressed="false">Copy dialog</button>
+    </div>
+  </div>
+
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <div class="vtitle"><h2 id="sname"></h2><span class="eyebrow" id="stag"></span></div>
+    <ul class="notes" id="snotes"></ul>
+  </section>
+
+  <div class="frame"><div id="win"></div></div>
+
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <div class="vtitle"><h2>Copy this save to another emulator</h2><span class="eyebrow">needs its own decision</span></div>
+    <ul class="notes">
+      <li><b>Only known pairs.</b> Copy is offered only where SaveLocker knows the formats match. Other trees in the title are listed but greyed, with the reason.</li>
+      <li><b>Server-side, a new version.</b> The copy becomes a new version in the target tree, with the files renamed to the target's names. Nothing is written into a folder directly: every device that plays it in that emulator pulls it the usual way.</li>
+      <li><b>Nothing is lost.</b> The target's current Latest stays as an older version and can be restored. The source tree is not touched.</li>
+      <li><b>Blocked while it can't be safe:</b> when the target tree has an open conflict, or its emulator is running on this device.</li>
+      <li class="q"><b>Open:</b> should the copy run on the server (shown) or on the agent, which writes into the target folder here and pushes?</li>
+      <li class="q"><b>Open:</b> does the console get the same <b>Copy to…</b> on its version rows? Shown here only in the agent.</li>
+      <li class="q"><b>Open:</b> is the pair list a fixed table in code, or read from a manifest so new pairs need no release?</li>
+      <li class="q"><b>Open:</b> which control on the Deck switches emulator tab. Shown as <b>R3</b>, since LB/RB already move between sections.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+const EMU = {
+  melonds:   { name: 'melonDS',     tag: 'mD', color: '#4f7fbf', proc: 'melonDS.exe · melonDS' },
+  retroarch: { name: 'RetroArch',   tag: 'RA', color: '#5b5b66', core: 'melonDS DS core', proc: 'retroarch.exe · retroarch' },
+  dolphin:   { name: 'Dolphin',     tag: 'Do', color: '#2f8fb0', proc: 'Dolphin.exe · dolphin-emu' },
+  primehack: { name: 'PrimeHack',   tag: 'PH', color: '#c4672a', proc: 'PrimeHack.exe · primehack' },
+  pcsx2:     { name: 'PCSX2',       tag: 'P2', color: '#3d6ad6', proc: 'pcsx2-qt.exe · pcsx2-qt' },
+  duck:      { name: 'DuckStation', tag: 'DS', color: '#6a8f3a', proc: 'duckstation-qt.exe' },
+  switch:    { name: 'Eden · Ryujinx', tag: 'NX', color: '#d0423a', proc: 'eden.exe · Ryujinx' },
+  steam:     { name: 'Steam',       tag: 'St', color: '#25456b', proc: 'hollow_knight.exe' },
+};
+// Pairs whose formats match, and how a file's name changes on the way over.
+const PAIRS = {
+  'melonds>retroarch': { how: 'Same bytes. .sav is renamed .srm.', map: n => n.replace(/\.sav$/, '.srm') },
+  'retroarch>melonds': { how: 'Same bytes. .srm is renamed .sav.', map: n => n.replace(/\.srm$/, '.sav') },
+  'dolphin>primehack': { how: 'Same Wii save folder. Copied as is.', map: n => n },
+  'primehack>dolphin': { how: 'Same Wii save folder. Copied as is.', map: n => n },
+};
+const F = (n, s) => ({ n, s });
+const V = (id, when, m, size, what, files, extra = {}) => ({ id, when, m, size, what, files, ...extra });
+const SAV = 'Metroid Prime - Hunters (USA).sav', SRM = 'Metroid Prime - Hunters (USA).srm';
+const WII = [F('data/banner.bin', '24 KB'), F('data/save1.dat', '540 KB'), F('data/save2.dat', '540 KB')];
+const SEED = [
+  { id: 'mph', name: 'Metroid Prime - Hunters', console: 'DS', region: 'USA', hue: 205, trees: [
+    { emu: 'melonds', status: 'ok', folders: { WinTest: 'D:\\Emulation\\saves\\melonDS\\saves', DeckTest: '/home/deck/Emulation/saves/melonds/saves' },
+      versions: [ V('a91f', 'Today 09:15', 'WinTest', '256 KB', '1 file changed', [F(SAV, '256 KB')]),
+                  V('7c02', 'Yesterday 22:41', 'DeckTest', '256 KB', '1 file changed', [F(SAV, '256 KB')]),
+                  V('33be', 'Oct 18 20:03', 'DeckTest', '256 KB', 'First save', [F(SAV, '256 KB')]) ] },
+    { emu: 'retroarch', status: 'ok', folders: { WinTest: 'D:\\Emulation\\saves\\retroarch\\saves\\melonDS DS' },
+      versions: [ V('e410', 'Oct 19 18:30', 'WinTest', '256 KB', 'First save', [F(SRM, '256 KB')]) ] } ] },
+  { id: 'mpt', name: 'Metroid Prime Trilogy', console: 'Wii', region: 'USA', hue: 18, trees: [
+    { emu: 'dolphin', status: 'ok', folders: { WinTest: 'D:\\Emulation\\saves\\dolphin\\Wii\\title\\00010000\\524d3845', DeckTest: '/home/deck/Emulation/saves/dolphin/Wii/title/00010000/524d3845' },
+      versions: [ V('1257', 'Today 07:35', 'WinTest', '1.1 MB', '2 files changed', WII), V('39ac', 'Yesterday 12:07', 'DeckTest', '1.1 MB', 'First save', WII) ] },
+    { emu: 'primehack', status: 'crit', folders: { WinTest: 'D:\\Emulation\\saves\\primehack\\Wii\\title\\00010000\\524d3845', DeckTest: '/home/deck/Emulation/saves/primehack/Wii/title/00010000/524d3845' },
+      versions: [ V('c7d1', 'Today 08:02', 'DeckTest', '1.1 MB', '1 file changed', WII), V('b2e9', 'Today 07:58', 'WinTest', '1.1 MB', 'Conflicting', WII, { backup: true }),
+                  V('04a6', 'Oct 17 19:40', 'WinTest', '1.1 MB', 'First save', WII) ] } ] },
+  { id: 'pop', name: 'Prince of Persia - Warrior Within', console: 'PS2', region: 'Europe', hue: 40, trees: [
+    { emu: 'pcsx2', status: 'ok', folders: { WinTest: 'D:\\Emulation\\saves\\pcsx2\\saves\\Mcd001.ps2', DeckTest: '/home/deck/Emulation/saves/pcsx2/saves/Mcd001.ps2' },
+      versions: [ V('58d0', 'Oct 19 17:57', 'DeckTest', '412 KB', '3 files changed', []), V('41aa', 'Oct 19 11:20', 'WinTest', '410 KB', 'First save', []) ] } ] },
+  { id: 'tr', name: 'Tomb Raider', console: 'PS1', region: 'USA', hue: 130, trees: [
+    { emu: 'duck', status: 'ok', folders: { WinTest: 'D:\\Emulation\\saves\\duckstation\\memcards' },
+      versions: [ V('90f3', 'Today 10:02', 'WinTest', '128 KB', 'First save', []) ] } ] },
+  { id: 'totk', name: 'The Legend of Zelda: Tears of the Kingdom', console: 'Switch', region: '', hue: 95, trees: [
+    { emu: 'switch', status: 'ok', folders: { WinTest: 'D:\\Emulation\\saves\\eden\\nand\\user\\save\\…\\0100F2C0115B6000', DeckTest: '/home/deck/Emulation/saves/ryujinx/saves/0000000000000001' },
+      versions: [ V('6611', 'Oct 18 21:14', 'DeckTest', '6.4 MB', '4 files changed', []) ] } ] },
+  { id: 'hk', name: 'Hollow Knight', console: '', region: '', hue: 260, trees: [
+    { emu: 'steam', status: 'ok', folders: { WinTest: '%USERPROFILE%\\AppData\\LocalLow\\Team Cherry\\Hollow Knight' },
+      versions: [ V('2b7e', 'Oct 16 23:51', 'WinTest', '3.0 MB', '2 files changed', []) ] } ] },
+];
+
+const SURFACES = {
+  tray: { name: 'Windows tray', tag: 'WinTest · mouse and keyboard', machine: 'WinTest',
+    notes: ['<b>Games list:</b> one row per title. Its second line shows the emulators’ badges and names; the row’s chip names the tree in conflict.',
+      '<b>Game page:</b> the head (cover, name, console, region) is the title’s. A tab per emulator sits under it, and every card below follows the tab.',
+      '<b>Sync, Push and Pull</b> act on the open tab only, and say which emulator. <b>Sync all</b> in the header still covers every tree.',
+      '<b>A one-emulator game</b> has no tabs: its page is today’s, unchanged.'] },
+  deck: { name: 'Deck Game Mode', tag: 'DeckTest · controller', machine: 'DeckTest',
+    notes: ['<b>Same React app,</b> so the same rows and tabs, at Game Mode size, with the hint bar and glyphs on the bound buttons.',
+      '<b>R3 moves to the next emulator tab</b> on a game page (click the hint to try it). D-pad up from the cards reaches the tab strip too.',
+      '<b>A tree with no folder on this device</b> keeps its tab, greyed (<i>Not set up here</i>). Its page offers <b>Choose save folder</b>. Hunters’ RetroArch tree is that case on DeckTest.',
+      '<b>A title is listed under “On this machine”</b> when any of its trees has a folder here. Tomb Raider and Hollow Knight only exist on WinTest.'] },
+};
+
+const clone = o => JSON.parse(JSON.stringify(o));
+const state = { surface: 'tray', view: 'games', open: null, tab: {}, mode: 'list', query: '', modal: null, toast: null, games: clone(SEED) };
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const machine = () => SURFACES[state.surface].machine;
+const pad = () => state.surface === 'deck';
+const here = t => !!t.folders[machine()];
+const multi = g => g.trees.length > 1;
+const latest = t => t.versions.find(v => !v.backup);
+const conflictTree = g => g.trees.find(t => t.status === 'crit');
+const gl = id => `<span class="gl gl--${id}">${({ lb: 'LB', rb: 'RB', lt: 'LT', rt: 'RT', r3: 'R3' })[id] || id.toUpperCase()}</span>`;
+const badge = (k, l) => `<span class="emu${l ? ' emu--l' : ''}" style="background:${EMU[k].color}" title="${esc(EMU[k].name)}">${EMU[k].tag}</span>`;
+const stack = g => `<span class="stack">${g.trees.map(t => badge(t.emu)).join('')}</span>`;
+const art = g => `<span class="sl-art" style="background:linear-gradient(135deg, hsl(${g.hue} 45% 38%), hsl(${g.hue + 30} 35% 20%))">${esc(g.name.replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join(''))}</span>`;
+const dot = (t, away) => `<span class="sl-dot ${t.status === 'crit' ? 'sl-dot--crit' : away ? '' : 'sl-dot--ok'}"></span>`;
+const treeIx = g => Math.min(state.tab[g.id] ?? 0, g.trees.length - 1);
+const pairs = (g, t) => g.trees.filter(x => x !== t && PAIRS[`${t.emu}>${x.emu}`]);
+const emuName = t => EMU[t.emu].name;
+
+/* ---------- shell ---------- */
+function shell(inner) {
+  const conflicts = state.games.flatMap(g => g.trees.filter(t => t.status === 'crit').map(t => ({ g, t })));
+  const total = state.games.length;
+  const hero = conflicts.length
+    ? `<span class="sl-hero__badge sl-hero__badge--crit">!</span><div class="sl-hero__main"><div class="sl-hero__title">1 conflict waiting on you</div>
+        <div class="sl-hero__detail">${esc(conflicts[0].g.name)} · ${emuName(conflicts[0].t)}: this device and the cloud both changed. The other ${total - 1} games are in sync.</div></div>`
+    : `<span class="sl-hero__badge sl-hero__badge--ok">✓</span><div class="sl-hero__main"><div class="sl-hero__title">All ${total} games in sync</div><div class="sl-hero__detail">Last check a minute ago</div></div>`;
+  const nav = [['overview', 'Overview'], ['games', 'Games', total, true], ['addGames', 'Add Games'], ['conflicts', 'Conflicts', conflicts.length], ['activity', 'Activity'], ['settings', 'Settings']];
+  return `<div class="sl-app">
+    <div class="sl-topbar"><div class="sl-brand"><span class="sl-brand__mark">S</span><div><div class="sl-brand__name">SaveLocker</div><div class="sl-brand__sub">Agent · ${machine()}</div></div></div></div>
+    <div class="sl-hero">${hero}<div class="sl-hero__right"><button class="sl-btn sl-btn--primary" data-toast="Sync all: every tree of every game set up on ${machine()}">Sync all ${gl('y')}</button></div></div>
+    <div class="sl-body">
+      <aside class="sl-aside"><nav style="display:flex;flex-direction:column;gap:3px">${nav.map(([v, l, n, quiet]) =>
+        `<button class="sl-nav" ${v === 'games' ? 'aria-current="page"' : ''} data-nav="${v}"><span>${l}</span>${n ? `<span class="sl-count ${quiet ? 'sl-count--quiet' : ''}">${n}</span>` : ''}</button>`).join('')}</nav>
+        <div class="sl-aside__foot"><b>${machine()}</b><span>unraid.local:5177</span><span style="display:block">agent v0.5.11</span></div></aside>
+      <main class="sl-content">${inner}</main>
+    </div>
+    ${pad() ? hintbar() : ''}
+    ${state.modal ? modal() : ''}
+    ${state.toast ? `<div class="sl-toast"><span>${state.toast}</span></div>` : ''}
+  </div>`;
+}
+
+function hintbar() {
+  const g = state.open && state.games.find(x => x.id === state.open);
+  let hints;
+  if (state.modal) hints = [['a', state.modal.phase === 'working' ? 'Copying…' : 'Choose'], ['b', 'Cancel']];
+  else if (g) {
+    const t = g.trees[treeIx(g)];
+    hints = [['a', 'Select'], ['b', 'Back'], ...(here(t) ? [['x', `Sync ${emuName(t)}`], ['lt', 'Push'], ['rt', 'Pull']] : [])];
+    if (multi(g)) hints.push(['r3', 'Next emulator', 'tab']);
+  } else hints = [['a', 'Open'], ['b', 'Back'], ['x', 'Search'], ['r3', 'List / Grid', 'mode']];
+  return `<div class="sl-hintbar">${hints.map(([k, l, act]) => `<button class="sl-hint ${act ? 'sl-hint--hot' : ''}" ${act ? `data-hint="${act}"` : 'tabindex="-1"'}>${gl(k)}<b>${l}</b></button>`).join('')}
+    <span class="sl-hintbar__spacer"></span>${state.modal ? '' : `<span class="sl-hint">${gl('y')}<b>Sync all</b></span><span class="sl-hint">${gl('lb')}${gl('rb')}<b>Sections</b></span>`}
+    <span class="sl-hintbar__pad">Steam Deck controller</span></div>`;
+}
+
+/* ---------- Games list ---------- */
+function rowSub(g) {
+  if (!multi(g)) {
+    const t = g.trees[0];
+    return here(t) ? `<span class="sl-path" style="overflow:hidden;text-overflow:ellipsis">${esc(t.folders[machine()])}</span>` : 'No save folder on this machine';
+  }
+  const away = g.trees.filter(t => !here(t));
+  return `${stack(g)}<span>${g.trees.map(emuName).join(' · ')}${away.length ? ` · <i>${away.map(emuName).join(', ')} not set up here</i>` : ''}</span>`;
+}
+function rowEnd(g) {
+  const c = conflictTree(g);
+  return `${g.region ? `<span class="sl-tag">${g.region}</span>` : ''}${c ? `<span class="sl-chip sl-chip--crit">Conflict${multi(g) ? ` · ${emuName(c)}` : ''}</span>` : ''}`;
+}
+function gamesView() {
+  const q = state.query.trim().toLowerCase();
+  const vis = state.games.filter(g => !q || g.name.toLowerCase().includes(q) || g.trees.some(t => emuName(t).toLowerCase().includes(q)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const mine = vis.filter(g => g.trees.some(here)), rest = vis.filter(g => !g.trees.some(here));
+  const group = (title, note, list) => !list.length ? '' : `<section class="sl-group"><div class="sl-group__head"><h3>${title} · ${list.length}</h3><span>${note}</span></div>
+    ${state.mode === 'list'
+      ? `<div class="sl-list">${list.map(g => `<button class="sl-row" data-open="${g.id}"><span class="sl-row__cover">${art(g)}</span>
+          <span class="sl-row__title">${esc(g.name)}</span><span class="sl-row__sub">${rowSub(g)}</span><span class="sl-row__end">${rowEnd(g)}</span></button>`).join('')}</div>`
+      : `<div class="sl-wall">${list.map(g => `<button class="sl-tile" data-open="${g.id}"><span class="sl-tile__cover">${art(g)}
+          <span class="sl-tile__badge">${stack(g)}</span>${conflictTree(g) ? `<span class="sl-tile__pin"><span class="sl-chip sl-chip--crit">Conflict</span></span>` : ''}</span>
+          <span class="sl-tile__name">${esc(g.name)}</span><span class="sl-tile__sub">${multi(g) ? `${g.trees.length} emulators` : (g.region || emuName(g.trees[0]))}</span></button>`).join('')}</div>`}</section>`;
+  return `<div class="sl-page">
+    <div class="sl-tools">${gl('x')}<input type="search" class="sl-search" placeholder="Search by name, folder or emulator" aria-label="Search tracked games" value="${esc(state.query)}" data-search>
+      <span style="font-size:12px;color:var(--color-dim)">${vis.length === state.games.length ? `${vis.length} games` : `${vis.length} of ${state.games.length}`}</span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px">${gl('r3')}<div class="sl-seg" role="group" aria-label="Layout">
+        <button data-mode="list" aria-pressed="${state.mode === 'list'}">List</button><button data-mode="grid" aria-pressed="${state.mode === 'grid'}">Grid</button></div></div></div>
+    ${!vis.length ? `<div class="sl-card"><div class="sl-empty">No game matches “${esc(state.query.trim())}”.</div></div>` : ''}
+    ${group('On this machine', 'Save folder set here — these sync.', mine)}
+    ${group('On the server', 'Not set up on this machine yet. Open one to choose its save folder.', rest)}
+  </div>`;
+}
+
+/* ---------- Game page ---------- */
+function tabs(g, ti) {
+  if (!multi(g)) return '';
+  return `<div class="sl-emutabs" role="tablist" aria-label="Emulators">${g.trees.map((t, i) => {
+    const away = !here(t), l = latest(t);
+    return `<button class="sl-emutab" role="tab" aria-selected="${i === ti}" tabindex="${i === ti ? 0 : -1}" data-tab="${i}">${badge(t.emu, true)}
+      <span><span class="sl-emutab__t1">${emuName(t)}</span><span class="sl-emutab__t2 ${away ? 'away' : ''}">${away ? 'Not set up here' : `${t.versions.length} version${t.versions.length > 1 ? 's' : ''} · ${l.when}`}</span></span>
+      ${dot(t, away)}</button>`; }).join('')}
+    <span class="sl-emutab__pad">${gl('r3')}<span style="${pad() ? '' : 'display:none'}">Next emulator</span></span></div>`;
+}
+function gameView(g) {
+  const ti = treeIx(g), t = g.trees[ti], l = latest(t), isHere = here(t), emu = emuName(t), c = conflictTree(g);
+  const others = pairs(g, t);
+  const source = multi(g) ? '' : `<span class="sl-source"><span class="sl-source__kind">${t.emu === 'steam' ? 'Store' : 'Emulator'}</span><span class="sl-source__sep">›</span><span class="sl-source__detail">${emu}</span></span>`;
+  const head = `<div class="sl-gamehead"><div class="sl-gamehead__cover">${art(g)}</div><div class="sl-gamehead__main">
+      <h2 class="sl-gamehead__title">${esc(g.name)}</h2>
+      <div class="sl-gamehead__chips">${source}${g.console ? `<span class="sl-source">${g.console}${g.region ? ` · ${g.region}` : ''}<span class="sl-release__dot"></span></span>` : ''}
+        ${multi(g) ? `<span class="sl-chip">${stack(g)} ${g.trees.length} emulators</span>` : ''}
+        ${c ? `<button class="sl-chip sl-chip--crit" data-tab="${g.trees.indexOf(c)}">${multi(g) ? `Conflict in ${emuName(c)}` : 'Conflict'}</button>` : ''}</div></div></div>`;
+  const banners = [
+    t.status === 'crit' ? `<div class="sl-banner sl-banner--crit"><div class="sl-banner__txt"><strong>${esc(g.name)} · ${emu} is waiting on you</strong>
+      <span>This device and the cloud both changed ${emu}’s save. ${g.trees.filter(x => x !== t).map(emuName).join(' and ')}’s is fine and keeps syncing.</span></div>
+      <button class="sl-btn sl-btn--primary" data-toast="Opens Conflicts on ${esc(g.name)} · ${emu}">Choose ${gl('a')}</button></div>` : '',
+    !isHere ? `<div class="sl-banner sl-banner--warn"><div class="sl-banner__txt"><strong>${emu}’s save for ${esc(g.name)} has no folder on this device</strong>
+      <span>It is on your server${Object.keys(t.folders).length ? `, from ${Object.keys(t.folders).join(', ')}` : ''}. Choose ${emu}’s save folder to sync it here too. The other tree${g.trees.length > 2 ? 's are' : ' is'} not affected.</span></div>
+      <button class="sl-btn sl-btn--primary" data-toast="Folder picker opens on ${machine()} (PathBrowserModal), scoped to ${emu}">Choose save folder</button></div>` : '',
+  ].join('');
+  const actions = isHere ? `<div class="sl-actions">
+      <button class="sl-btn sl-btn--primary" data-toast="Syncing ${esc(g.name)} · ${emu} on ${machine()} — the other tree${g.trees.length > 2 ? 's' : ''} aren’t touched">Sync ${multi(g) ? `${emu} save` : 'this game'} ${gl('x')}</button>
+      <button class="sl-btn" data-toast="Pushed ${emu}’s save from ${machine()}">Push now ${gl('lt')}</button>
+      <button class="sl-btn" data-toast="Pulled ${emu}’s latest into ${esc(t.folders[machine()])}">Pull latest ${gl('rt')}</button>
+      ${others.length ? `<button class="sl-btn" data-copy="${l.id}">Copy to another emulator…</button>` : ''}
+      <button class="sl-btn sl-btn--quiet" data-toast="${emu}’s folder here matches the cloud">Check now</button></div>` : '';
+  const stats = isHere ? `<div class="sl-grid4">
+      <div class="sl-stat"><dl><dt>Save here</dt><dd>${l.size}</dd><dd>in ${emu}’s save folder now</dd></dl></div>
+      <div class="sl-stat"><dl><dt>Last push</dt><dd>${l.when.replace(/ \d\d:\d\d$/, '')}</dd><dd>Conflicts: Ask me</dd></dl></div>
+      <div class="sl-stat"><dl><dt>Versions</dt><dd>${t.versions.length}</dd><dd>${multi(g) ? `in ${emu}’s tree` : 'server default retention'}</dd></dl></div>
+      <div class="sl-stat"><dl><dt>Sent last push</dt><dd>${l.size}</dd><dd>only what changed goes over</dd></dl></div></div>` : '';
+  const server = `<div class="sl-card"><header><h3>On the server${multi(g) ? ` · ${badge(t.emu)} ${emu}` : ''}</h3></header><div class="sl-card__body"><dl class="sl-kv">
+      ${multi(g) ? `<dt>Emulator</dt><dd>${emu}${EMU[t.emu].core ? ` <span style="color:var(--color-dim)">· ${EMU[t.emu].core}</span>` : ''}</dd>` : ''}
+      <dt>Latest save</dt><dd>${l.when}</dd><dt>Saved by</dt><dd>${l.m}</dd><dt>Size</dt><dd>${l.size}</dd>
+      <dt>Devices</dt><dd>${Object.keys(t.folders).join(', ') || 'None yet'}</dd><dt>Checked out</dt><dd>By nobody</dd></dl></div></div>`;
+  const device = `<div class="sl-card"><header><h3>On this device</h3></header><div class="sl-card__body"><dl class="sl-kv">
+      <dt>Save folder</dt><dd class="${isHere ? 'sl-path' : ''}" style="${isHere ? 'color:var(--color-fg)' : ''}">${isHere ? esc(t.folders[machine()]) : 'Not set'}</dd>
+      <dt>Watches</dt><dd>${EMU[t.emu].proc.split(' · ')[pad() ? 1 : 0] || EMU[t.emu].proc}</dd>
+      <dt>Pull before launch</dt><dd>On (default)</dd><dt>Push after exit</dt><dd>On (default)</dd>
+      <dt>Launch</dt><dd>${pad() ? 'Through the Steam launch command (Settings)' : 'Watched by process name'}</dd></dl></div></div>`;
+  const versions = `<div class="sl-card"><header><h3>Versions on the server${multi(g) ? ` · ${emu}` : ''}</h3><span class="sl-chip">${t.versions.length}</span></header>
+    <table class="sl-table"><thead><tr><th>When</th><th>From</th><th class="sl-num">Size</th><th></th></tr></thead><tbody>
+    ${t.versions.map(v => `<tr><td>${v.when} ${v === l ? '<span class="sl-chip sl-chip--ok" style="margin-left:4px">Latest</span>' : ''}${v.backup ? '<span class="sl-chip sl-chip--warn" style="margin-left:4px">Conflicting</span>' : ''}
+        ${v.copied ? `<div style="font-size:11px;color:var(--color-info-ink);margin-top:3px">${esc(v.copied)}</div>` : ''}</td>
+      <td class="sl-dim">${v.m}</td><td class="sl-num sl-dim">${v.size}</td>
+      <td class="sl-num" style="white-space:nowrap">${isHere ? `<button class="sl-btn sl-btn--sm sl-btn--quiet" data-toast="Restore this ${emu} version on ${machine()}? Only ${emu}’s save folder changes.">Restore</button>` : ''}
+        ${others.length && !v.backup ? `<button class="sl-btn sl-btn--sm" data-copy="${v.id}">Copy to${others.length === 1 ? ` ${emuName(others[0])}` : ''}…</button>` : ''}</td></tr>`).join('')}
+    </tbody></table></div>`;
+  const treesCard = multi(g) ? `<div class="sl-card"><header><h3>This game’s emulators</h3><span style="font-size:11.5px;color:var(--color-dim)">Each keeps its own save</span></header>
+    <div class="sl-treelist">${g.trees.map((x, i) => `<button class="${i === ti ? 'on' : ''}" data-tab="${i}">${badge(x.emu, true)}<span><b>${emuName(x)}</b>
+      <small>${here(x) ? `${x.versions.length} versions · latest ${latest(x).when} from ${latest(x).m}` : 'Not set up on this device'}</small></span>
+      <span class="end">${x.status === 'crit' ? '<span class="sl-chip sl-chip--crit">Conflict</span>' : here(x) ? '<span class="sl-chip sl-chip--ok">In sync</span>' : '<span class="sl-chip">Server only</span>'}</span></button>`).join('')}</div>
+    <div style="padding:11px 17px;border-top:1px solid var(--color-line);font-size:11.5px;color:var(--color-dim)">Grouping and splitting are done in the console (Games → this game → ＋ Group with… / Split out).</div></div>`
+    : `<div class="sl-card"><header><h3>Manage</h3></header><div class="sl-card__body" style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="sl-btn sl-btn--sm" data-toast="Change folder…">Change folder…</button><button class="sl-btn sl-btn--sm sl-btn--quiet" data-toast="Stop tracking on ${machine()}…">Stop tracking here…</button></div></div>`;
+  return `<div class="sl-page">
+    <button class="sl-btn sl-btn--sm sl-btn--quiet sl-back" data-back>${gl('b')} ← Games</button>
+    ${head}${tabs(g, ti)}${banners}${actions}${stats}
+    <div class="sl-grid2">${server}${device}</div>
+    <div class="sl-grid2">${versions}${treesCard}</div>
+  </div>`;
+}
+
+/* ---------- Copy dialog ---------- */
+function openCopy(vid) {
+  const g = state.games.find(x => x.id === state.open), t = g.trees[treeIx(g)];
+  const targets = pairs(g, t);
+  const firstOk = targets.find(x => x.status !== 'crit');
+  state.modal = { from: treeIx(g), vid, to: firstOk ? g.trees.indexOf(firstOk) : null, phase: 'ask' };
+}
+function modal() {
+  const g = state.games.find(x => x.id === state.open), m = state.modal, src = g.trees[m.from], v = src.versions.find(x => x.id === m.vid);
+  const opts = g.trees.filter(x => x !== src);
+  const tgt = m.to == null ? null : g.trees[m.to];
+  const pair = tgt && PAIRS[`${src.emu}>${tgt.emu}`];
+  const why = x => {
+    if (!PAIRS[`${src.emu}>${x.emu}`]) return `<span class="no">Formats differ. Copy isn’t offered for this pair.</span>`;
+    if (x.status === 'crit') return `<span class="no">${emuName(x)} has an open conflict. Resolve it first.</span>`;
+    return `<span class="ok">${PAIRS[`${src.emu}>${x.emu}`].how}</span>`;
+  };
+  if (m.phase === 'working') return `<div class="sl-scrim"><div class="sl-ask"><div class="sl-ask__title">Copying to ${emuName(tgt)}…</div>
+    <div class="sl-ask__body"><span>Making a new ${emuName(tgt)} version from ${emuName(src)} <span class="sl-mono">${v.id}</span> on the server.</span>
+    <div class="sl-meter"><i></i></div></div></div></div>`;
+  const tl = tgt && latest(tgt);
+  return `<div class="sl-scrim" data-scrim><div class="sl-ask" role="dialog" aria-modal="true" aria-label="Copy save">
+    <div class="sl-ask__title">${badge(src.emu, true)} Copy a ${emuName(src)} save to another emulator</div>
+    <div class="sl-ask__body">
+      <div class="sl-ask__label">Copy</div>
+      <div class="sl-vpick" role="radiogroup">${src.versions.filter(x => !x.backup).map(x => `<button role="radio" aria-checked="${x.id === m.vid}" data-pickv="${x.id}"><i></i>
+        <span><b>${x.when}</b> · from ${x.m}${x === latest(src) ? ' · <span style="color:var(--color-safe-ink)">Latest</span>' : ''}</span><small class="sl-mono">${x.id} · ${x.size}</small></button>`).join('')}</div>
+      <div class="sl-ask__label">To</div>
+      <div class="sl-plays" role="radiogroup">${opts.map(x => { const i = g.trees.indexOf(x), ok = PAIRS[`${src.emu}>${x.emu}`] && x.status !== 'crit';
+        return `<button class="sl-plays__opt" role="radio" aria-checked="${m.to === i}" ${ok ? `data-pickt="${i}"` : 'disabled'}><span class="sl-plays__radio"></span>
+          <span class="sl-plays__txt"><b>${badge(x.emu)} ${emuName(x)}</b>${why(x)}<span>${here(x) ? `Set up on ${machine()}` : `Not set up on ${machine()}`} · latest ${latest(x).when}</span></span></button>`; }).join('')}</div>
+      ${pair ? `<div class="sl-ask__label">Files</div>
+      <div class="sl-map">${(v.files.length ? v.files : [F('(save files)', v.size)]).map(f => `<div><span>${esc(f.n)}</span><span class="arr">→</span><span class="to">${esc(pair.map(f.n))}</span><span>${f.s}</span></div>`).join('')}</div>
+      <div class="sl-ask__info">${emuName(tgt)}’s latest save (<span class="sl-mono">${tl.id}</span>, ${tl.when} from ${tl.m}) is <b>kept as an older version</b>, so you can restore it.
+        The copy becomes ${emuName(tgt)}’s new latest${here(tgt) ? `, and ${machine()} pulls it into ${emuName(tgt)}’s folder now` : ''}. Other devices that play it in ${emuName(tgt)} pull it on their next sync.
+        <b>${emuName(src)}’s save is not changed.</b></div>
+      ${here(tgt) ? `<div class="sl-ask__warn">Close ${emuName(tgt)} on ${machine()} first. The copy waits while it is running.</div>` : ''}` :
+      `<div class="sl-ask__warn">No emulator here can take this save right now.</div>`}
+    </div>
+    <div class="sl-ask__actions"><button class="sl-btn sl-btn--quiet" data-close>Cancel ${gl('b')}</button>
+      <button class="sl-btn sl-btn--primary" data-docopy ${pair ? '' : 'disabled'}>${tgt && pair ? `Copy to ${emuName(tgt)}` : 'Copy'} ${gl('a')}</button></div>
+  </div></div>`;
+}
+function doCopy() {
+  const g = state.games.find(x => x.id === state.open), m = state.modal, src = g.trees[m.from], tgt = g.trees[m.to];
+  const v = src.versions.find(x => x.id === m.vid), pair = PAIRS[`${src.emu}>${tgt.emu}`];
+  m.phase = 'working'; render();
+  setTimeout(() => {
+    const id = Math.random().toString(16).slice(2, 6);
+    tgt.versions.unshift({ id, when: 'Just now', m: machine(), size: v.size, what: 'Copied', files: v.files.map(f => ({ n: pair.map(f.n), s: f.s })), copied: `Copied from ${emuName(src)} · ${v.id}` });
+    state.modal = null; state.tab[g.id] = m.to;
+    toast(`Copied ${emuName(src)} ${v.id} to ${emuName(tgt)}. It is ${emuName(tgt)}’s latest now${here(tgt) ? ', pulled here' : ''}.`);
+    render();
+  }, 1300);
+}
+
+/* ---------- render + events ---------- */
+let toastTimer;
+function toast(msg) { state.toast = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => { state.toast = null; render(); }, 3200); }
+function render() {
+  const S = SURFACES[state.surface];
+  $('#sname').textContent = S.name; $('#stag').textContent = S.tag;
+  $('#snotes').innerHTML = S.notes.map(n => `<li>${n}</li>`).join('');
+  document.querySelectorAll('[data-surface]').forEach(b => b.setAttribute('aria-pressed', b.dataset.surface === state.surface));
+  const g = state.open && state.games.find(x => x.id === state.open);
+  const focus = document.activeElement && document.activeElement.matches('[data-search]');
+  $('#win').className = `win win--${state.surface}${pad() ? ' sl-pad' : ''}`;
+  $('#win').innerHTML = (pad() ? '' : '<div class="chrome"><i></i><span>SaveLocker</span><span>– ▢ ✕</span></div>') + shell(g ? gameView(g) : gamesView());
+  if (focus) { const s = $('[data-search]'); s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+}
+function cycleTab(dir = 1) {
+  const g = state.open && state.games.find(x => x.id === state.open);
+  if (!g || !multi(g)) return;
+  state.tab[g.id] = (treeIx(g) + dir + g.trees.length) % g.trees.length;
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-surface],[data-theme-btn],[data-jump],[data-nav],[data-open],[data-back],[data-tab],[data-mode],[data-copy],[data-pickv],[data-pickt],[data-close],[data-docopy],[data-hint],[data-toast],[data-scrim]');
+  if (!el) return;
+  const d = el.dataset;
+  if (d.scrim !== undefined) { if (e.target === el) state.modal = null; else return; }
+  else if (d.surface) { state.surface = d.surface; }
+  else if (d.themeBtn) {
+    if (d.themeBtn === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = d.themeBtn;
+    document.querySelectorAll('[data-theme-btn]').forEach(b => b.setAttribute('aria-pressed', b === el)); return;
+  }
+  else if (d.jump) {
+    state.modal = null;
+    if (d.jump === 'list') state.open = null;
+    else if (d.jump === 'copy') { state.open = 'mph'; state.tab.mph = 0; openCopy(latest(state.games[0].trees[0]).id); }
+    else { state.open = d.jump; if (d.jump === 'mpt') state.tab.mpt = 1; }
+    $('#win').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  else if (d.nav) { if (d.nav === 'games') state.open = null; else { toast(`${el.textContent.trim()} isn’t part of this mockup — it doesn’t change in Phase 6.`); } }
+  else if (d.open) { state.open = d.open; }
+  else if (d.back !== undefined) { state.open = null; }
+  else if (d.tab) { state.tab[state.open] = +d.tab; }
+  else if (d.mode) { state.mode = d.mode; }
+  else if (d.copy) { openCopy(d.copy); }
+  else if (d.pickv) { state.modal.vid = d.pickv; }
+  else if (d.pickt) { state.modal.to = +d.pickt; }
+  else if (d.close !== undefined) { state.modal = null; }
+  else if (d.docopy !== undefined) { doCopy(); return; }
+  else if (d.hint === 'tab') { cycleTab(); }
+  else if (d.hint === 'mode') { state.mode = state.mode === 'list' ? 'grid' : 'list'; }
+  else if (d.toast) { toast(d.toast); }
+  render();
+});
+document.addEventListener('input', e => { if (e.target.matches('[data-search]')) { state.query = e.target.value; render(); } });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && state.modal) { state.modal = null; render(); return; }
+  if (e.target.matches('.sl-emutab') && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+    e.preventDefault(); cycleTab(e.key === 'ArrowRight' ? 1 : -1); render(); document.querySelector('.sl-emutab[aria-selected="true"]')?.focus();
+  }
+});
+render();
+</script>
+</body>
+</html>

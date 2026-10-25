@@ -141,6 +141,22 @@ async function route(method: string, pathname: string, query: URLSearchParams, b
     const id = seg[2]
     const rest = seg[3]
     if (rest === 'state' && method === 'GET') { const s = gameState(id); if (s) return s }
+    // Copy this save to another emulator: melonDS's .sav becomes RetroArch's .srm (tasks/multi-emulator-games Phase 6).
+    if (rest === 'versions' && seg[5] === 'copy-targets' && method === 'GET') {
+      const other = id === IDS.huntersMelon ? IDS.huntersRetro : id === IDS.huntersRetro ? IDS.huntersMelon : null
+      if (!other) return []
+      const [from, to] = id === IDS.huntersMelon ? ['.sav', '.srm'] : ['.srm', '.sav']
+      return [{
+        gameId: other, gameName: db.games.find(g => g.id === other)!.name, emulator: id === IDS.huntersMelon ? 'RetroArch' : 'melonDS',
+        how: `Same bytes. The ${from} file is renamed ${to}.`, refusal: null,
+        files: [{ from: `Metroid Prime - Hunters (USA)${from}`, to: `Metroid Prime - Hunters (USA)${to}`, size: 262_144 }],
+        targetHead: { ...synthVersion(other, 3), machineName: OTHER_MACHINE },
+      }]
+    }
+    if (rest === 'versions' && seg[5] === 'copy-to' && method === 'POST') {
+      await sleep(900)
+      return { ...synthVersion(query.get('target') ?? id, 0), copiedFrom: id === IDS.huntersMelon ? 'melonDS' : 'RetroArch', copiedFromVersionId: seg[4] }
+    }
     if (rest === 'versions' && method === 'GET') {
       if (id === IDS.hades) return [versions[IDS.v8], versions[IDS.v7], versions[IDS.v6]]
       return [synthVersion(id, 2), synthVersion(id, 1)]

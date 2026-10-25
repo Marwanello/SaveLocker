@@ -1,6 +1,7 @@
 import type { AgentHealth, Command, GameRelease, GameSummary } from '../../types';
 import type { DotTone } from '../ui/Dot';
 import { withdrawable } from '../../syncAll';
+import { treesOf } from './titles';
 
 /** `AgentEventCodes.Conflict` — shown as the conflict itself, never as a separate "problem". */
 const CONFLICT_CODE = 'sync.conflict';
@@ -34,9 +35,11 @@ const STANDING: Record<StandingKey, GameStanding> = {
 /** The bucket behind a game's standing — the console's Status grouping keys off this, so a group's
  *  label and the game's own dot can never tell two different stories. */
 export function standingKey(s: GameSummary, problems: Set<string>): StandingKey {
-  if (s.hasOpenConflict) return 'conflict';
-  if (!s.game.enabled) return 'disabled';
-  if (problems.has(s.game.id)) return 'attention';
+  // A title stands as its worst tree (tasks/multi-emulator-games): a conflict in any emulator's save shows.
+  const trees = treesOf(s);
+  if (trees.some(t => t.hasOpenConflict)) return 'conflict';
+  if (!trees.some(t => t.game.enabled)) return 'disabled';
+  if (trees.some(t => problems.has(t.game.id))) return 'attention';
   if (!s.head) return 'none';
   return 'synced';
 }

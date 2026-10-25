@@ -30,7 +30,12 @@ public static class Mapping
             Release: ReadRelease(g),
             EmulatorProfile: g.EmulatorProfile,
             EmulatorKey: g.EmulatorKey,
-            MergedGameIds: MergedIds(g));
+            MergedGameIds: MergedIds(g),
+            // The title's row must be loaded with the game (GameTitles read into the same context fixes it up).
+            TitleId: g.TitleId,
+            TitleName: g.TitleId is null ? null : g.Title?.BaseName,
+            TitleEdition: g.TitleId is null ? null : g.TitleEdition,
+            TitleLead: g.TitleId is not null && g.Title?.LeadGameId == g.Id);
 
     /// <summary>The games merged into <paramref name="g"/>, or null for none.</summary>
     public static Guid[]? MergedIds(Game g) =>
@@ -69,7 +74,8 @@ public static class Mapping
 
     public static SaveVersionDto ToDto(this SaveVersion v) =>
         new(v.Id, v.GameId, v.MachineId, UploaderName(v), v.CreatedAt,
-            v.ContentHash, v.Size, v.ParentVersionId, v.Protected, ReadContent(v.ContentJson), v.MergedFrom);
+            v.ContentHash, v.Size, v.ParentVersionId, v.Protected, ReadContent(v.ContentJson), v.MergedFrom,
+            v.CopiedFrom, v.CopiedFromVersionId);
 
     /// <summary>A stored package list, or null for none — or for JSON this build cannot read.</summary>
     public static ContentPackageDto[]? ReadContent(string? json)

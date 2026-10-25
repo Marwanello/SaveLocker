@@ -6,6 +6,7 @@ import { StatusHeader } from './components/StatusHeader'
 import { OverviewView } from './components/OverviewView'
 import { GamesView } from './components/GamesView'
 import { GameDetailView } from './components/GameDetailView'
+import { titleOf } from './titles'
 import { AddGamesView } from './components/AddGamesView'
 import { ConflictsView } from './components/ConflictsView'
 import { SyncConflictModal } from './components/SyncConflictModal'
@@ -258,6 +259,9 @@ export default function App() {
                     onSynced={() => handleGameSynced(open.id)}
                     onChanged={() => { refreshState(); void refreshConflicts() }}
                     onRemoved={() => setOpenGameId(null)}
+                    trees={titleOf(open, games).trees}
+                    onPickTree={setOpenGameId}
+                    onNote={setResolveNote}
                   />
                 )
                 : <GamesView games={games} conflicts={conflicts} onOpen={setOpenGameId} onNavigate={navigate} />

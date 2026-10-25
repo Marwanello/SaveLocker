@@ -1,3 +1,4 @@
+import { useTreeWord } from './treeContext';
 import { useEffect, useState } from 'react';
 import { api, errorText } from '../../api';
 import type { Conflict, Game, Version, VersionChanges } from '../../types';
@@ -23,6 +24,8 @@ interface Props {
   reloadVersions: () => Promise<void>;
   onSetLatest: (v: Version) => Promise<void>;
   onRefresh: () => void;
+  /** Inside a title: copy a version to another emulator's tree (tasks/multi-emulator-games Phase 6). */
+  onCopy?: (v: Version) => void;
 }
 
 type View = 'main' | 'backups';
@@ -36,7 +39,10 @@ type View = 'main' | 'backups';
  * Every row starts collapsed and already says what it changed; its chevron opens the changed files
  * (tasks/save-file-trees Phase 2, variant B). One request covers the whole list.
  */
-export function VersionsCard({ game, headId, versions, conflicts, loading, reloadVersions, onSetLatest, onRefresh }: Props) {
+export function VersionsCard({ game, headId, versions, conflicts, loading, reloadVersions, onSetLatest, onRefresh, onCopy }: Props) {
+  // Inside a title every action here is this emulator's tree only, and the confirm says so.
+  const tw = useTreeWord();
+  const only = tw ? ` Only the${tw} save changes; the other emulators’ are not touched.` : '';
   const [view, setView] = useState<View>('main');
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [changes, setChanges] = useState<Map<string, VersionChanges>>(new Map());
@@ -117,6 +123,12 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
     catch (e) { toastError('Could not download: ' + errorText(e)); }
   }
 
+  // Beside the state, not instead of it: a copy is usually the Latest (tasks/multi-emulator-games Phase 6).
+  function copied(v: Version) {
+    if (!v.copiedFrom) return null;
+    return <span title={`Copied from ${v.copiedFrom}'s save of this game.`}><Chip>From {v.copiedFrom}</Chip></span>;
+  }
+
   function state(v: Version) {
     if (v.id === headId) return <Chip tone="ok">Latest</Chip>;
     if (conflicting.has(v.id)) return <Chip tone="crit">Conflicting</Chip>;
@@ -189,7 +201,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
               { head: 'Size', kind: 'n', cell: v => fmtSize(v.size) },
               {
                 head: 'State', kind: 'wrap',
-                cell: v => <span className="flex gap-1 items-center flex-wrap min-w-[10.5rem]">{state(v)}<ChangeChips changes={changes.get(v.id)} /></span>,
+                cell: v => <span className="flex gap-1 items-center flex-wrap min-w-[10.5rem]">{state(v)}{copied(v)}<ChangeChips changes={changes.get(v.id)} /></span>,
               },
               {
                 head: '', label: 'Actions', end: true,
@@ -199,12 +211,15 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
                       <InlineConfirm
                         label="Set as Latest"
                         tone="primary"
-                        consequence={`Every machine that syncs ${game.name} is told to pull ${v.machineName}'s save from ${when(v.createdAt)}. One with unpushed local changes reports the pull as blocked instead of losing them.${conflicting.has(v.id) ? ' Its open conflict is resolved in its favour.' : ''}`}
+                        consequence={`Every machine that syncs ${game.name}${tw ? ` in${tw}` : ''} is told to pull ${v.machineName}'s save from ${when(v.createdAt)}. One with unpushed local changes reports the pull as blocked instead of losing them.${conflicting.has(v.id) ? ' Its open conflict is resolved in its favour.' : ''}${only}`}
                         confirmLabel={`Make ${shortId(v.id)} Latest`}
                         onConfirm={() => onSetLatest(v)}
                       />
                     )}
                     <Button size="sm" variant="quiet" onClick={() => void download(v)} title="Download this version's archive">Download</Button>
+                    {onCopy && !v.mergedFrom && (
+                      <Button size="sm" variant="quiet" onClick={() => onCopy(v)} title="Copy this save to another emulator's tree of this game">Copy to…</Button>
+                    )}
                     {v.protected && (
                       <InlineConfirm
                         label="Unprotect"
@@ -219,7 +234,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
                       <InlineConfirm
                         label="Delete"
                         triggerVariant="quiet"
-                        consequence="Its archive is permanently removed from the server. Download it first if you might want it."
+                        consequence={`This${tw} version's archive is permanently removed from the server. Download it first if you might want it.`}
                         confirmLabel={`Delete ${shortId(v.id)}`}
                         onConfirm={() => remove(v)}
                       />

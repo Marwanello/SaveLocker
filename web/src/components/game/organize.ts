@@ -2,6 +2,7 @@ import { consoleIcon, emulatorIcon } from '../../platformIcon';
 import type { GameSummary, Machine } from '../../types';
 import { toMs } from '../../format';
 import { standingKey } from './gameState';
+import { emulatorsOf } from './titles';
 import type { StandingKey } from './gameState';
 
 /**
@@ -121,6 +122,7 @@ export function organize(games: GameSummary[], state: OrganizeState, ctx: Organi
     const placed = new Set<string>();
     for (const m of ctx.machines) {
       const entries = sorted.filter(s => s.machineIds?.includes(m.id) || s.head?.machineId === m.id);
+      // A title's machines are the union of its trees' (groupTitles), so it is listed under each.
       entries.forEach(s => placed.add(s.game.id));
       if (entries.length) groups.push(flat('dev:' + m.id, m.name, entries));
     }
@@ -143,11 +145,13 @@ export function organize(games: GameSummary[], state: OrganizeState, ctx: Organi
       // When a console was reached through more than one emulator (Dolphin and PrimeHack for
       // GameCube), the group splits into emulator sub-headings; a game whose emulator nobody
       // recorded lands in its own "Unknown emulator" heading rather than silently vanishing.
-      const emulators = [...new Set(entries.map(s => s.game.emulators?.[0] ?? 'Unknown emulator'))];
+      // A title saved with two emulators is listed under each (tasks/multi-emulator-games), the way a game on two
+      // machines is listed under both devices.
+      const emulators = [...new Set(entries.flatMap(emulatorsOf))];
       const subGroups = emulators.length > 1
         ? emulators.map(e => ({
             id: `plat:${consoleName}:${e}`, label: e, icon: emulatorIcon(e),
-            entries: entries.filter(s => (s.game.emulators?.[0] ?? 'Unknown emulator') === e),
+            entries: entries.filter(s => emulatorsOf(s).includes(e)),
           }))
         : [{ id: `plat:${consoleName}`, label: '', entries }];
       return { id: 'plat:' + consoleName, label: consoleName, subGroups, icon: consoleIcon(consoleName) };

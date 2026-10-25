@@ -684,6 +684,12 @@ function New-EmuDeckFixture {
     New-Item -ItemType Directory -Force (Join-Path $melon 'saves'), (Join-Path $melon 'states') | Out-Null
     Set-Content -NoNewline -Encoding ascii (Join-Path $melon 'saves\Pokemon - Platinum Version (USA).sav') "platinum $(Get-Date -Format o)"
     Set-Content -NoNewline -Encoding ascii (Join-Path $melon 'states\Pokemon - Platinum Version (USA).ml1') 'platinum slot 1'
+    # One game, two emulators (tasks/multi-emulator-games): Hunters in melonDS and in RetroArch's melonDS DS core. Two
+    # server games, one console entry with a tab each; a copy turns melonDS's .sav into RetroArch's .srm, same bytes.
+    Set-Content -NoNewline -Encoding ascii (Join-Path $melon 'saves\Metroid Prime - Hunters (USA).sav') "hunters melonds $(Get-Date -Format o)"
+    New-Item -ItemType Directory -Force (Join-Path $target 'roms\nds') | Out-Null
+    Set-Content -NoNewline -Encoding ascii (Join-Path $target 'roms\nds\Metroid Prime - Hunters (USA).nds') ''
+    Set-Content -NoNewline -Encoding ascii (Join-Path $saves 'Metroid Prime - Hunters (USA).srm') "hunters retroarch $(Get-Date -Format o)"
     # Model 2 (Phase 9): NVDATA beside the emulator, inside Emulation on SteamOS. A real EmuDeck also seeds 39
     # untouched .DAT files there; those are hidden by hash, which only the hardware pass can show.
     Write-FixtureFile (Join-Path $target 'roms\model2\NVDATA\daytona.DAT') "daytona lap records $(Get-Date -Format o)"
@@ -882,6 +888,8 @@ function New-EmuDeckFixture {
         $wMelon = Join-Path $wsl 'saves\melonds'
         New-Item -ItemType Directory -Force (Join-Path $wMelon 'saves'), (Join-Path $wMelon 'states') | Out-Null
         Set-Content -NoNewline -Encoding ascii (Join-Path $wMelon 'saves\Pokemon - Platinum Version (USA).sav') 'old platinum on the WSL machine'
+        # Hunters in melonDS only: on this machine its RetroArch tree reads "Not set up here".
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wMelon 'saves\Metroid Prime - Hunters (USA).sav') 'old hunters melonds on the WSL machine'
         $wHome = Get-EmuHomeWslFixturePath
         New-FixtureFolder $wHome
         # EmuDeck on SteamOS: ~/.supermodel, no states yet (what a pull must bring).

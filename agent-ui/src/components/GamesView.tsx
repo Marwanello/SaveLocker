@@ -10,6 +10,9 @@ import { Card } from './ui/Card'
 import { Chip } from './ui/Chip'
 import { Row } from './ui/Row'
 import { Seg } from './ui/Seg'
+import { EmulatorBadges } from './EmulatorTabs'
+import { emulatorOf, groupTitles } from '../titles'
+import type { GameTitle } from '../titles'
 
 interface Props {
   games: TrackedGame[]
@@ -28,7 +31,7 @@ function readMode(): Mode {
 interface GroupProps {
   title: string
   note: string
-  games: TrackedGame[]
+  games: GameTitle[]
   mode: Mode
   conflicted: Set<string>
   onOpen: (id: string) => void
@@ -36,6 +39,17 @@ interface GroupProps {
 
 // Two releases of one game share its name; the region tells them apart. Its details are on the game's page.
 const region = (g: TrackedGame) => (g.release ? regionLabel(g.release) : null)
+
+/** A title opens on a tree set up here, if it has one. */
+const entry = (t: GameTitle) => t.trees.find(g => g.path) ?? t.lead
+
+/** The row's second line: a game's folder, or a title's emulators and which of them are not set up here. */
+function subtext(t: GameTitle) {
+  if (t.trees.length === 1) return t.lead.path || 'No save folder on this machine'
+  const away = t.trees.filter(g => !g.path).map(g => emulatorOf(g) ?? g.name)
+  return <><EmulatorBadges trees={t.trees} />{t.trees.map(g => emulatorOf(g) ?? g.name).join(' · ')}
+    {away.length > 0 && <i> · {away.join(', ')} not set up here</i>}</>
+}
 
 function Group({ title, note, games, mode, conflicted, onOpen }: GroupProps) {
   return (
@@ -46,37 +60,48 @@ function Group({ title, note, games, mode, conflicted, onOpen }: GroupProps) {
       </div>
       {mode === 'list' ? (
         <div className="sl-list">
-          {games.map(g => (
-            <Row
-              key={g.id}
-              onClick={() => onOpen(g.id)}
-              cover={<GameArt id={g.id} name={g.name} kind="icon" w={96} console={g.release?.console} />}
-              title={g.name}
-              subtext={g.path || 'No save folder on this machine'}
-              end={region(g) || conflicted.has(g.id)
-                ? <>
-                    {region(g) && <span className="sl-tag">{region(g)}</span>}
-                    {conflicted.has(g.id) && <Chip tone="crit">Conflict</Chip>}
-                  </>
-                : undefined}
-            />
-          ))}
+          {games.map(t => {
+            const g = t.lead
+            const clash = t.trees.find(x => conflicted.has(x.id))
+            return (
+              <Row
+                key={t.key}
+                onClick={() => onOpen(entry(t).id)}
+                cover={<GameArt id={g.id} name={t.name} kind="icon" w={96} console={g.release?.console} />}
+                title={t.name}
+                subtext={subtext(t)}
+                end={region(g) || clash
+                  ? <>
+                      {region(g) && <span className="sl-tag">{region(g)}</span>}
+                      {clash && <Chip tone="crit">{t.trees.length > 1 ? `Conflict · ${emulatorOf(clash) ?? clash.name}` : 'Conflict'}</Chip>}
+                    </>
+                  : undefined}
+              />
+            )
+          })}
         </div>
       ) : (
         <div className="sl-wall">
-          {games.map(g => (
-            <button key={g.id} type="button" className="sl-tile" onClick={() => onOpen(g.id)} title={g.name}>
-              <span className="sl-tile__cover">
-                <GameArt id={g.id} name={g.name} kind="grid" w={256} console={g.release?.console} />
-                {consoleIcon(g.release?.console) && (
-                  <span className="sl-tile__badge" title={g.release!.console}><PlatformIcon id={consoleIcon(g.release?.console)} /></span>
-                )}
-                {conflicted.has(g.id) && <span className="sl-tile__pin"><Chip tone="crit">Conflict</Chip></span>}
-              </span>
-              <span className="sl-tile__name">{g.name}</span>
-              {region(g) && <span className="sl-tile__sub">{region(g)}</span>}
-            </button>
-          ))}
+          {games.map(t => {
+            const g = t.lead
+            return (
+              <button key={t.key} type="button" className="sl-tile" onClick={() => onOpen(entry(t).id)} title={t.name}>
+                <span className="sl-tile__cover">
+                  <GameArt id={g.id} name={t.name} kind="grid" w={256} console={g.release?.console} />
+                  {t.trees.length > 1
+                    ? <span className="sl-tile__badge"><EmulatorBadges trees={t.trees} /></span>
+                    : consoleIcon(g.release?.console) && (
+                      <span className="sl-tile__badge" title={g.release!.console}><PlatformIcon id={consoleIcon(g.release?.console)} /></span>
+                    )}
+                  {t.trees.some(x => conflicted.has(x.id)) && <span className="sl-tile__pin"><Chip tone="crit">Conflict</Chip></span>}
+                </span>
+                <span className="sl-tile__name">{t.name}</span>
+                {t.trees.length > 1
+                  ? <span className="sl-tile__sub">{t.trees.length} emulators</span>
+                  : region(g) && <span className="sl-tile__sub">{region(g)}</span>}
+              </button>
+            )
+          })}
         </div>
       )}
     </section>
@@ -98,12 +123,16 @@ export function GamesView({ games, conflicts, onOpen, onNavigate }: Props) {
     return [...games]
       .sort((a, b) => a.name.localeCompare(b.name))
       .filter(g => !q || g.name.toLowerCase().includes(q) || g.path.toLowerCase().includes(q) ||
+        (g.title?.name ?? '').toLowerCase().includes(q) || (emulatorOf(g) ?? '').toLowerCase().includes(q) ||
         (g.release?.region ?? '').toLowerCase().includes(q) || (g.release?.gameIds ?? []).some(id => id.toLowerCase().includes(q)))
   }, [games, query])
+  // One entry per title (tasks/multi-emulator-games): a game saved with two emulators is listed once. Grouped after the
+  // search, so a title shows when any of its trees matches.
+  const titles = useMemo(() => groupTitles(visible).sort((a, b) => a.name.localeCompare(b.name)), [visible])
   // A game is this machine's own once it has a save folder here. Everything else was adopted from the
   // server and cannot sync until a folder is chosen, so it is listed apart rather than mixed in.
-  const here = useMemo(() => visible.filter(g => g.path), [visible])
-  const elsewhere = useMemo(() => visible.filter(g => !g.path), [visible])
+  const here = useMemo(() => titles.filter(t => t.trees.some(g => g.path)), [titles])
+  const elsewhere = useMemo(() => titles.filter(t => !t.trees.some(g => g.path)), [titles])
 
   function pick(next: Mode) {
     setMode(next)
@@ -138,7 +167,7 @@ export function GamesView({ games, conflicts, onOpen, onNavigate }: Props) {
           onChange={e => setQuery(e.target.value)}
         />
         <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>
-          {visible.length === games.length ? `${games.length} games` : `${visible.length} of ${games.length}`}
+          {query.trim() ? `${titles.length} of ${groupTitles(games).length}` : `${titles.length} games`}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           <PadGlyph id="r3" />

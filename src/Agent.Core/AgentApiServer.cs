@@ -648,7 +648,8 @@ public sealed class AgentApiServer : IDisposable
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
                 g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt,
                 SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null, g.Release, g.IncludeGlobs.FirstOrDefault(),
-                SameGameAsDto.For(g, _config.Games), g.OwnFileNames.Count > 0 ? g.OwnFileNames.ToArray() : null))
+                SameGameAsDto.For(g, _config.Games), g.OwnFileNames.Count > 0 ? g.OwnFileNames.ToArray() : null,
+                g.Emulators.Count > 0 ? g.Emulators.ToArray() : null, g.Title))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -1690,6 +1691,31 @@ public sealed class AgentApiServer : IDisposable
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
 
+        // Copy a save to another emulator's tree of the same title (tasks/multi-emulator-games Phase 6). The server builds
+        // the copy and tells every machine that syncs the target to pull; this device only refuses while that emulator's
+        // game is open here, since the pull would then wait anyway.
+        app.MapGet("/api/games/{id:guid}/versions/{versionId:guid}/copy-targets",
+            async Task<Results<Ok<CopyTargetDto[]>, NotFound, InternalServerError<ErrorResponse>>> (Guid id, Guid versionId) =>
+        {
+            if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
+            try { return TypedResults.Ok((await ApiClient.For(_config).GetCopyTargetsAsync(id, versionId)).ToArray()); }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        app.MapPost("/api/games/{id:guid}/versions/{versionId:guid}/copy-to",
+            async Task<Results<Ok<SaveVersionDto>, NotFound, BadRequest<ErrorResponse>, InternalServerError<ErrorResponse>>> (Guid id, Guid versionId, Guid target) =>
+        {
+            if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
+            if (_config.Games.FirstOrDefault(g => g.GameId == target) is { } here && GameActivity.IsActive(here, out var process))
+                return TypedResults.BadRequest(new ErrorResponse(GameActivity.RefusalMessage(here, process)));
+            try
+            {
+                var (version, refusal) = await ApiClient.For(_config).CopyToEmulatorAsync(id, versionId, target);
+                return version is not null ? TypedResults.Ok(version) : TypedResults.BadRequest(new ErrorResponse(refusal ?? "Could not copy the save."));
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
         // Conflicts this machine was a party to that have since been resolved, newest first — the
         // Conflicts page's "Recently resolved" table. `days` bounds the look-back (default a week).
         app.MapGet("/api/conflicts/resolved",
@@ -2411,7 +2437,11 @@ public sealed record TrackedGameDto(
     SameGameAsDto? SameGameAs = null,
     /// <summary>This device's own names for the game's files, where they differ from the server's (tasks/emulator-saves
     /// Phase 17). Null when it uses the server's.</summary>
-    FileNameDto[]? OwnFileNames = null);
+    FileNameDto[]? OwnFileNames = null,
+    /// <summary>The emulators any machine found it through, as the server keeps them; null when none did.</summary>
+    string[]? Emulators = null,
+    /// <summary>The title it is one emulator's tree of (tasks/multi-emulator-games); null for a game shown on its own.</summary>
+    TitleInfo? Title = null);
 
 /// <summary>A tracked emulator game a tracked Steam shortcut game is a copy of: its id, name and emulator.</summary>
 public sealed record SameGameAsDto(Guid GameId, string Name, string? Emulator)

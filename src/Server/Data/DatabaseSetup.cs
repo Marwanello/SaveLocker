@@ -72,6 +72,9 @@ public static class DatabaseSetup
         }
 
         await db.Database.MigrateAsync(ct);
+        // Games saved with several emulators, already on the server, become one title each (tasks/multi-emulator-games).
+        // Idempotent: a grouped or split-out game is left as it is.
+        await new TitleGrouping(db).BackfillAsync();
         var settings = scoped.GetRequiredService<SettingsService>();
         await settings.SetAsync(Program.LastStartedVersionKey, BuildInfo.Current.Version, ct);
         // A restored pre-encryption database brings its secrets back in plain text: encrypt them now, not at the next start.

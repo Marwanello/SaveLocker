@@ -16,6 +16,10 @@ export const IDS = {
   bg3: 'a0000000-0000-4000-8000-000000000003',
   chrono: 'a0000000-0000-4000-8000-000000000004',
   pop: 'a0000000-0000-4000-8000-000000000005',
+  // One game saved with two emulators (tasks/multi-emulator-games Phase 6): melonDS set up here, RetroArch only on the PC.
+  huntersMelon: 'a0000000-0000-4000-8000-000000000006',
+  huntersRetro: 'a0000000-0000-4000-8000-000000000007',
+  huntersTitle: 'e0000000-0000-4000-8000-000000000001',
   v6: 'b0000000-0000-4000-8000-000000000006',
   v7: 'b0000000-0000-4000-8000-000000000007',
   v8: 'b0000000-0000-4000-8000-000000000008',
@@ -74,6 +78,23 @@ export const db = {
       source: { kind: 'emulator', detail: 'PCSX2', tags: ['PS2', 'Europe', 'EmuDeck'] },
       release: { console: 'PS2', region: 'Europe', gameIds: ['SLES-52822'], languages: ['English', 'French'], namedBy: 'Redump' },
     },
+    {
+      id: IDS.huntersMelon, name: 'Metroid Prime - Hunters', path: '/home/deck/Emulation/saves/melonds/saves',
+      processNames: [], alias: null, steamAppId: null,
+      pullBeforeLaunchEnabled: null, hasSteamCloud: false, pushAfterExitEnabled: true,
+      lastPushBytes: 262_144, lastPushAt: iso(5 * HOUR),
+      source: { kind: 'emulator', detail: 'melonDS', tags: ['DS', 'EmuDeck'] },
+      release: { console: 'DS', region: 'USA', gameIds: ['AMHE'], languages: ['English'], namedBy: 'No-Intro' },
+      emulators: ['melonDS'], title: { id: IDS.huntersTitle, name: 'Metroid Prime - Hunters', edition: null, lead: true },
+    },
+    {
+      id: IDS.huntersRetro, name: 'Metroid Prime - Hunters (RetroArch)', path: '',
+      processNames: [], alias: null, steamAppId: null,
+      pullBeforeLaunchEnabled: null, hasSteamCloud: false, pushAfterExitEnabled: null,
+      lastPushBytes: null, lastPushAt: null, source: null,
+      release: { console: 'DS', region: 'USA', gameIds: ['AMHE'], languages: ['English'], namedBy: 'No-Intro' },
+      emulators: ['RetroArch'], title: { id: IDS.huntersTitle, name: 'Metroid Prime - Hunters', edition: null, lead: false },
+    },
   ] as TrackedGameLike[],
 
   candidates: [] as CandidateLike[],
@@ -85,6 +106,8 @@ export interface TrackedGameLike {
   pushAfterExitEnabled: boolean | null; installDir?: string; lastPushBytes?: number | null
   lastPushAt?: string | null; source?: { kind: string; detail: string; tags?: string[] } | null
   release?: { console: string; region?: string | null; gameIds?: string[]; languages?: string[]; namedBy?: string | null } | null
+  emulators?: string[] | null
+  title?: { id: string; name: string | null; edition: string | null; lead: boolean } | null
 }
 
 interface CandidateLike {
