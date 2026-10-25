@@ -307,6 +307,18 @@ public sealed class PathResolver
     public static bool IsTemplate(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Contains('<') && value.Contains('>');
 
+    // Folder names whose contents an OS or desktop runs at login, or that grant one. The agent's SavePathGuard is the
+    // real floor (it judges the expanded path); this is the server refusing to store such a template for the fleet.
+    private static readonly HashSet<string> AutoRunSegments = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "start menu", ".ssh", "autostart", "autostart-scripts", "plasma-workspace", "environment.d", "systemd",
+    };
+
+    /// <summary>True when a save-folder template or path names a folder whose files would run at login.</summary>
+    public static bool NamesAutoRunFolder(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Split('/', '\\').Any(s => AutoRunSegments.Contains(s.Trim()));
+
     /// <summary>
     /// Every existing directory a template designates, fanning <c>&lt;storeUserId&gt;</c> out over
     /// what is actually on disk.

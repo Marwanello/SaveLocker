@@ -292,11 +292,21 @@ public sealed class SyncService
 
     /// <summary>Why an agent may not define <paramref name="dto"/>, or null: its template, when it has
     /// one, must be one (<see cref="PathResolver.IsTemplate"/>).</summary>
-    public static string? AgentTemplateError(SavePathDto dto) =>
-        string.IsNullOrWhiteSpace(dto.Template) || PathResolver.IsTemplate(dto.Template.Trim())
-            ? null
-            : $"'{dto.Template}' is not a template. An agent describes a save folder generically " +
-              "(e.g. <winAppData>/Game) so every machine can expand it for itself; set a literal path from the console.";
+    public static string? AgentTemplateError(SavePathDto dto) => AgentTemplateError(dto.Template);
+
+    /// <summary>
+    /// Why an agent may not define this save folder for the fleet, or null. It must be a template, and never one that
+    /// names a folder whose files run at login: any one machine key can create a game every other agent adopts.
+    /// </summary>
+    public static string? AgentTemplateError(string? template) =>
+        string.IsNullOrWhiteSpace(template) ? null
+        : !PathResolver.IsTemplate(template.Trim())
+            ? $"'{template}' is not a template. An agent describes a save folder generically " +
+              "(e.g. <winAppData>/Game) so every machine can expand it for itself; set a literal path from the console."
+        : PathResolver.NamesAutoRunFolder(template)
+            ? $"'{template}' names a folder whose files run at login (a Start Menu, autostart or SSH folder). " +
+              "That is never a save folder."
+            : null;
 
     /// <summary>One of a game's current extra save folders (retired ones are filtered out).</summary>
     private Task<GameSavePath?> FindSavePathAsync(Guid gameId, string key) =>
@@ -887,7 +897,7 @@ public sealed class SyncService
     /// </summary>
     public async Task<bool> TrySetSaveTemplateAsync(Guid gameId, string template, string pathKey = SaveRoot.PrimaryKey)
     {
-        if (!PathResolver.IsTemplate(template)) return false;
+        if (!PathResolver.IsTemplate(template) || AgentTemplateError(template) is not null) return false;
 
         if (pathKey == SaveRoot.PrimaryKey)
         {

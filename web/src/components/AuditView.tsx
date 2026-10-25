@@ -19,9 +19,11 @@ const LOADED = 200;
 /** plan.md 12.1: the action is `accent-ink` when something failed or a decision was waiting, dim otherwise. */
 const loud = (action: string) => /fail|conflict|lockout/.test(action);
 
+/** Machine and game names come from agents: a leading = + - @ (or tab/CR) would run as a formula in a spreadsheet. */
 function csvCell(v: string | null | undefined): string {
-  const s = v ?? '';
-  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  const raw = v ?? '';
+  const s = /^[=+\-@\t\r]/.test(raw) ? "'" + raw : raw;
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
 /** Exports what the filter shows — which is only ever what was loaded, never the server's whole history. */
