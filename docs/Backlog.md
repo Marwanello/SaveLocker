@@ -25,6 +25,7 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 - [Travel mode: back off when the server is unreachable](tasks/offline-backoff/summary.md)
 - [Household accounts](tasks/household-accounts/summary.md)
 - [Version history upgrades](tasks/version-history-upgrades/summary.md)
+- [Cross-OS CI: an emulator save round-trip](tasks/crossos-emulator-leg/summary.md)
 
 ## Planned / future
 
@@ -34,4 +35,5 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 - [Storage: off-site copies, then deduplication](tasks/storage-dedup-offsite/summary.md)
 - [Playtime and "last played"](tasks/playtime-tracking/summary.md)
 - [More standalone emulators](tasks/standalone-emulators/summary.md)
+- [Help KB: where emulator saves are looked for](tasks/emulator-kb-troubleshooting/summary.md)
 - [macOS agent](tasks/macos-agent/summary.md)
