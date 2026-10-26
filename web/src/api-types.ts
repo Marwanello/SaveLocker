@@ -1755,7 +1755,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;

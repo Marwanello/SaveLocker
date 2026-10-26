@@ -818,9 +818,15 @@ agent.MapPost("/agent/transfers/{id:guid}/cancel", async (Guid id, HttpContext h
 // worked exactly until an admin password was set on the server and then returned 401 forever —
 // on the one command a headless Deck user runs to ask "is my save safe?". Everything else the agent
 // does was already on this group; this was the single stray.
-agent.MapGet("/agent/games/{id:guid}/state", async (Guid id, SyncService sync) =>
-    await sync.GetGameStateAsync(id) is { } state ? Results.Ok(state) : Results.NotFound())
-    .Produces<GameStateDto>();
+//
+// Head, lease and conflict are the calling machine's playthrough's (`playthrough` to ask about another): an agent compares
+// its own save with this, and the default's head is another line's save once the device or the default has moved.
+agent.MapGet("/agent/games/{id:guid}/state", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync) =>
+{
+    // An unknown game is a 404 from here (PlaythroughErrorFilter), as before.
+    var on = await sync.ResolvePlaythroughAsync(id, http.CurrentMachine().Id, playthrough, allowArchived: true);
+    return await sync.GetGameStateAsync(id, playthrough: on) is { } state ? Results.Ok(state) : Results.NotFound();
+}).Produces<GameStateDto>();
 
 // An agent describing a game's save location GENERICALLY, so every other machine can expand it for
 // itself instead of inheriting a literal path that means nothing on their filesystem. Only fills an

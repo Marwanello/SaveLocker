@@ -38,15 +38,16 @@ public sealed partial class SyncService
     /// what keeps an agent that predates playthroughs on one line: it names none, so it gets its recorded one.
     /// </summary>
     /// <exception cref="PlaythroughNotFoundException">No such game, or the named playthrough is another game's.</exception>
-    /// <exception cref="PlaythroughArchivedException">The playthrough is archived.</exception>
+    /// <exception cref="PlaythroughArchivedException">The playthrough is archived (unless <paramref name="allowArchived"/>: a read
+    /// that only describes it).</exception>
     public async Task<Playthrough> ResolvePlaythroughAsync(
-        Guid gameId, Guid? machineId, Guid? requested, CancellationToken ct = default)
+        Guid gameId, Guid? machineId, Guid? requested, CancellationToken ct = default, bool allowArchived = false)
     {
         if (requested is { } id)
         {
             var named = await _db.Playthroughs.FirstOrDefaultAsync(p => p.Id == id && p.GameId == gameId, ct)
                         ?? throw new PlaythroughNotFoundException("Unknown playthrough.");
-            return named.ArchivedAt is null ? named : throw new PlaythroughArchivedException(named.Name);
+            return named.ArchivedAt is null || allowArchived ? named : throw new PlaythroughArchivedException(named.Name);
         }
 
         if (machineId is { } machine)
@@ -54,7 +55,7 @@ public sealed partial class SyncService
             var selection = await _db.DeviceSelections.FirstOrDefaultAsync(d => d.MachineId == machine && d.GameId == gameId, ct);
             if (selection is not null &&
                 await _db.Playthroughs.FirstOrDefaultAsync(p => p.Id == selection.PlaythroughId && p.GameId == gameId, ct) is { } chosen)
-                return chosen.ArchivedAt is null ? chosen : throw new PlaythroughArchivedException(chosen.Name);
+                return chosen.ArchivedAt is null || allowArchived ? chosen : throw new PlaythroughArchivedException(chosen.Name);
 
             var fallback = await DefaultPlaythroughAsync(gameId, ct);
             await RecordSelectionAsync(machine, gameId, fallback.Id, ct);
