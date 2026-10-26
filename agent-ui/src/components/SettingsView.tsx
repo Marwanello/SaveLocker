@@ -427,7 +427,6 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, 
         </div>
       </Card>
 
-      <SwitchUserCard />
       </section>
 
       <section id="settings-updates" className="sl-section" aria-label="Updates">
@@ -442,6 +441,7 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, 
 
       <section id="settings-emulators" className="sl-section" aria-label="Emulators">
       <Xbox360SettingsCard />
+      <SwitchUserCard />
       </section>
     </div>
   )

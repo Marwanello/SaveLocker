@@ -193,6 +193,9 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   const selectedPt = pts?.playthroughs.find(p => p.id === pts.selectedId) ?? null
   const several = (pts?.playthroughs.length ?? 0) > 1
   const otherPt = pts && viewing && viewing !== pts.selectedId ? pts.playthroughs.find(p => p.id === viewing) ?? null : null
+  // Offline: the server's list is empty, so the other tab is a copy this device keeps.
+  const offline = pts?.offline === true || (!!stateError && !state)
+  const offlineCopy = pts?.offline && viewing && viewing !== pts.selectedId ? pts.copies.find(c => c.playthroughId === viewing) ?? null : null
   const head = (selectedPt ? selectedPt.head : state?.head) ?? null
   const holder = state?.lease?.holderMachineName ?? null
   const heldElsewhere = holder !== null && holder !== machineName
@@ -210,6 +213,23 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       setToast({ text: err instanceof Error ? err.message : 'The change failed.', failed: true })
     }
   }
+
+  const offlinePanel = offlineCopy && (
+    <Card title={offlineCopy.name ?? 'Playthrough'}>
+      <div className="sl-stack" style={{ gap: 12 }}>
+        <p className="sl-empty" style={{ padding: 0, textAlign: 'left' }}>
+          The server can't be reached, so this shows only the copy this device keeps (saved {formatAgo(offlineCopy.capturedAt)}).
+          Playing it here puts that copy in the save folder; {pts?.selectedName ?? 'your current playthrough'} is kept here and goes up when the server is back.
+        </p>
+        <div className="sl-actions">
+          <Button variant="primary" disabled={locked} data-pad-label={`Play ${offlineCopy.name ?? 'this playthrough'} here`}
+            onClick={() => setSwitching({ id: offlineCopy.playthroughId, name: offlineCopy.name ?? 'this playthrough' })}>
+            Play this one here
+          </Button>
+        </div>
+      </div>
+    </Card>
+  )
 
   // Looking at a playthrough this device is not on: read-only, with the one way to change that.
   const otherPanel = otherPt && (
@@ -381,7 +401,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
         />
       )}
 
-      {otherPt ? otherPanel : <>
+      {offlinePanel ?? (otherPt ? otherPanel : <>
       {enrolled ? (
         <div className="sl-actions">
           <Button variant="primary" data-pad-action="sync-this-game" disabled={locked} onClick={() => void run('sync')}>
@@ -408,9 +428,11 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
               Copy to another emulator…
             </Button>
           )}
-          <Button variant="quiet" disabled={locked} onClick={() => void checkNow()}>
-            {pending === 'check' ? 'Checking…' : 'Check now'}
-          </Button>
+          {!offline && (
+            <Button variant="quiet" disabled={locked} onClick={() => void checkNow()}>
+              {pending === 'check' ? 'Checking…' : 'Check now'}
+            </Button>
+          )}
           {several && selectedPt && pts?.offline === false && (renaming === null ? (
             <Button variant="quiet" disabled={locked} data-pad-label="Rename this playthrough" onClick={() => setRenaming(selectedPt.name)}>
               Rename playthrough…
@@ -434,6 +456,10 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
         />
       )}
 
+      {offline && enrolled && (
+        <Banner tone="warn" title="The server can't be reached" detail="Anything that needs it is hidden until it's back. Saves made now are kept here and go up on their own." />
+      )}
+
       {enrolled && <div className="sl-grid4">
         <Stat
           label="Save here"
@@ -443,13 +469,13 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
         <Stat
           label="Last push"
           value={game.lastPushAt ? formatAgo(game.lastPushAt) : 'None yet'}
-          context={state ? `Conflicts: ${POLICY[state.game.conflictPolicy ?? 'Manual'] ?? state.game.conflictPolicy}` : '…'}
+          context={offline ? 'waiting for the server' : state ? `Conflicts: ${POLICY[state.game.conflictPolicy ?? 'Manual'] ?? state.game.conflictPolicy}` : '…'}
         />
-        <Stat
+        {!offline && <Stat
           label="Versions"
           value={versions ? versions.length : '…'}
           context={state?.game.retainVersions ? `keeps the newest ${state.game.retainVersions}` : 'server default retention'}
-        />
+        />}
         <Stat
           label="Sent last push"
           value={game.lastPushBytes != null ? formatBytes(game.lastPushBytes) : '—'}
@@ -458,7 +484,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       </div>}
 
       <div className="sl-grid2">
-        <Card title="On the server">
+        {!offline && <Card title="On the server">
           {stateError && <p className="sl-empty" style={{ padding: 0 }}>{stateError}</p>}
           {!stateError && !state && <p className="sl-empty" style={{ padding: 0 }}>Loading…</p>}
           {state && (
@@ -475,7 +501,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
               <dd>{holder ? (holder === machineName ? 'By this device' : `By ${holder}`) : 'By nobody'}</dd>
             </dl>
           )}
-        </Card>
+        </Card>}
 
         <Card title="On this device">
           <dl className="sl-kv">
@@ -508,18 +534,18 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       </div>
 
       <div className="sl-grid2">
-        <VersionsCard gameId={game.id} headId={head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions}
+        {!offline && <VersionsCard gameId={game.id} headId={head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions}
           title={[titled ? treeName : null, several ? selectedPt?.name : null].some(Boolean)
             ? `Versions on the server · ${[titled ? treeName : null, several ? selectedPt?.name : null].filter(Boolean).join(' · ')}`
             : undefined}
           onCopy={titled ? setCopyFrom : undefined}
           playthrough={selectedPt && several ? selectedPt.id : undefined}
-          onFork={v => setCreating({ fromVersion: { id: v, label: `a version of ${selectedPt?.name ?? 'this playthrough'}` } })} />
+          onFork={v => setCreating({ fromVersion: { id: v, label: `a version of ${selectedPt?.name ?? 'this playthrough'}` } })} />}
         <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
       </div>
 
       {enrolled && <SaveFilesCard gameId={game.id} refreshKey={syncCount} />}
-      </>}
+      </>)}
 
       {copyFrom && versions && (
         <CopySaveModal
