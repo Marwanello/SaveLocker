@@ -1913,6 +1913,12 @@ function Start-Console {
     # host.docker.internal is built in on Docker Desktop and needs this on a plain Linux engine, so a
     # stub server on this PC is reachable by one name on both.
     $extra = @('--add-host', 'host.docker.internal:host-gateway')
+    # The update poller's default repo is upstream's, whose releases (a "v1.0.1-test", say) are not this fork's builds.
+    # Point it at the fork this checkout pushes to, as docker-compose.unraid.yml does; a -ConsoleEnv entry below still wins.
+    $fork = 'Marwanello'
+    $originUrl = (& git -C $PSScriptRoot remote get-url origin 2>$null)
+    if ($originUrl -match 'github\.com[:/]([^/]+)/') { $fork = $Matches[1] }
+    $extra += @('-e', "AgentUpdate__GitHubRepo=$fork/SaveLocker", '-e', "AgentUpdate__Plugin__GitHubRepo=$fork/SaveLocker-Decky")
     # Each entry may itself be comma-separated (the documented KEY=VALUE[,...] form): one string
     # used to land as a single -e, so "A=1,B=2" set A to the literal "1,B=2" and the server threw
     # on every admin request. Both spellings now work; a blank piece between commas is ignored.
