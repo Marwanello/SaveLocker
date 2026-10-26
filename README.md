@@ -21,7 +21,7 @@
   <a href="#-features">Features</a> ·
   <a href="#-how-a-conflict-is-handled">Conflicts</a> ·
   <a href="#-building-from-source">Build</a> ·
-  <a href="web/src/releases/0.8.0.md">What's new in 0.8</a>
+  <a href="web/src/releases/0.8.1.md">What's new in 0.8</a>
 </p>
 
 <p align="center">
