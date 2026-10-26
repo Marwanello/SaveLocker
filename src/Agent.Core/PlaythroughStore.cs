@@ -82,11 +82,17 @@ public sealed class PlaythroughStore
     /// <summary>
     /// Keeps the save in <paramref name="archiveZip"/> (an archive of the save folder, as a push builds it) as this playthrough's
     /// copy, replacing the one before. Every file is hashed and stored; the snapshot is written last.
+    /// <para>
+    /// A copy that replaces one the server never got stays not uploaded, whatever <paramref name="uploaded"/> says: the folder
+    /// was restored from that copy (an offline switch back to it), so "unchanged since the last sync" means unchanged since
+    /// that restore, and the save it holds still has to reach the server.
+    /// </para>
     /// </summary>
     public StoredSnapshot Capture(Guid gameId, Guid playthroughId, string? playthroughName, string archiveZip,
         Guid? versionId, string contentHash, bool uploaded)
     {
         using var guard = AgentStateLock.Acquire("playthrough-store", _stateDir);
+        if (Find(gameId, playthroughId) is { Uploaded: false }) uploaded = false;
         var snapshot = new StoredSnapshot
         {
             GameId = gameId, PlaythroughId = playthroughId, PlaythroughName = playthroughName, VersionId = versionId,
@@ -154,8 +160,12 @@ public sealed class PlaythroughStore
     }
 
     /// <summary>Every snapshot, optionally of one game.</summary>
-    public IReadOnlyList<StoredSnapshot> All(Guid? gameId = null)
+    public IReadOnlyList<StoredSnapshot> All(Guid? gameId = null) => ReadAll(gameId, out _);
+
+    /// <param name="complete">False when a snapshot file could not be read (held by a scanner, say): the list may be missing a copy.</param>
+    private List<StoredSnapshot> ReadAll(Guid? gameId, out bool complete)
     {
+        complete = true;
         var dir = Path.Combine(_root, "snapshots");
         if (!Directory.Exists(dir)) return [];
         var result = new List<StoredSnapshot>();
@@ -166,10 +176,19 @@ public sealed class PlaythroughStore
             foreach (var file in Directory.EnumerateFiles(gameDir, "*.json"))
             {
                 try { if (JsonSerializer.Deserialize<StoredSnapshot>(File.ReadAllText(file)) is { } s) result.Add(s); }
-                catch (Exception ex) when (ex is JsonException or IOException) { /* torn or foreign file: not a snapshot */ }
+                catch (JsonException) { /* torn or foreign file: not a snapshot */ }
+                catch (IOException) { complete = false; }
             }
         }
         return result;
+    }
+
+    /// <summary>The blobs every snapshot names, or null when a snapshot could not be read: a sweep must then not run, or it would
+    /// delete the files of a copy it merely failed to see — possibly the only copy of a save the server never got.</summary>
+    private HashSet<string>? NamedBlobs()
+    {
+        var all = ReadAll(null, out var complete);
+        return complete ? all.SelectMany(s => s.Files).Select(f => f.Sha256.ToLowerInvariant()).ToHashSet() : null;
     }
 
     /// <summary>Copies that were never uploaded: the only copy of that save this side of the server.</summary>
@@ -245,7 +264,7 @@ public sealed class PlaythroughStore
         var blobs = Path.Combine(_root, "blobs");
         if (!Directory.Exists(blobs)) return 0;   // nothing was ever kept: no lock file for a device that never switched
         using var guard = AgentStateLock.Acquire("playthrough-store", _stateDir);
-        var named = All().SelectMany(s => s.Files).Select(f => f.Sha256.ToLowerInvariant()).ToHashSet();
+        if (NamedBlobs() is not { } named) return 0;
         var cutoff = DateTime.UtcNow - SweepGrace;
         var removed = 0;
         foreach (var dir in Directory.EnumerateDirectories(blobs))
@@ -301,7 +320,7 @@ public sealed class PlaythroughStore
         using var guard = AgentStateLock.Acquire("playthrough-store", _stateDir);
         var blobs = Path.Combine(_root, "blobs");
         if (!Directory.Exists(blobs)) return;
-        var named = All().SelectMany(s => s.Files).Select(f => f.Sha256.ToLowerInvariant()).ToHashSet();
+        if (NamedBlobs() is not { } named) return;
         foreach (var file in Directory.EnumerateFiles(blobs, "*", SearchOption.AllDirectories))
         {
             if (Path.GetFileName(Path.GetDirectoryName(file)) == "tmp" || named.Contains(Path.GetFileName(file).ToLowerInvariant())) continue;

@@ -437,8 +437,11 @@ public sealed partial class SyncEngine : IAsyncDisposable, IDisposable
         try
         {
             var sent = new SentBytes();
+            var parentSent = game.LastKnownVersionId;
             var result = await SendPushAsync(game, roots, hash, manifest, force, sent, ct);
             if (result is null) return null;   // refused outright; SendPushAsync already alerted
+            if (result.Status is UploadStatus.Created or UploadStatus.NoChange)
+                SupersedeRestoredCopy(game, parentSent, result.Version?.Id);
 
             var countPush = false;
             var touchSyncTime = false;
@@ -1650,7 +1653,7 @@ public sealed partial class SyncEngine : IAsyncDisposable, IDisposable
     {
         try
         {
-            var state = await _api.GetStateAsync(game.GameId);
+            var state = await _api.GetStateAsync(game.GameId, playthrough: game.PlaythroughId);
             if (state?.HasOpenConflict != true) return null;
             var conflicts = (await _api.GetOpenConflictsAsync()).Where(c => c.GameId == game.GameId).ToList();
             // A conflict on a playthrough this device is not on is that line's business, never a reason to stop this launch.

@@ -331,11 +331,13 @@ public sealed class ApiClient
         return (await resp.Content.ReadFromJsonAsync<GameDto>())!;
     }
 
-    public async Task<GameStateDto?> GetStateAsync(Guid gameId, CancellationToken ct = default)
+    /// <param name="playthrough">Whose head, lease and conflict the state describes; null = the one the server has this machine
+    /// on. Named whenever the device knows its own, which can be ahead of the server's record (a switch made offline).</param>
+    public async Task<GameStateDto?> GetStateAsync(Guid gameId, CancellationToken ct = default, Guid? playthrough = null)
     {
         // The /api/agent/ one: the bare /api/games/{id}/state is admin-filtered, so this 401'd for
         // every agent the moment the server had an admin password set.
-        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/state", ct);
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/state{PlaythroughQuery(playthrough)}", ct);
         if (resp.StatusCode == HttpStatusCode.NotFound) return null;
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadFromJsonAsync<GameStateDto>(ct);
@@ -692,15 +694,10 @@ public sealed class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<PlaythroughDto>>(cancellationToken: ct) ?? new();
     }
 
-    /// <summary>The latest save of the playthrough a device follows (null = the default one, which is what the state route's
-    /// head means). Everything that compares this device's save with "the cloud" asks this rather than the state's head, which
-    /// would be another playthrough's save for a device that has switched.</summary>
-    public async Task<SaveVersionDto?> GetPlaythroughHeadAsync(Guid gameId, Guid? playthroughId, CancellationToken ct = default)
-    {
-        if (playthroughId is { } id && await ListPlaythroughsAsync(gameId, ct) is { } list)
-            return list.FirstOrDefault(p => p.Id == id)?.Head;
-        return (await GetStateAsync(gameId, ct))?.Head;
-    }
+    /// <summary>The latest save of the playthrough a device follows (null = the one the server has it on). Everything that
+    /// compares this device's save with "the cloud" asks this: the state route's head is that playthrough's, not the default's.</summary>
+    public async Task<SaveVersionDto?> GetPlaythroughHeadAsync(Guid gameId, Guid? playthroughId, CancellationToken ct = default) =>
+        (await GetStateAsync(gameId, ct, playthroughId))?.Head;
 
     /// <summary>Makes a playthrough from a version, another playthrough's latest, or nothing; the server's reason on a refusal.</summary>
     public async Task<(PlaythroughDto? Playthrough, string? Error)> CreatePlaythroughAsync(

@@ -17,6 +17,29 @@ public sealed partial class SyncEngine
 {
     private PlaythroughStore Store => PlaythroughStore.For(_config);
 
+    /// <summary>One switch per game at a time in this process, whoever asked (the game page, the console's command, the CLI's
+    /// engine). Static: an engine replaced mid-switch must not let a second one start beside it.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> SwitchGates = new();
+
+    /// <summary>
+    /// A push on the playthrough whose not-yet-uploaded copy the folder was restored from (an offline switch back to it), made
+    /// from that copy's base: the folder holds the copy's save or one played on from it, so this push carried it, and the copy
+    /// must not be sent again — from its old parent it would read as a conflict with this very push. Under the push's lock.
+    /// </summary>
+    private void SupersedeRestoredCopy(TrackedGame game, Guid? parentSent, Guid? newVersionId)
+    {
+        if (game.PlaythroughId is not { } playthroughId) return;
+        try
+        {
+            if (Store.Find(game.GameId, playthroughId) is not { Uploaded: false } copy || copy.VersionId != parentSent) return;
+            FinishCopy(game, playthroughId, newVersionId, _config.PlaythroughCopies);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or AgentStateLockException)
+        {
+            _log($"[{game.Name}] could not update the kept copy: {ex.Message}");
+        }
+    }
+
     /// <summary>The store's mark-and-sweep at start (and after each switch): a copy no snapshot names any more goes once it is older
     /// than the grace period. In the background, and best effort: a sweep that cannot run now runs next time.</summary>
     private void SweepPlaythroughStore() => _ = Task.Run(() =>
@@ -55,10 +78,10 @@ public sealed partial class SyncEngine
 
     private async Task<Guid?> FollowedIdAsync(TrackedGame game) => game.PlaythroughId ?? (await FollowedAsync(game, default))?.Id;
 
-    /// <summary>The latest save of the line this device follows (not the game's default line, which is what the state route's
-    /// head means); falls back to the state's head for a server without playthroughs.</summary>
-    private async Task<SaveVersionDto?> FollowedHeadAsync(TrackedGame game, CancellationToken ct) =>
-        await FollowedAsync(game, ct) is { } followed ? followed.Head : (await _api.GetStateAsync(game.GameId, ct))?.Head;
+    /// <summary>The latest save of the line this device follows (the state route answers for the calling machine's playthrough,
+    /// or the one named); for a server without playthroughs, the game's.</summary>
+    private Task<SaveVersionDto?> FollowedHeadAsync(TrackedGame game, CancellationToken ct) =>
+        _api.GetPlaythroughHeadAsync(game.GameId, game.PlaythroughId, ct);
 
     /// <summary>Fills in which playthrough a game that has never switched follows, so the rest of this device (offline copies, the
     /// agent UI) can name it. Called wherever the list has just been read.</summary>
@@ -92,6 +115,16 @@ public sealed partial class SyncEngine
         TrackedGame game, Guid targetId, IReadOnlyList<string>? keepPaths = null, CancellationToken ct = default)
     {
         if (IsRetired) return new SwitchResult(false, "This connection has been replaced; try again.");
+        var switchGate = SwitchGates.GetOrAdd(game.GameId, _ => new SemaphoreSlim(1, 1));
+        if (!await switchGate.WaitAsync(0, ct))
+            return new SwitchResult(false, $"A playthrough switch of {game.Name} is already running. Wait for it to finish.");
+        try { return await SwitchCoreAsync(game, targetId, keepPaths, ct); }
+        finally { switchGate.Release(); }
+    }
+
+    private async Task<SwitchResult> SwitchCoreAsync(
+        TrackedGame game, Guid targetId, IReadOnlyList<string>? keepPaths, CancellationToken ct)
+    {
         using var linked = LinkRetirement(ct);
         ct = linked.Token;
 
@@ -161,12 +194,14 @@ public sealed partial class SyncEngine
         }
 
         var offline = !serverUp;
+        var outgoingOnServer = serverUp && !changed;
         if (serverUp && changed)
         {
             var push = await PushAsync(game, force: false, settle: false, ct);
             switch (push?.Status)
             {
                 case UploadStatus.Created or UploadStatus.NoChange:
+                    outgoingOnServer = true;
                     _log($"[{game.Name}] {outgoingName} is saved on the server.");
                     if (kept is not null) FinishCopy(game, currentId.Value, push.Version?.Id ?? game.LastKnownVersionId, mode);
                     break;
@@ -256,7 +291,8 @@ public sealed partial class SyncEngine
 
         var name = game.PlaythroughName ?? target?.Name ?? "the other playthrough";
         var message = offline
-            ? $"{game.Name} is now on {name}, from the copy on this device (it may be older than the server's). {outgoingName} and the choice are sent when the server is back."
+            ? $"{game.Name} is now on {name}, from the copy on this device (it may be older than the server's). " +
+              (outgoingOnServer ? "The server is told the choice when it is back." : $"{outgoingName} and the choice are sent when the server is back.")
             : $"{game.Name} is now on {name}.";
         _log($"[{game.Name}] {message}");
         return new SwitchResult(true, message, offline, target);
@@ -428,37 +464,36 @@ public sealed partial class SyncEngine
     }
 
     /// <summary>Sends the saves kept at an offline switch to the playthrough they belong to (parent = the version they were made
-    /// from, so a gap is an ordinary conflict), then the selections. Stops at the first sign the server is still away.</summary>
+    /// from, so a gap is an ordinary conflict), then the selections. Stops at the first sign the server is still away; a copy
+    /// that cannot be read is reported and skipped, so it never holds back the others or the selections.</summary>
     public async Task FlushPlaythroughWorkAsync(CancellationToken ct = default)
     {
         if (IsRetired) return;
         foreach (var copy in Store.PendingUploads())
         {
             if (_config.Games.FirstOrDefault(g => g.GameId == copy.GameId) is not { } game) { Store.Remove(copy.GameId, copy.PlaythroughId); continue; }
-            var archive = TempArchive(game.GameId, "kept");
             try
             {
-                Store.BuildArchive(copy, archive);
-                var result = await _api.UploadAsync(game.GameId, copy.ContentHash, copy.VersionId, force: false, archive, null, ct, copy.PlaythroughId);
-                switch (result.Status)
+                // The line this device is on: under the game's lock, so a push of the folder cannot run in between and the
+                // device's parent moves with the upload (else its next push would conflict with its own save).
+                if (game.PlaythroughId == copy.PlaythroughId)
                 {
-                    case UploadStatus.Created or UploadStatus.NoChange:
-                        _log($"[{game.Name}] pushed the save kept from {copy.PlaythroughName ?? "the other playthrough"}.");
-                        FinishCopy(game, copy.PlaythroughId, result.Version?.Id, _config.PlaythroughCopies);
-                        break;
-                    case UploadStatus.Conflict:
-                        Alert($"[{game.Name}] CONFLICT in {copy.PlaythroughName ?? "the other playthrough"}: the save kept from this device diverged from the server's. " +
-                              "Resolve it in the dashboard.", AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
-                        Store.MarkUploaded(game.GameId, copy.PlaythroughId, result.Version?.Id);
-                        break;
+                    var (ran, _) = await WithGameLockAsync(game, () => FlushCopyAsync(game, copy, ct), GameLockTimeout, ct);
+                    if (!ran) _log($"[{game.Name}] the kept save of {copy.PlaythroughName ?? "a playthrough"} waits for the sync in progress.");
                 }
+                else await FlushCopyAsync(game, copy, ct);
             }
-            catch (Exception ex) when (!ct.IsCancellationRequested && (ServerReachability.IsUnreachable(ex) || ex is StoredCopyCorruptException or IOException))
+            catch (Exception ex) when (!ct.IsCancellationRequested && ServerReachability.IsUnreachable(ex))
             {
                 _log($"[{game.Name}] the kept save of {copy.PlaythroughName ?? "a playthrough"} was not pushed yet: {ex.Message}");
                 return;
             }
-            finally { TryDeleteTemp(archive); }
+            catch (Exception ex) when (!ct.IsCancellationRequested && ex is StoredCopyCorruptException or IOException or UnauthorizedAccessException)
+            {
+                Alert($"[{game.Name}] the save kept on this device for {copy.PlaythroughName ?? "a playthrough"} could not be pushed: {ex.Message} " +
+                      $"It stays in {Path.Combine(_config.StateDir, "playthrough-store")}.",
+                    AgentEventCodes.PushFailed, AgentEventSeverity.Error, game.GameId);
+            }
         }
 
         foreach (var game in _config.Games.Where(g => g.PlaythroughSelectPending && g.PlaythroughId is not null).ToList())
@@ -473,5 +508,38 @@ public sealed partial class SyncEngine
             catch (Exception ex) when (!ct.IsCancellationRequested && ServerReachability.IsUnreachable(ex)) { return; }
         }
         try { Store.Sweep(); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* next time */ }
+    }
+
+    /// <summary>One kept save to the server. When it is the line this device is on (the caller holds the game's lock) and the
+    /// folder still stands on the copy's base, the device's parent moves to what the upload made; if the device has moved on
+    /// since (a push or pull of the folder), the copy is not this device's newest save of that line, so it is sent as it is
+    /// and a gap is an ordinary conflict.</summary>
+    private async Task<bool> FlushCopyAsync(TrackedGame game, StoredSnapshot copy, CancellationToken ct)
+    {
+        var archive = TempArchive(game.GameId, "kept");
+        try
+        {
+            Store.BuildArchive(copy, archive);
+            var result = await _api.UploadAsync(game.GameId, copy.ContentHash, copy.VersionId, force: false, archive, null, ct, copy.PlaythroughId);
+            switch (result.Status)
+            {
+                case UploadStatus.Created or UploadStatus.NoChange:
+                    _log($"[{game.Name}] pushed the save kept from {copy.PlaythroughName ?? "the other playthrough"}.");
+                    if (game.PlaythroughId == copy.PlaythroughId && game.LastKnownVersionId == copy.VersionId && result.Version?.Id is { } made)
+                    {
+                        game.LastKnownVersionId = made;
+                        _config.SaveGameSyncState(game, touchSyncTime: false);
+                    }
+                    FinishCopy(game, copy.PlaythroughId, result.Version?.Id, _config.PlaythroughCopies);
+                    break;
+                case UploadStatus.Conflict:
+                    Alert($"[{game.Name}] CONFLICT in {copy.PlaythroughName ?? "the other playthrough"}: the save kept from this device diverged from the server's. " +
+                          "Resolve it in the dashboard.", AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
+                    Store.MarkUploaded(game.GameId, copy.PlaythroughId, result.Version?.Id);
+                    break;
+            }
+            return true;
+        }
+        finally { TryDeleteTemp(archive); }
     }
 }

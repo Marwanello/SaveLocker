@@ -377,7 +377,7 @@ public static class AgentCli
                     var suggestions = new FolderSuggestions(config, detection);
                     foreach (var g in config.Games)
                     {
-                        var s = await api.GetStateAsync(g.GameId);
+                        var s = await api.GetStateAsync(g.GameId, playthrough: g.PlaythroughId);
                         var head = s?.Head is null
                             ? "(none)"
                             : $"{s.Head.Id:N}".Substring(0, 8) + $" from {s.Head.MachineName}";

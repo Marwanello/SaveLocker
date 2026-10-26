@@ -18,6 +18,11 @@
 #   9. COPIES OFF. An offline switch is refused and the folder is untouched.
 #  10. VERIFY ON RESTORE. A tampered copy is refused and the folder is untouched.
 #  11. ONLY UNTIL UPLOADED. Once the server has the outgoing save, nothing is left on disk.
+#  12. THERE AND BACK OFFLINE. A save played offline, switched away from, back onto and away again without playing is
+#      still owed to the server, and goes up when it is back; back on that line, the flush moves the device's base with it,
+#      so its next push is no conflict with its own save.
+#  13. A PUSH BEFORE THE FLUSH. Back on a line restored from its kept copy, a push of the folder carries that save: the flush
+#      then sends nothing stale, and no conflict appears.
 #
 # Prerequisites: server + Windows agent built in Debug.
 # Usage:  .\tests\run-playthrough-agent-tests.ps1
@@ -67,8 +72,14 @@ function Start-Server {
     $false
 }
 function Stop-Server {
-    if ($script:serverProc) { Stop-Process -Id $script:serverProc.Id -Force -ErrorAction SilentlyContinue }
-    Start-Sleep -Milliseconds 800
+    if ($script:serverProc) {
+        Stop-Process -Id $script:serverProc.Id -Force -ErrorAction SilentlyContinue
+        $script:serverProc.WaitForExit(10000) | Out-Null
+    }
+    # The offline sections assert what happens with NO server: wait until it really stops answering.
+    foreach ($i in 1..20) {
+        try { Invoke-RestMethod "$url/api/admin/status" -TimeoutSec 1 | Out-Null; Start-Sleep -Milliseconds 250 } catch { break }
+    }
 }
 if (-not (Start-Server)) {
     Write-Host "FAIL: server did not start on $url"
@@ -279,6 +290,57 @@ try {
     Plt switch $game "Main" | Out-Null
     Check "the switch succeeded" ((Config-Game $pcCfg).PlaythroughName -eq "Main")
     Check "no snapshot is left once the server confirmed the push" ((Store-Files $pcStateDir | Where-Object { $_.Name -like "*.json" }).Count -eq 0)
+
+    function Pending-Copies {
+        $d = Join-Path $pcStateDir "playthrough-store\snapshots"
+        if (-not (Test-Path $d)) { return 0 }
+        @(Get-ChildItem $d -Recurse -Filter *.json | Where-Object { (Get-Content $_.FullName -Raw | ConvertFrom-Json).Uploaded -eq $false }).Count
+    }
+
+    Write-Host ""
+    Write-Host "==== 12. Offline there and back: the save played offline is still owed, and goes up without a false conflict ===="
+    Set-Copies $pcCfg "KeepForOffline"
+    Plt switch $game "Clean slate" | Out-Null
+    Plt switch $game "Main" | Out-Null
+    Set-File $pcSave "slot1.sav" "main played offline"
+    $mainBefore = Versions-Of "Main"
+    Stop-Server
+    Plt switch $game "Clean slate" | Out-Null
+    Plt switch $game "Main" | Out-Null
+    Check "back on Main with the save played offline" ((Read-File $pcSave "slot1.sav") -eq "main played offline")
+    Plt switch $game "Clean slate" | Out-Null
+    $listOut = Plt list $game | Out-String
+    Check "away again without playing: Main's offline save is still waiting to go up" ($listOut -match "copy on this device: Main\s+\(not uploaded yet\)")
+    $null = Start-Server
+    Plt flush | Out-Null
+    Check "it reached Main when the server was back" ((Versions-Of "Main") -eq ($mainBefore + 1))
+    Plt switch $game "Main" | Out-Null
+    Check "and Main's latest is that save" ((Read-File $pcSave "slot1.sav") -eq "main played offline")
+
+    Set-File $pcSave "slot1.sav" "main second offline"
+    $mainBefore = Versions-Of "Main"
+    Stop-Server
+    Plt switch $game "Clean slate" | Out-Null
+    Plt switch $game "Main" | Out-Null
+    $null = Start-Server
+    Plt flush | Out-Null
+    Set-File $pcSave "slot1.sav" "main after reconnect"
+    Agent push $game --config $pcCfg | Out-Null
+    Check "back on Main from its kept copy: the next push after the flush is no conflict" (-not (Has-Conflict))
+    Check "...the flush and the push are Main's two new versions" ((Versions-Of "Main") -eq ($mainBefore + 2))
+
+    Write-Host ""
+    Write-Host "==== 13. A push before the flush carries the kept save ===="
+    Set-File $pcSave "slot1.sav" "main third offline"
+    Stop-Server
+    Plt switch $game "Clean slate" | Out-Null
+    Plt switch $game "Main" | Out-Null
+    $null = Start-Server
+    Set-File $pcSave "slot1.sav" "main played on after reconnect"
+    Agent push $game --config $pcCfg | Out-Null
+    Check "the push marked the kept copy as sent" ((Pending-Copies) -eq 0)
+    Plt flush | Out-Null
+    Check "the flush sent nothing stale: no conflict" (-not (Has-Conflict))
 }
 finally {
     Stop-Server

@@ -1430,7 +1430,7 @@ public sealed partial class AgentApiServer : IDisposable
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             if (game is null) return TypedResults.NotFound();
             GameStateDto? state;
-            try { state = await ApiClient.For(_config).GetStateAsync(id); }
+            try { state = await ApiClient.For(_config).GetStateAsync(id, playthrough: game.PlaythroughId); }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
             {
                 return TypedResults.Ok(new SaveVsCloudDto(SaveVsCloud.Unreachable, null, null, []));
@@ -1439,8 +1439,7 @@ public sealed partial class AgentApiServer : IDisposable
                 .Where(s => s.Kind == GameSourceKinds.Emulator && SwitchEmulators.IsSwitch(s.Detail))
                 .Select(s => SwitchEmulators.Names.First(n => string.Equals(n, s.Detail, StringComparison.OrdinalIgnoreCase)))
                 .Distinct().ToArray();
-            var followedHead = await ApiClient.For(_config).GetPlaythroughHeadAsync(id, game.PlaythroughId);
-            if (followedHead is not { } head) return TypedResults.Ok(new SaveVsCloudDto(SaveVsCloud.NoCloud, null, null, emulators));
+            if (state?.Head is not { } head) return TypedResults.Ok(new SaveVsCloudDto(SaveVsCloud.NoCloud, null, null, emulators));
             var headVersion = SwitchCopies.TitleId(game) is null ? null : SwitchGameVersion.VersionOf(head.Content);
             _config.RefreshGameSyncState(game);
             var local = game.IsEnrolledHere && Directory.Exists(game.SaveDirectory)
@@ -1548,7 +1547,7 @@ public sealed partial class AgentApiServer : IDisposable
             if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
             try
             {
-                var state = await ApiClient.For(_config).GetStateAsync(id);
+                var state = await ApiClient.For(_config).GetStateAsync(id, playthrough: _config.Games.FirstOrDefault(g => g.GameId == id)?.PlaythroughId);
                 return state is null ? TypedResults.NotFound() : TypedResults.Ok(state);
             }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
@@ -1781,8 +1780,8 @@ public sealed partial class AgentApiServer : IDisposable
             try
             {
                 var api = ApiClient.For(_config);
-                var state = await api.GetStateAsync(id);
-                var headHash = (await api.GetPlaythroughHeadAsync(id, game.PlaythroughId))?.ContentHash;
+                var state = await api.GetStateAsync(id, playthrough: game.PlaythroughId);
+                var headHash = state?.Head?.ContentHash;
                 var localHash = !string.IsNullOrWhiteSpace(game.SaveDirectory) && Directory.Exists(game.SaveDirectory)
                     ? await Task.Run(() => game.LocalHash(_config.StateDir))
                     : null;
@@ -1792,7 +1791,8 @@ public sealed partial class AgentApiServer : IDisposable
                 var hasConflict = state?.HasOpenConflict == true;
                 Guid? conflictId = hasConflict
                     ? (await api.GetOpenConflictsAsync())
-                        .FirstOrDefault(c => c.GameId == id && c.MachineId == _config.MachineId)?.Id
+                        .FirstOrDefault(c => c.GameId == id && c.MachineId == _config.MachineId &&
+                                             (c.PlaythroughId is null || game.PlaythroughId is null || c.PlaythroughId == game.PlaythroughId))?.Id
                     : null;
                 return TypedResults.Ok(new SyncStatusDto(inSync, hasConflict, conflictId));
             }

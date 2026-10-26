@@ -154,6 +154,42 @@ public sealed class PlaythroughStoreTests : IDisposable
     }
 
     [Fact]
+    public void A_copy_replacing_one_never_uploaded_stays_not_uploaded()
+    {
+        // Offline: Hard's played save was kept (not uploaded), restored on the way back to Hard, and the device switched away
+        // again without playing. "Unchanged since the last sync" is then unchanged since that restore; the save is still owed.
+        var store = NewStore();
+        var parent = Guid.NewGuid();
+        store.Capture(_game, _hard, "Hard", MakeArchive("h1", ("b.sav", "played offline")), parent, "h1", uploaded: false);
+
+        store.Capture(_game, _hard, "Hard", MakeArchive("h2", ("b.sav", "played offline")), parent, "h1", uploaded: true);
+
+        var pending = Assert.Single(store.PendingUploads());
+        Assert.Equal(_hard, pending.PlaythroughId);
+        Assert.Equal(parent, pending.VersionId);
+    }
+
+    [Fact]
+    public void The_sweep_does_nothing_while_a_snapshot_cannot_be_read()
+    {
+        if (!OperatingSystem.IsWindows()) return;   // a share-deny lock is what makes the read fail; Unix has no mandatory one
+        var store = NewStore();
+        store.Capture(_game, _hard, "Hard", MakeArchive("h", ("b.sav", "only copy")), null, "h", uploaded: false);
+        foreach (var blob in Directory.EnumerateFiles(Path.Combine(_dir, "state", "playthrough-store", "blobs"), "*", SearchOption.AllDirectories))
+            File.SetLastWriteTimeUtc(blob, DateTime.UtcNow - PlaythroughStore.SweepGrace - TimeSpan.FromMinutes(5));
+        var snapshot = Directory.EnumerateFiles(Path.Combine(_dir, "state", "playthrough-store", "snapshots"), "*.json", SearchOption.AllDirectories).Single();
+
+        int removed;
+        using (new FileStream(snapshot, FileMode.Open, FileAccess.Read, FileShare.None))   // a scanner holding it, say
+            removed = store.Sweep();
+
+        Assert.Equal(0, removed);
+        var dest = Path.Combine(_dir, "out.zip");
+        store.BuildArchive(store.Find(_game, _hard)!, dest);
+        Assert.Equal("only copy", ReadArchive(dest)["b.sav"]);
+    }
+
+    [Fact]
     public void Marking_a_copy_uploaded_records_the_version_the_server_made()
     {
         var store = NewStore();
