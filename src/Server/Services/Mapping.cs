@@ -75,7 +75,7 @@ public static class Mapping
     public static SaveVersionDto ToDto(this SaveVersion v) =>
         new(v.Id, v.GameId, v.MachineId, UploaderName(v), v.CreatedAt,
             v.ContentHash, v.Size, v.ParentVersionId, v.Protected, ReadContent(v.ContentJson), v.MergedFrom,
-            v.CopiedFrom, v.CopiedFromVersionId);
+            v.CopiedFrom, v.CopiedFromVersionId, v.PlaythroughId);
 
     /// <summary>A stored package list, or null for none — or for JSON this build cannot read.</summary>
     public static ContentPackageDto[]? ReadContent(string? json)
@@ -101,15 +101,15 @@ public static class Mapping
         lease is null
             ? new LeaseDto(gameId, null, null, null, null)
             : new LeaseDto(gameId, lease.MachineId, lease.Machine?.Name,
-                lease.AcquiredAt, lease.ExpiresAt);
+                lease.AcquiredAt, lease.ExpiresAt, lease.PlaythroughId);
 
     public static AgentCommandDto ToDto(this AgentCommand c) =>
         new(c.Id, c.MachineId, c.Machine?.Name, c.GameId, c.Type, c.Force,
             c.Status, c.CreatedAt, c.CompletedAt, c.Result, c.ClaimCount, c.LeaseExpiresAt,
-            c.ClaimToken);
+            c.ClaimToken, c.PlaythroughId);
 
     public static ConflictDto ToDto(this ConflictFlag c, bool escalated = false) =>
         new(c.Id, c.GameId, c.VersionAId, c.VersionBId, c.Status, c.CreatedAt,
             c.ResolvedVersionId, c.ResolvedBy, c.ResolvedAt,
-            c.MachineId, c.Count, c.LastSeen, escalated);
+            c.MachineId, c.Count, c.LastSeen, escalated, c.PlaythroughId);
 }

@@ -509,7 +509,7 @@ join.MapGet("/{code}/setup.exe", async (string code, HttpContext http, Enrollmen
 });
 
 // ---- Agent API (requires X-Api-Key: identifies the calling machine) ----
-var agent = app.MapGroup("/api").AddEndpointFilter<ApiKeyFilter>();
+var agent = app.MapGroup("/api").AddEndpointFilter<ApiKeyFilter>().AddEndpointFilter<PlaythroughErrorFilter>();
 
 // Include this machine's stored save path in each game so the agent can use it in reconcile.
 agent.MapGet("/games", async (HttpContext http, SyncService sync, SettingsService settings) =>
@@ -532,26 +532,31 @@ agent.MapGet("/games", async (HttpContext http, SyncService sync, SettingsServic
 }).Produces<List<GameDto>>();
 
 // ---- Leases (agent) ----
-agent.MapPost("/games/{id:guid}/lease", async (Guid id, HttpContext http, SyncService sync) =>
-    Results.Ok(await sync.AcquireLeaseAsync(id, http.CurrentMachine().Id)))
-    .Produces<LeaseAcquireResponse>();
-
-agent.MapDelete("/games/{id:guid}/lease", async (Guid id, HttpContext http, SyncService sync) =>
+// A lease is per playthrough (tasks/save-playthroughs): `playthrough` names it; absent is the one the machine follows.
+agent.MapPost("/games/{id:guid}/lease", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync) =>
 {
-    await sync.ReleaseLeaseAsync(id, http.CurrentMachine().Id);
+    var machine = http.CurrentMachine();
+    var on = await sync.ResolvePlaythroughAsync(id, machine.Id, playthrough);
+    return Results.Ok(await sync.AcquireLeaseAsync(id, machine.Id, on.Id));
+}).Produces<LeaseAcquireResponse>();
+
+// Releasing and renewing never fail for want of a playthrough: absent, they act on every lease this machine holds on the game.
+agent.MapDelete("/games/{id:guid}/lease", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync) =>
+{
+    await sync.ReleaseLeaseAsync(id, http.CurrentMachine().Id, playthrough);
     return Results.NoContent();
 });
 
-agent.MapPost("/games/{id:guid}/lease/renew", async (Guid id, HttpContext http, SyncService sync) =>
+agent.MapPost("/games/{id:guid}/lease/renew", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync) =>
 {
-    var ok = await sync.RenewLeaseAsync(id, http.CurrentMachine().Id);
+    var ok = await sync.RenewLeaseAsync(id, http.CurrentMachine().Id, playthrough);
     return ok ? Results.Ok() : Results.Conflict("Lease not held by this machine.");
 });
 
 // ---- Upload / download (agent) ----
 agent.MapPost("/games/{id:guid}/upload", async (
     Guid id, HttpContext http, SyncService sync, IConfiguration cfg,
-    string hash, Guid? parent, bool? force, CancellationToken ct) =>
+    string hash, Guid? parent, bool? force, Guid? playthrough, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(hash))
         return Results.BadRequest("Missing content hash.");
@@ -564,7 +569,7 @@ agent.MapPost("/games/{id:guid}/upload", async (
     var machine = http.CurrentMachine();
     try
     {
-        var result = await sync.UploadAsync(id, machine.Id, parent, hash, http.Request.Body, force ?? false, ct);
+        var result = await sync.UploadAsync(id, machine.Id, parent, hash, http.Request.Body, force ?? false, playthrough, ct);
         return Results.Ok(result);
     }
     catch (EmptySaveRefusedException ex) { return Results.Conflict(ex.Message); }
@@ -591,7 +596,7 @@ agent.MapPost("/games/{id:guid}/upload/begin", async (
 
     var machine = http.CurrentMachine();
     var (sessionId, noChange, useDeltaPath, needPaths) = await sync.BeginChunkedUploadAsync(
-        id, machine.Id, req.ParentVersionId, req.ContentHash, req.Force, req.Files, ct);
+        id, machine.Id, req.ParentVersionId, req.ContentHash, req.Force, req.Files, req.PlaythroughId, ct);
     return Results.Ok(new BeginUploadResponse(sessionId, noChange, useDeltaPath, needPaths));
 }).Produces<BeginUploadResponse>();
 
@@ -639,8 +644,8 @@ agent.MapPost("/games/{id:guid}/upload/{sessionId:guid}/complete", async (
     }
 }).Produces<UploadResult>();
 
-agent.MapGet("/games/{id:guid}/download", async (Guid id, HttpContext http, SyncService sync) =>
-    StreamVersion(http, await sync.DownloadHeadAsync(id)));
+agent.MapGet("/games/{id:guid}/download", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync) =>
+    StreamVersion(http, await sync.DownloadHeadAsync(id, http.CurrentMachine().Id, playthrough)));
 
 agent.MapGet("/versions/{versionId:guid}/download", async (Guid versionId, HttpContext http, SyncService sync) =>
     StreamVersion(http, await sync.DownloadVersionAsync(versionId)));
@@ -846,9 +851,12 @@ agent.MapGet("/agent/conflicts", async (SyncService sync, DateTime? resolvedSinc
 
 // One game's version list with a MACHINE key. The admin route of the same shape needs the console
 // password, which an agent has no business holding; under /agent/ so the two cannot collide on a path.
-agent.MapGet("/agent/games/{id:guid}/versions", async (Guid id, SyncService sync) =>
-    Results.Ok((await sync.ListVersionsAsync(id)).Select(v => v.ToDto())))
-    .Produces<List<SaveVersionDto>>();
+// An agent's list is of ITS playthrough's versions (`playthrough` to read another's), where the console's lists them all.
+agent.MapGet("/agent/games/{id:guid}/versions", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync) =>
+{
+    var on = await sync.ResolvePlaythroughAsync(id, http.CurrentMachine().Id, playthrough);
+    return Results.Ok((await sync.ListVersionsAsync(id, on.Id)).Select(v => v.ToDto()));
+}).Produces<List<SaveVersionDto>>();
 
 // Copy a save to another emulator's tree of the same title, from an agent's own UI (tasks/multi-emulator-games Phase 6).
 // The same refusals as the console's: a machine key may already push any save, and the target's Latest is kept.
@@ -862,9 +870,23 @@ agent.MapPost("/agent/games/{id:guid}/versions/{versionId:guid}/copy-to", async 
 
 // The head version's files with their SHA-256, so an agent can say file by file whether its own save
 // matches the server's (tasks/save-file-trees Phase 3). Hashed from the stored archive, cached per version.
-agent.MapGet("/agent/games/{id:guid}/head/files", async (Guid id, SyncService sync, CancellationToken ct) =>
-    await sync.GetHeadFilesAsync(id, ct) is { } files ? Results.Ok(files) : Results.NotFound())
+agent.MapGet("/agent/games/{id:guid}/head/files", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync, CancellationToken ct) =>
+    await sync.GetHeadFilesAsync(id, http.CurrentMachine().Id, playthrough, ct) is { } files ? Results.Ok(files) : Results.NotFound())
     .Produces<HeadFilesDto>();
+
+// ---- Playthroughs (agent): list, fork from a head, and say which one this machine now follows ----
+agent.MapGet("/agent/games/{id:guid}/playthroughs", async (Guid id, SyncService sync) =>
+    await sync.ListPlaythroughsAsync(id) is { } list ? Results.Ok(list) : Results.NotFound())
+    .Produces<PlaythroughDto[]>().Produces(StatusCodes.Status404NotFound);
+
+agent.MapPost("/agent/games/{id:guid}/playthroughs", async (Guid id, CreatePlaythroughRequest req, HttpContext http, SyncService sync) =>
+    PlaythroughResult(await sync.CreatePlaythroughAsync(id, req, http.CurrentMachine().Name, http.CurrentMachine().Id)))
+    .Produces<PlaythroughDto>().Produces<string>(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound).Produces<string>(StatusCodes.Status409Conflict);
+
+agent.MapPost("/agent/games/{id:guid}/playthroughs/{playthroughId:guid}/select", async (Guid id, Guid playthroughId, HttpContext http, SyncService sync) =>
+    PlaythroughResult(await sync.SelectPlaythroughAsync(http.CurrentMachine().Id, id, playthroughId)))
+    .Produces<PlaythroughDto>().Produces(StatusCodes.Status404NotFound).Produces<string>(StatusCodes.Status409Conflict);
 
 agent.MapGet("/agent/conflicts/{id:guid}", async (Guid id, SyncService sync) =>
     await sync.GetConflictAsync(id) is { } c ? Results.Ok(c) : Results.NotFound())
@@ -979,7 +1001,7 @@ app.MapGet("/api/agent/installer/download", (AgentInstallerService installer, st
 });
 
 // ---- Admin dashboard API (requires X-Admin-Password when one is set) ----
-var admin = app.MapGroup("/api").AddEndpointFilter<AdminPasswordFilter>();
+var admin = app.MapGroup("/api").AddEndpointFilter<AdminPasswordFilter>().AddEndpointFilter<PlaythroughErrorFilter>();
 
 admin.MapGet("/machines", async (SyncService sync) =>
     Results.Ok((await sync.ListMachinesAsync()).Select(m => m.ToDto())))
@@ -1369,9 +1391,38 @@ admin.MapGet("/games/{id:guid}/state", async (Guid id, SyncService sync) =>
     await sync.GetGameStateAsync(id) is { } state ? Results.Ok(state) : Results.NotFound())
     .Produces<GameStateDto>();
 
-admin.MapGet("/games/{id:guid}/versions", async (Guid id, SyncService sync) =>
-    Results.Ok((await sync.ListVersionsAsync(id)).Select(v => v.ToDto())))
+// Every playthrough's versions, each naming its own (SaveVersionDto.PlaythroughId); `playthrough` narrows to one.
+admin.MapGet("/games/{id:guid}/versions", async (Guid id, Guid? playthrough, SyncService sync) =>
+    Results.Ok((await sync.ListVersionsAsync(id, playthrough)).Select(v => v.ToDto())))
     .Produces<List<SaveVersionDto>>();
+
+// ---- Playthroughs (admin) ----
+admin.MapGet("/games/{id:guid}/playthroughs", async (Guid id, SyncService sync) =>
+    await sync.ListPlaythroughsAsync(id) is { } list ? Results.Ok(list) : Results.NotFound())
+    .Produces<PlaythroughDto[]>().Produces(StatusCodes.Status404NotFound);
+
+admin.MapPost("/games/{id:guid}/playthroughs", async (Guid id, CreatePlaythroughRequest req, SyncService sync) =>
+    PlaythroughResult(await sync.CreatePlaythroughAsync(id, req, "admin")))
+    .Produces<PlaythroughDto>().Produces<string>(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound).Produces<string>(StatusCodes.Status409Conflict);
+
+admin.MapPost("/games/{id:guid}/playthroughs/{playthroughId:guid}/rename", async (Guid id, Guid playthroughId, RenamePlaythroughRequest req, SyncService sync) =>
+    PlaythroughResult(await sync.RenamePlaythroughAsync(id, playthroughId, req.Name, "admin")))
+    .Produces<PlaythroughDto>().Produces<string>(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound).Produces<string>(StatusCodes.Status409Conflict);
+
+admin.MapPost("/games/{id:guid}/playthroughs/{playthroughId:guid}/archive", async (Guid id, Guid playthroughId, SyncService sync) =>
+    PlaythroughResult(await sync.SetPlaythroughArchivedAsync(id, playthroughId, true, "admin")))
+    .Produces<PlaythroughDto>().Produces<string>(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound).Produces<string>(StatusCodes.Status409Conflict);
+
+admin.MapPost("/games/{id:guid}/playthroughs/{playthroughId:guid}/unarchive", async (Guid id, Guid playthroughId, SyncService sync) =>
+    PlaythroughResult(await sync.SetPlaythroughArchivedAsync(id, playthroughId, false, "admin")))
+    .Produces<PlaythroughDto>().Produces(StatusCodes.Status404NotFound);
+
+admin.MapPost("/games/{id:guid}/playthroughs/{playthroughId:guid}/default", async (Guid id, Guid playthroughId, SyncService sync) =>
+    PlaythroughResult(await sync.SetDefaultPlaythroughAsync(id, playthroughId, "admin")))
+    .Produces<PlaythroughDto>().Produces<string>(StatusCodes.Status400BadRequest).Produces(StatusCodes.Status404NotFound);
 
 // Download one version from the CONSOLE. The agent group already has this route, but only with a
 // machine key — so an admin could not take a copy of a save before doing something destructive to
@@ -1464,17 +1515,18 @@ admin.MapPost("/games/{id:guid}/versions/{versionId:guid}/copy-to", async (Guid 
     CopyResult(await sync.CopyToEmulatorAsync(id, versionId, target, null, "admin")))
     .Produces<SaveVersionDto>().Produces<string>(StatusCodes.Status400BadRequest).Produces(StatusCodes.Status404NotFound);
 
-admin.MapPost("/games/{id:guid}/rollback", async (Guid id, Guid version, SyncService sync) =>
-    await sync.RollbackAsync(id, version, "admin")
+// `playthrough`: whose head moves; absent is the one the version was uploaded to.
+admin.MapPost("/games/{id:guid}/rollback", async (Guid id, Guid version, Guid? playthrough, SyncService sync) =>
+    await sync.RollbackAsync(id, version, "admin", playthrough)
         ? Results.Ok() : Results.BadRequest("Could not roll back."));
 
-admin.MapPost("/games/{id:guid}/set-latest", async (Guid id, Guid version, SyncService sync) =>
-    await sync.SetAsLatestAsync(id, version, "admin")
+admin.MapPost("/games/{id:guid}/set-latest", async (Guid id, Guid version, Guid? playthrough, SyncService sync) =>
+    await sync.SetAsLatestAsync(id, version, "admin", playthrough)
         ? Results.Ok() : Results.BadRequest("Could not set latest."));
 
-admin.MapDelete("/games/{id:guid}/lease/force", async (Guid id, SyncService sync) =>
+admin.MapDelete("/games/{id:guid}/lease/force", async (Guid id, Guid? playthrough, SyncService sync) =>
 {
-    await sync.ForceReleaseLeaseAsync(id);
+    await sync.ForceReleaseLeaseAsync(id, playthrough);
     return Results.NoContent();
 });
 
@@ -1809,6 +1861,14 @@ static IResult UnknownPlatform(string? requested) => Results.BadRequest(
 // all an older agent or console ever sends.
 static IResult CopyResult((SaveVersionDto? Version, string? Refusal) r) =>
     r.Version is { } v ? Results.Ok(v) : r.Refusal == "not_found" ? Results.NotFound() : Results.BadRequest(r.Refusal);
+
+static IResult PlaythroughResult(PlaythroughOutcome r) => r.Failure switch
+{
+    PlaythroughFailure.None => Results.Ok(r.Value),
+    PlaythroughFailure.NotFound => Results.NotFound(r.Error),
+    PlaythroughFailure.Invalid => Results.BadRequest(r.Error),
+    _ => Results.Conflict(r.Error),
+};
 
 static IResult TitleResult(string? why) => why switch
 {

@@ -9,6 +9,8 @@ public class AppDbContext : DbContext
     public DbSet<Machine> Machines => Set<Machine>();
     public DbSet<Game> Games => Set<Game>();
     public DbSet<GameTitle> GameTitles => Set<GameTitle>();
+    public DbSet<Playthrough> Playthroughs => Set<Playthrough>();
+    public DbSet<DeviceSelection> DeviceSelections => Set<DeviceSelection>();
     public DbSet<SaveVersion> SaveVersions => Set<SaveVersion>();
     public DbSet<SaveVersionFile> SaveVersionFiles => Set<SaveVersionFile>();
     public DbSet<Lease> Leases => Set<Lease>();
@@ -38,8 +40,42 @@ public class AppDbContext : DbContext
         b.Entity<Game>().HasIndex(g => g.TitleId);
         b.Entity<Game>().HasOne(g => g.Title).WithMany().HasForeignKey(g => g.TitleId).OnDelete(DeleteBehavior.SetNull);
 
-        // One active lease per game.
-        b.Entity<Lease>().HasIndex(l => l.GameId).IsUnique();
+        // One active lease per playthrough of a game: two devices may play two playthroughs at once.
+        b.Entity<Lease>().HasIndex(l => new { l.GameId, l.PlaythroughId }).IsUnique();
+
+        // A game's playthroughs (tasks/save-playthroughs). A name is unique within the game ignoring case (NOCASE, so the
+        // database refuses the second "hard mode" a racing request would otherwise slip in), and exactly one is the default.
+        b.Entity<Playthrough>().Property(p => p.Name).UseCollation("NOCASE");
+        b.Entity<Playthrough>().HasIndex(p => new { p.GameId, p.Name }).IsUnique();
+        b.Entity<Playthrough>().HasIndex(p => p.GameId).IsUnique().HasFilter("\"IsDefault\" = 1")
+            .HasDatabaseName("IX_Playthroughs_GameId_Default");
+        b.Entity<Playthrough>()
+            .HasOne(p => p.Game).WithMany()
+            .HasForeignKey(p => p.GameId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // One selection per device per game. Both sides cascade: a selection means nothing once its machine, game or
+        // playthrough is gone.
+        b.Entity<DeviceSelection>().HasKey(d => new { d.MachineId, d.GameId });
+        b.Entity<DeviceSelection>().HasIndex(d => d.PlaythroughId);
+        b.Entity<DeviceSelection>()
+            .HasOne<Machine>().WithMany()
+            .HasForeignKey(d => d.MachineId)
+            .OnDelete(DeleteBehavior.Cascade);
+        b.Entity<DeviceSelection>()
+            .HasOne<Game>().WithMany()
+            .HasForeignKey(d => d.GameId)
+            .OnDelete(DeleteBehavior.Cascade);
+        b.Entity<DeviceSelection>()
+            .HasOne<Playthrough>().WithMany()
+            .HasForeignKey(d => d.PlaythroughId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Versions, conflicts and leases belong to a playthrough. No foreign key: the row that matters (the version) is
+        // already tied to its game, and a restricted key here would make deleting a game depend on the order EF removes
+        // its children in.
+        b.Entity<SaveVersion>().HasIndex(v => new { v.PlaythroughId, v.CreatedAt });
+        b.Entity<ConflictFlag>().HasIndex(c => new { c.PlaythroughId, c.Status });
 
         b.Entity<SaveVersion>().HasIndex(v => new { v.GameId, v.CreatedAt });
         // Save history outlives the machine that produced it: deleting a machine must null the

@@ -555,7 +555,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -577,7 +579,9 @@ export interface paths {
         };
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -611,7 +615,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -650,6 +656,7 @@ export interface paths {
                     hash: string;
                     parent?: string;
                     force?: boolean;
+                    playthrough?: string;
                 };
                 header?: never;
                 path: {
@@ -804,7 +811,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -1859,7 +1868,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -1997,7 +2008,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -2019,6 +2032,154 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/games/{id}/playthroughs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughDto"][];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreatePlaythroughRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/games/{id}/playthroughs/{playthroughId}/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    playthroughId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -3933,7 +4094,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -3955,6 +4118,329 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/playthroughs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughDto"][];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreatePlaythroughRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/playthroughs/{playthroughId}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    playthroughId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RenamePlaythroughRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/playthroughs/{playthroughId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    playthroughId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/playthroughs/{playthroughId}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    playthroughId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/playthroughs/{playthroughId}/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    playthroughId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -4574,6 +5060,7 @@ export interface paths {
             parameters: {
                 query: {
                     version: string;
+                    playthrough?: string;
                 };
                 header?: never;
                 path: {
@@ -4611,6 +5098,7 @@ export interface paths {
             parameters: {
                 query: {
                     version: string;
+                    playthrough?: string;
                 };
                 header?: never;
                 path: {
@@ -4647,7 +5135,9 @@ export interface paths {
         post?: never;
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -5557,9 +6047,11 @@ export interface components {
             leaseExpiresAt?: null | string;
             /** Format: uuid */
             claimToken?: null | string;
+            /** Format: uuid */
+            playthroughId?: null | string;
         };
         /** @enum {unknown} */
-        AgentCommandType: "Pull" | "Push" | "Sync" | "Scan";
+        AgentCommandType: "Pull" | "Push" | "Sync" | "Scan" | "SwitchPlaythrough";
         AgentEventDto: {
             /** Format: uuid */
             id: string;
@@ -5793,6 +6285,8 @@ export interface components {
             parentVersionId: null | string;
             force: boolean;
             files?: null | components["schemas"]["FileManifestEntry"][];
+            /** Format: uuid */
+            playthroughId?: null | string;
         };
         BeginUploadResponse: {
             /** Format: uuid */
@@ -5859,6 +6353,8 @@ export interface components {
             lastSeen?: null | string;
             /** @default false */
             escalated: boolean;
+            /** Format: uuid */
+            playthroughId?: null | string;
         };
         ConflictEscalationDto: {
             /** Format: uuid */
@@ -5956,6 +6452,13 @@ export interface components {
             emulatorProfile?: null | string;
             emulatorKey?: null | string;
         };
+        CreatePlaythroughRequest: {
+            name: string;
+            /** Format: uuid */
+            fromVersionId?: null | string;
+            /** Format: uuid */
+            fromPlaythroughId?: null | string;
+        };
         CreateSessionRequest: {
             password: null | string;
         };
@@ -5978,6 +6481,8 @@ export interface components {
             gameId: null | string;
             type: components["schemas"]["AgentCommandType"];
             force: boolean;
+            /** Format: uuid */
+            playthroughId?: null | string;
         };
         EnrollmentDto: {
             /** Format: uuid */
@@ -6096,6 +6601,11 @@ export interface components {
             machineIds?: null | string[];
             sources?: null | components["schemas"]["GameSourceDto"][];
             emulator?: null | string;
+            /**
+             * Format: int32
+             * @default 1
+             */
+            playthroughCount: number;
         };
         HandoverOverviewDto: {
             /** Format: int64 */
@@ -6157,6 +6667,8 @@ export interface components {
             acquiredAt: null | string;
             /** Format: date-time */
             expiresAt: null | string;
+            /** Format: uuid */
+            playthroughId?: null | string;
         };
         LockoutDto: {
             client: string;
@@ -6254,6 +6766,34 @@ export interface components {
             warnings: string[];
             refusal: null | string;
         };
+        PlaythroughDeviceDto: {
+            /** Format: uuid */
+            machineId: string;
+            machineName: string;
+            /** Format: date-time */
+            selectedAt: string;
+        };
+        PlaythroughDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            gameId: string;
+            name: string;
+            isDefault: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: uuid */
+            forkedFromVersionId: null | string;
+            /** Format: date-time */
+            archivedAt: null | string;
+            head: null | components["schemas"]["SaveVersionDto"];
+            /** Format: int32 */
+            versionCount: number;
+            /** Format: int64 */
+            totalSize: number;
+            hasOpenConflict: boolean;
+            devices: components["schemas"]["PlaythroughDeviceDto"][];
+        };
         RedeemEnrollmentRequest: {
             token: string;
             machineName?: null | string;
@@ -6263,6 +6803,9 @@ export interface components {
             machineId: string;
             apiKey: string;
             machineName: string;
+        };
+        RenamePlaythroughRequest: {
+            name: string;
         };
         ReportContentRequest: {
             packages: components["schemas"]["ContentPackageDto"][];
@@ -6303,6 +6846,8 @@ export interface components {
             copiedFrom?: null | string;
             /** Format: uuid */
             copiedFromVersionId?: null | string;
+            /** Format: uuid */
+            playthroughId?: null | string;
         };
         ScanPathCandidate: {
             /** Format: uuid */

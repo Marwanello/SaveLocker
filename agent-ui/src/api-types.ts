@@ -4161,6 +4161,8 @@ export interface components {
             lastSeen?: null | string;
             /** @default false */
             escalated: boolean;
+            /** Format: uuid */
+            playthroughId?: null | string;
         };
         /**
          * @default Manual
@@ -4441,6 +4443,11 @@ export interface components {
             machineIds?: null | string[];
             sources?: null | components["schemas"]["GameSourceDto"][];
             emulator?: null | string;
+            /**
+             * Format: int32
+             * @default 1
+             */
+            playthroughCount: number;
         };
         GameSyncRequest: {
             mode: null | string;
@@ -4520,6 +4527,8 @@ export interface components {
             acquiredAt: null | string;
             /** Format: date-time */
             expiresAt: null | string;
+            /** Format: uuid */
+            playthroughId?: null | string;
         };
         LeaseWarningDto: {
             gameName: string;
@@ -4676,6 +4685,8 @@ export interface components {
             copiedFrom?: null | string;
             /** Format: uuid */
             copiedFromVersionId?: null | string;
+            /** Format: uuid */
+            playthroughId?: null | string;
         };
         SaveVsCloudDto: {
             state: string;

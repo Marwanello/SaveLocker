@@ -98,6 +98,8 @@ public sealed class ArchiveStore
         public required Guid GameId { get; init; }
         public required Guid MachineId { get; init; }
         public required Guid VersionId { get; init; }
+        /// <summary>The playthrough the push is to, fixed at Begin: a switch while the chunks are in flight must not move it.</summary>
+        public required Guid PlaythroughId { get; init; }
         public required string ContentHash { get; init; }
         public required Guid? ParentVersionId { get; init; }
         public required bool Force { get; init; }
@@ -137,7 +139,7 @@ public sealed class ArchiveStore
         Guid GameId, Guid MachineId, Guid VersionId, long BytesReceived,
         string ContentHash, Guid? ParentVersionId, bool Force,
         FileManifestEntry[]? Files, string[]? NeedPaths, Guid? BaseVersionId,
-        IReadOnlyDictionary<string, string>? BaseManifest);
+        IReadOnlyDictionary<string, string>? BaseManifest, Guid PlaythroughId = default);
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, UploadSession> _sessions = new();
 
@@ -151,7 +153,7 @@ public sealed class ArchiveStore
     /// <summary>Start a chunked upload: stage an empty file and remember the metadata the eventual
     /// <see cref="CompleteSession"/> will need, so later requests need only name the session.</summary>
     public Guid BeginSession(
-        Guid gameId, Guid machineId, Guid versionId, string contentHash, Guid? parentVersionId, bool force)
+        Guid gameId, Guid machineId, Guid versionId, string contentHash, Guid? parentVersionId, bool force, Guid playthroughId)
     {
         SweepExpiredSessions();
 
@@ -165,6 +167,7 @@ public sealed class ArchiveStore
             GameId = gameId,
             MachineId = machineId,
             VersionId = versionId,
+            PlaythroughId = playthroughId,
             ContentHash = contentHash,
             ParentVersionId = parentVersionId,
             Force = force,
@@ -181,7 +184,7 @@ public sealed class ArchiveStore
             info = new ChunkedUploadInfo(
                 s.GameId, s.MachineId, s.VersionId, Interlocked.Read(ref s.BytesReceived),
                 s.ContentHash, s.ParentVersionId, s.Force, s.Files, s.NeedPaths, s.BaseVersionId,
-                s.BaseManifest);
+                s.BaseManifest, s.PlaythroughId);
             return true;
         }
         info = default!;

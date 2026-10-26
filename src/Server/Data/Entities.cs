@@ -88,7 +88,11 @@ public class Game
     /// <see cref="ConflictPolicy.PreferMachine"/>. Null otherwise.</summary>
     public Guid? PreferredMachineId { get; set; }
 
-    /// <summary>The current authoritative version agents should pull. Null until first upload.</summary>
+    /// <summary>
+    /// A mirror of the DEFAULT playthrough's head (<see cref="Playthrough.HeadVersionId"/>), written in the same step as
+    /// it (<c>SyncService.MoveHeadAsync</c>) so every reader that has only ever asked "the game's latest" keeps working.
+    /// Null until first upload. Code that syncs reads the head of the playthrough it is syncing instead.
+    /// </summary>
     public Guid? HeadVersionId { get; set; }
 
     /// <summary>Newline-separated ids of the games merged into this one (tasks/emulator-saves Phase 17), or null: an agent
@@ -107,6 +111,51 @@ public class Game
     public string? TitleEdition { get; set; }
 
     public List<SaveVersion> Versions { get; set; } = new();
+}
+
+/// <summary>
+/// One line of a game's saves (tasks/save-playthroughs): its own head, versions, conflicts and lease. Every game has at
+/// least one, the <see cref="IsDefault"/> one, "Main". A machine follows exactly one playthrough per game
+/// (<see cref="DeviceSelection"/>) and pushes to and pulls from only that.
+/// </summary>
+public class Playthrough
+{
+    public Guid Id { get; set; }
+    public Guid GameId { get; set; }
+    public Game? Game { get; set; }
+
+    /// <summary>1-60 characters, unique within the game ignoring case.</summary>
+    public string Name { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+
+    /// <summary>The version this playthrough was forked from, or null when it started empty. Kept after the playthrough
+    /// moves on, as its provenance.</summary>
+    public Guid? ForkedFromVersionId { get; set; }
+
+    /// <summary>
+    /// The latest save of this playthrough, or null until the first push. A fork's head starts as the version it was forked
+    /// from, which belongs to another playthrough (<see cref="SaveVersion.PlaythroughId"/>): no archive is copied.
+    /// </summary>
+    public Guid? HeadVersionId { get; set; }
+
+    /// <summary>When it was archived. An archived playthrough is frozen — no push, pull, select or lease — and is not pruned.</summary>
+    public DateTime? ArchivedAt { get; set; }
+
+    /// <summary>The one playthrough a new device, and an agent that predates playthroughs, follows. Exactly one per game.</summary>
+    public bool IsDefault { get; set; }
+}
+
+/// <summary>
+/// Which playthrough one machine follows for one game. Per device, not per game: switching the Deck leaves the PC alone.
+/// A row is written the first time a machine syncs a game (the default then), so a later change of the default never moves a
+/// device under its own files.
+/// </summary>
+public class DeviceSelection
+{
+    public Guid MachineId { get; set; }
+    public Guid GameId { get; set; }
+    public Guid PlaythroughId { get; set; }
+    public DateTime SelectedAt { get; set; }
 }
 
 /// <summary>
@@ -132,6 +181,10 @@ public class SaveVersion
     public Guid Id { get; set; }
     public Guid GameId { get; set; }
     public Game? Game { get; set; }
+
+    /// <summary>The playthrough this snapshot was uploaded to (tasks/save-playthroughs). Retention counts versions per
+    /// playthrough. A playthrough forked from this version has it as its head without it moving here.</summary>
+    public Guid PlaythroughId { get; set; }
 
     /// <summary>The machine that uploaded this snapshot, or null once that machine has been
     /// deleted. Nullable on purpose: a version outlives its uploader (see
@@ -199,6 +252,9 @@ public class Lease
     public Guid GameId { get; set; }
     public Game? Game { get; set; }
 
+    /// <summary>The playthrough being played: two devices can hold a lease on two playthroughs of one game at once.</summary>
+    public Guid PlaythroughId { get; set; }
+
     public Guid MachineId { get; set; }
     public Machine? Machine { get; set; }
 
@@ -212,6 +268,9 @@ public class ConflictFlag
     public Guid Id { get; set; }
     public Guid GameId { get; set; }
     public Game? Game { get; set; }
+
+    /// <summary>The playthrough whose line diverged. Two devices on different playthroughs never conflict.</summary>
+    public Guid PlaythroughId { get; set; }
 
     public Guid VersionAId { get; set; }
     public Guid VersionBId { get; set; }
@@ -264,6 +323,9 @@ public class AgentCommand
 
     public AgentCommandType Type { get; set; }
     public bool Force { get; set; }
+
+    /// <summary>The playthrough a <see cref="AgentCommandType.SwitchPlaythrough"/> switches to; null for every other type.</summary>
+    public Guid? PlaythroughId { get; set; }
     public CommandStatus Status { get; set; } = CommandStatus.Pending;
 
     public DateTime CreatedAt { get; set; }

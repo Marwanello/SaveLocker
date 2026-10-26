@@ -400,8 +400,8 @@ public sealed class BackupService
         catch (SqliteException ex) { return $"That file is not a readable database: {ex.Message}"; }
     }
 
-    /// <summary>Each game's latest version, read from the snapshot itself so the list matches the database
-    /// the backup holds, not whatever moved on since.</summary>
+    /// <summary>Each playthrough's latest version (a game's, once per distinct version), read from the snapshot itself so
+    /// the list matches the database the backup holds, not whatever moved on since.</summary>
     private static async Task<List<ManifestGame>> ReadHeadsAsync(string dbPath, CancellationToken ct)
     {
         var list = new List<ManifestGame>();
@@ -409,8 +409,10 @@ public sealed class BackupService
         await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT g.Id, g.Name, v.Id, v.ArchivePath, v.Size
-            FROM Games g JOIN SaveVersions v ON v.Id = g.HeadVersionId
+            SELECT DISTINCT g.Id, g.Name, v.Id, v.ArchivePath, v.Size
+            FROM Playthroughs p
+            JOIN Games g ON g.Id = p.GameId
+            JOIN SaveVersions v ON v.Id = p.HeadVersionId
             """;
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))

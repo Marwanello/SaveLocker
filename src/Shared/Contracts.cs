@@ -519,7 +519,9 @@ public record LeaseDto(
     Guid? HolderMachineId,
     string? HolderMachineName,
     DateTime? AcquiredAt,
-    DateTime? ExpiresAt);
+    DateTime? ExpiresAt,
+    // The playthrough the lease is on (tasks/save-playthroughs): one lease per game AND playthrough.
+    Guid? PlaythroughId = null);
 
 public record LeaseAcquireResponse(bool Granted, LeaseDto Lease);
 
@@ -546,7 +548,10 @@ public record SaveVersionDto(
     // Made by copying another emulator's save of the same title (tasks/multi-emulator-games Phase 6): that emulator's
     // name and the version copied. Null for a version a machine uploaded.
     string? CopiedFrom = null,
-    Guid? CopiedFromVersionId = null);
+    Guid? CopiedFromVersionId = null,
+    // The playthrough this version was uploaded to (tasks/save-playthroughs). A playthrough forked from a version has
+    // that version as its head while it stays in the playthrough it was made in.
+    Guid? PlaythroughId = null);
 
 /// <summary>
 /// Where one version of a title's tree can be copied (tasks/multi-emulator-games Phase 6): another emulator's tree of the
@@ -749,8 +754,10 @@ public record FileManifestEntry(string Path, string Sha256, long Size);
 /// full declared truth of "what should exist" (mirrors how <c>RestoreArchive</c> already treats
 /// "absent from the archive" as a deletion) — no separate removed-paths list is needed.
 /// </param>
+/// <param name="PlaythroughId">The playthrough pushed to (tasks/save-playthroughs); null = the one this machine follows,
+/// else the game's default — what an agent that predates playthroughs sends.</param>
 public record BeginUploadRequest(
-    string ContentHash, Guid? ParentVersionId, bool Force, FileManifestEntry[]? Files = null);
+    string ContentHash, Guid? ParentVersionId, bool Force, FileManifestEntry[]? Files = null, Guid? PlaythroughId = null);
 
 /// <summary>Either <see cref="SessionId"/> is set and the caller uploads chunks against it, or
 /// <see cref="NoChange"/> is set and there is nothing to send — the server already has this content.
@@ -766,6 +773,69 @@ public record BeginUploadResponse(
     Guid? SessionId, UploadResult? NoChange, bool UseDeltaPath = false, string[]? NeedPaths = null);
 
 public record ChunkAppendResponse(long BytesReceived);
+
+// ----- Playthroughs (tasks/save-playthroughs) -----
+
+/// <summary>Playthrough facts both sides of the wire need.</summary>
+public static class Playthroughs
+{
+    /// <summary>The name every game's first playthrough gets.</summary>
+    public const string DefaultName = "Main";
+    public const int MaxNameLength = 60;
+
+    /// <summary>The first agent release that can run a <see cref="AgentCommandType.SwitchPlaythrough"/>. An older agent cannot
+    /// even parse the command type, so the server neither queues nor hands one to a machine reporting less.</summary>
+    public const string MinAgentVersion = "0.9.0";
+
+    /// <summary>Whether an agent reporting <paramref name="agentVersion"/> can run a switch. A build suffix ("9.9.9-ci") is
+    /// ignored, and a version nobody could read counts as too old.</summary>
+    public static bool AgentCanSwitch(string? agentVersion)
+    {
+        var text = agentVersion?.Trim().TrimStart('v', 'V');
+        if (string.IsNullOrEmpty(text)) return false;
+        var suffix = text.IndexOfAny(['-', '+']);
+        if (suffix >= 0) text = text[..suffix];
+        if (!text.Contains('.')) text += ".0";
+        return System.Version.TryParse(text, out var have) && have >= System.Version.Parse(MinAgentVersion);
+    }
+
+    /// <summary>A playthrough name as stored: trimmed, internal whitespace kept. Null when it is empty or too long.</summary>
+    public static string? CleanName(string? name)
+    {
+        var trimmed = name?.Trim();
+        return string.IsNullOrEmpty(trimmed) || trimmed.Length > MaxNameLength || trimmed.Any(char.IsControl) ? null : trimmed;
+    }
+}
+
+/// <summary>A device that has this playthrough selected, and since when.</summary>
+public record PlaythroughDeviceDto(Guid MachineId, string MachineName, DateTime SelectedAt);
+
+/// <summary>
+/// One line of a game's saves: its own head, versions, conflicts and lease. <see cref="Head"/> is the latest save
+/// (null for a playthrough that has had none pushed yet). <see cref="VersionCount"/> counts the versions uploaded to it.
+/// </summary>
+public record PlaythroughDto(
+    Guid Id,
+    Guid GameId,
+    string Name,
+    bool IsDefault,
+    DateTime CreatedAt,
+    Guid? ForkedFromVersionId,
+    DateTime? ArchivedAt,
+    SaveVersionDto? Head,
+    int VersionCount,
+    long TotalSize,
+    bool HasOpenConflict,
+    PlaythroughDeviceDto[] Devices);
+
+/// <summary>
+/// A new playthrough: from one version (<paramref name="FromVersionId"/>), from another playthrough's latest save
+/// (<paramref name="FromPlaythroughId"/>), or — neither — starting empty, whose first push makes its first version.
+/// Either way nothing is uploaded again: the new playthrough's head points at the existing version.
+/// </summary>
+public record CreatePlaythroughRequest(string Name, Guid? FromVersionId = null, Guid? FromPlaythroughId = null);
+
+public record RenamePlaythroughRequest(string Name);
 
 // ----- Conflicts -----
 
@@ -793,7 +863,9 @@ public record ConflictDto(
     Guid? MachineId = null,
     int Count = 1,
     DateTime? LastSeen = null,
-    bool Escalated = false);
+    bool Escalated = false,
+    // The playthrough the two versions diverged in (tasks/save-playthroughs): a conflict never spans two.
+    Guid? PlaythroughId = null);
 
 // ----- Aggregate state (dashboard + agent sync) -----
 
@@ -811,7 +883,9 @@ public record GameStateDto(
     Guid[]? MachineIds = null,
     GameSourceDto[]? Sources = null,
     // The emulator its sources name ("RetroArch"), null for a PC game: what a title's tab is called.
-    string? Emulator = null);
+    string? Emulator = null,
+    // How many playthroughs the game has, archived ones included (tasks/save-playthroughs). Head is the default one's.
+    int PlaythroughCount = 1);
 
 // ----- Agent command channel (dashboard → agent) -----
 
@@ -826,7 +900,11 @@ public enum AgentCommandType
     /// <summary>Pull then push.</summary>
     Sync,
     /// <summary>Run a local discovery scan and report what was found.</summary>
-    Scan
+    Scan,
+    /// <summary>Switch the machine's selected playthrough of the game (<see cref="EnqueueCommandRequest.PlaythroughId"/>),
+    /// with the agent's own guards — refused while the game runs (tasks/save-playthroughs). Only an agent that
+    /// reports <see cref="Playthroughs.MinAgentVersion"/> or later is ever handed one.</summary>
+    SwitchPlaythrough
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<CommandStatus>))]
@@ -851,7 +929,8 @@ public enum CommandStatus
 }
 
 /// <summary>A command the dashboard wants an agent to run (null GameId = all games).</summary>
-public record EnqueueCommandRequest(Guid MachineId, Guid? GameId, AgentCommandType Type, bool Force);
+/// <param name="PlaythroughId">The playthrough a <see cref="AgentCommandType.SwitchPlaythrough"/> switches to; unused otherwise.</param>
+public record EnqueueCommandRequest(Guid MachineId, Guid? GameId, AgentCommandType Type, bool Force, Guid? PlaythroughId = null);
 
 /// <summary>
 /// Several commands in one call — the console's "Sync all". <paramref name="SkipMachinesUnseenForSeconds"/>
@@ -900,7 +979,9 @@ public record AgentCommandDto(
     /// <see cref="CommandResultRequest"/> so the server can tell a result apart from one reported
     /// under a claim that has since been reclaimed after its lease expired.
     /// </summary>
-    Guid? ClaimToken = null);
+    Guid? ClaimToken = null,
+    /// <summary>The playthrough a <see cref="AgentCommandType.SwitchPlaythrough"/> switches to.</summary>
+    Guid? PlaythroughId = null);
 
 /// <summary>
 /// <paramref name="ClaimToken"/> must match the command's current claim (the one the agent was
