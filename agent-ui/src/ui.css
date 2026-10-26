@@ -564,8 +564,8 @@ button.sl-tree__twist:focus-visible { outline: 2px solid var(--color-accent); ou
 /* ---- Controller layer (agent-ui/src/gamepad) ------------------------------------------------- */
 /* The pointer's outline, borrowed for the pad. Applied by nav.ts to the focused control (the
    checkbox's own label when the focusable is the box itself). */
-.pad-focused { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 8px; }
-label.pad-focused { outline-offset: 0; }
+html.sl-pad-input .pad-focused { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 8px; }
+html.sl-pad-input label.pad-focused { outline-offset: 0; }
 /* A binding glyph shown on the control it acts on — only rendered while a controller is active. */
 .sl-padglyph { display: inline-flex; align-items: center; flex: none; opacity: .95; }
 .sl-padglyph__hold { margin-left: 4px; font-size: 10.5px; color: var(--color-dim); }

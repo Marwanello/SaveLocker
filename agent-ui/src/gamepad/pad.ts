@@ -78,64 +78,36 @@ export function usePadVisible(): boolean {
   return pad.connected
 }
 
-function fire(action: PadAction) {
+function fire(action: PadAction, fromPad = true) {
+  if (fromPad) setPadInput(true)
   emit({ lastAction: action, seq: snapshot.seq + 1 })
   actionHandler?.(action)
 }
 
 /* ------------------------------------------------------------------ keyboard */
 
-const KEYMAP: Record<string, PadAction> = {
-  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
-  Enter: 'a', ' ': 'a',
-  Backspace: 'b', Escape: 'b',
-  x: 'x', X: 'x', y: 'y', Y: 'y',
-  q: 'lb', Q: 'lb', e: 'rb', E: 'rb',
-  t: 'start', T: 'start',
-  v: 'r3', V: 'r3',
-  z: 'lt', Z: 'lt',
-  r: 'rt', R: 'rt',
-  f: 'view', F: 'view',
-  g: 'l3', G: 'l3',
-  PageDown: 'scrollDown', PageUp: 'scrollUp',
-}
-
+/**
+ * The keyboard is not a controller: letters, arrows and Enter keep their native meaning. Only Escape means "back" (it closes
+ * dialogs and menus). Any keyboard or mouse input also hides the controller's focus ring until a pad button is pressed again.
+ */
 function onKeyDown(ev: KeyboardEvent) {
   if ((ev as { __slSynthetic?: boolean }).__slSynthetic) return
-  // Browser shortcuts (Ctrl+R, Ctrl+L, …) are never ours to consume.
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return
-  const t = ev.target as HTMLElement | null
-  const tag = t?.tagName
-  // Only a field INSIDE the app counts, and only a TEXT field: a checkbox must not swallow the
-  // binding keys, or X over a candidate row would do nothing.
-  const editable = t instanceof HTMLInputElement
-    ? !['checkbox', 'radio', 'range', 'color', 'file', 'submit', 'button', 'reset', 'image'].includes(t.type)
-    : tag === 'TEXTAREA' || t?.isContentEditable === true
-  // A dialog is portalled to <body>, outside .sl-app, but its text fields are the app's too (Backspace must edit, not go back).
-  const inAppField = !!t && !!t.closest?.('.sl-app, [role="dialog"]') && editable
-
-  if (ev.key === 'Escape') { consume(ev); fire('b'); return }
-  if (inAppField) {
-    // Up/Down LEAVE a single-line field for navigation (Left/Right keep the caret), or the ring
-    // could never get past a search box — the one focus trap a browser gives you for free.
-    if ((ev.key === 'ArrowUp' || ev.key === 'ArrowDown') && t instanceof HTMLInputElement) {
-      consume(ev)
-      fire(ev.key === 'ArrowUp' ? 'up' : 'down')
-    }
-    return
+  setPadInput(false)
+  if (ev.key === 'Escape') {
+    ev.preventDefault()
+    ev.stopPropagation()
+    fire('b', false)
   }
-  // A native button already activates on Enter/Space; intercepting would double-fire it.
-  if ((ev.key === 'Enter' || ev.key === ' ') && (tag === 'BUTTON' || tag === 'A') && t?.closest?.('.sl-app')) return
-  const action = KEYMAP[ev.key]
-  if (!action) return
-  consume(ev)
-  // Shift+T is the keyboard's Start hold (a held key only repeats, so it can't be timed the way a button is).
-  fire(action === 'start' && ev.shiftKey ? 'startHold' : action)
 }
 
-function consume(ev: KeyboardEvent) {
-  ev.preventDefault()
-  ev.stopPropagation()
+/** True while the last input came from a controller: the ring (`.pad-focused`) is drawn only then. */
+function setPadInput(on: boolean) {
+  document.documentElement.classList.toggle('sl-pad-input', on)
+}
+
+function onPointer() {
+  setPadInput(false)
 }
 
 /* ------------------------------------------------------------------ gamepad */
@@ -260,6 +232,8 @@ export function startInput(): void {
   if (started) return
   started = true
   document.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener('pointerdown', onPointer, true)
+  document.addEventListener('pointermove', onPointer, true)
   raf = requestAnimationFrame(poll)
 }
 
@@ -267,6 +241,9 @@ export function stopInput(): void {
   if (!started) return
   started = false
   document.removeEventListener('keydown', onKeyDown, true)
+  document.removeEventListener('pointerdown', onPointer, true)
+  document.removeEventListener('pointermove', onPointer, true)
+  document.documentElement.classList.remove('sl-pad-input')
   cancelAnimationFrame(raf)
 }
 
