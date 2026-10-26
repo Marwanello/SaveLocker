@@ -22,7 +22,8 @@
 #   7. RETENTION PER PLAYTHROUGH. The game's limit applies to each separately; a version that is another playthrough's
 #      head is never pruned out from under it.
 #   8. ARCHIVE / DEFAULT. Frozen means frozen (push, pull, select, lease all refused); the default cannot be archived;
-#      a device with a recorded playthrough does not follow a change of default, a new device does.
+#      a device with a recorded playthrough does not follow a change of default, a new device does; and the agent state
+#      route (`savelocker status`, save-vs-cloud, the DLC check) describes the device's own playthrough, not the default.
 #   9. DELTA. A per-file delta is only negotiated against the head of the SAME playthrough.
 #  10. THE SWITCH COMMAND. Refused to a machine whose agent is too old to parse it, and never handed to one.
 #
@@ -413,6 +414,10 @@ try {
     Check "Hard mode becomes the default" ($mk.Json.isDefault -eq $true -and (Pt $game "Main").isDefault -eq $false)
     Check "the mirror now reports Hard mode's head as the game's" ((@(Admin-Get "/api/overview") | Where-Object { $_.game.id -eq $game }).head.id -eq $h1)
     Check "a device that already followed Main stays on Main" ((Pull $dev.apiKey $game).Content -eq "v3")
+    $devState = (Call "GET" "/api/agent/games/$game/state" $dev.apiKey).Json
+    Check "and its agent state reports Main's head, not the new default's" ($devState.head.id -eq $v3)
+    Check "an agent's state can name another playthrough" ((Call "GET" "/api/agent/games/$game/state?playthrough=$($hard.id)" $dev.apiKey).Json.head.id -eq $h1)
+    Check "an agent's state for an unknown game is a 404" ((Call "GET" "/api/agent/games/$([guid]::NewGuid())/state" $dev.apiKey).Status -eq 404)
     Check "a device seen for the first time now gets the new default" ((Pull $dev2.apiKey $game).Content -eq "h1")
     Check "exactly one playthrough is the default" (@(Playthroughs $game | Where-Object { $_.isDefault }).Count -eq 1)
     Admin-Post "/api/games/$game/playthroughs/$($main.id)/default" | Out-Null
