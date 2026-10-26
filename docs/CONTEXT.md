@@ -29,6 +29,11 @@ split into six sections with a jump bar (LB/RB on a controller) and the copies r
 `tests/run-playthrough-agent-tests.ps1` (60 checks: fork, switch, two lines at once, running refusal, conflict refusal, start fresh, offline from a copy, copies off,
 tampered copy, only-until-uploaded) and `PlaythroughStoreTests` (13), plus the existing server and agent suites (see [[Build and Run]] → Suite baseline). **Not verified:**
 a Deck, a controller, the Linux launch wrapper with a non-default playthrough, the console's switch command through a real fleet (testenv pass).
+**Reviewed 2026-10-26 (PR #95), fixed:** a save played offline could be marked uploaded and never sent (away from a line restored from its
+unsent copy, without playing); back on such a line, the flush and the device's next push conflicted with each other; one damaged copy
+stopped every later copy and selection; the sweep could delete a copy whose index it failed to read; two switches of one game could
+run at once; `status`/sync-status read the default playthrough. `run-playthrough-agent-tests` 60 → 68 (the 6 new behaviour checks fail on
+the pre-review agent); `PlaythroughStoreTests` 13 → 15.
 **Next action:** the maintainer's testenv pass of the steps in the PR (build with `-Version 0.9.0-test`), then merge; Group 3 (console Saves card, Decky, Playnite, delete) is next.
 
 **Playthroughs Group 1 — the server — built (2026-10-26, branch `playthroughs-group-1`, PR open, not merged).** Phases 1–3 of
