@@ -194,10 +194,11 @@ param(
     # release forever, so the update channel can never move it (Gotchas.md). Auto-derived from the
     # latest release tag (patch bumped, "-test" appended) rather than hardcoded, so nobody has to
     # remember to bump a fixed string after every release — a stale one silently reintroduces the
-    # exact bug this comment warns about. Falls back to a fixed placeholder if no v*.*.* tag is
+    # exact bug this comment warns about. Only tags reachable from HEAD count: a release tag fetched from
+    # upstream but not merged into this branch (v1.0.0, say) must not lift a fork's test builds. Falls back to a fixed placeholder if no v*.*.* tag is
     # reachable at all (a shallow clone, or one with no tags fetched).
     [string]$Version = $(
-        $tag = git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname 2>$null | Select-Object -First 1
+        $tag = git tag --merged HEAD -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname 2>$null | Select-Object -First 1
         if (-not $tag) {
             '0.0.0-test'
         } else {
@@ -1913,7 +1914,7 @@ function Start-Console {
     # host.docker.internal is built in on Docker Desktop and needs this on a plain Linux engine, so a
     # stub server on this PC is reachable by one name on both.
     $extra = @('--add-host', 'host.docker.internal:host-gateway')
-    # The update poller's default repo is upstream's, whose releases (a "v1.0.1-test", say) are not this fork's builds.
+    # The update poller's default repo is upstream's, whose releases are not this fork's builds.
     # Point it at the fork this checkout pushes to, as docker-compose.unraid.yml does; a -ConsoleEnv entry below still wins.
     $fork = 'Marwanello'
     $originUrl = (& git -C $PSScriptRoot remote get-url origin 2>$null)
