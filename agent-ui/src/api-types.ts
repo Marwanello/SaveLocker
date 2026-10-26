@@ -4,6 +4,484 @@
  */
 
 export interface paths {
+    "/api/games/{id}/playthroughs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GamePlaythroughsDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["NewPlaythroughBody"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchPlaythroughResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/playthroughs/{playthroughId}/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    playthroughId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchPlaythroughResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/playthroughs/start-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StartFileDto"][];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/playthroughs/{playthroughId}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    playthroughId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RenamePlaythroughBody"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughActionResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/playthroughs/{playthroughId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    playthroughId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughActionResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/playthroughs/{playthroughId}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    playthroughId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughActionResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/playthrough-copies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughCopiesDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetPlaythroughCopiesBody"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughCopiesDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/playthrough-copies/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaythroughCopiesDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/state": {
         parameters: {
             query?: never;
@@ -3257,7 +3735,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -4415,6 +4895,15 @@ export interface components {
             /** Format: int32 */
             otherCount: number;
         };
+        GamePlaythroughsDto: {
+            /** Format: uuid */
+            selectedId: null | string;
+            selectedName: null | string;
+            offline: boolean;
+            selectPending: boolean;
+            playthroughs: components["schemas"]["PlaythroughDto"][];
+            copies: components["schemas"]["StoredCopyDto"][];
+        };
         GameProfileAtLaunchRequest: {
             profileAtLaunch: null | components["schemas"]["ProfileAtLaunch"];
         };
@@ -4573,6 +5062,16 @@ export interface components {
             /** Format: date-time */
             reportedAt: string;
         };
+        NewPlaythroughBody: {
+            name: string;
+            /** Format: uuid */
+            fromPlaythroughId: null | string;
+            startFresh: boolean;
+            keepFiles: null | string[];
+            playHere: boolean;
+            /** Format: uuid */
+            fromVersionId?: null | string;
+        };
         OfflineQueueEntryDto: {
             /** Format: uuid */
             gameId: string;
@@ -4614,6 +5113,47 @@ export interface components {
             installedVersion: null | string;
             latestVersion: null | string;
         };
+        PlaythroughActionResponse: {
+            ok: boolean;
+            message: string;
+            playthrough?: null | components["schemas"]["PlaythroughDto"];
+        };
+        PlaythroughCopiesDto: {
+            mode: components["schemas"]["PlaythroughCopyMode"];
+            /** Format: int64 */
+            usedBytes: number;
+            notUploaded: components["schemas"]["StoredCopyGameDto"][];
+        };
+        /** @enum {unknown} */
+        PlaythroughCopyMode: "UntilUploaded" | "KeepForOffline" | "Off";
+        PlaythroughDeviceDto: {
+            /** Format: uuid */
+            machineId: string;
+            machineName: string;
+            /** Format: date-time */
+            selectedAt: string;
+        };
+        PlaythroughDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            gameId: string;
+            name: string;
+            isDefault: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: uuid */
+            forkedFromVersionId: null | string;
+            /** Format: date-time */
+            archivedAt: null | string;
+            head: null | components["schemas"]["SaveVersionDto"];
+            /** Format: int32 */
+            versionCount: number;
+            /** Format: int64 */
+            totalSize: number;
+            hasOpenConflict: boolean;
+            devices: components["schemas"]["PlaythroughDeviceDto"][];
+        };
         ProcessNamesRequest: {
             processNames: null | string[];
         };
@@ -4630,6 +5170,9 @@ export interface components {
         };
         RegisterResponse: {
             machineName: string;
+        };
+        RenamePlaythroughBody: {
+            name: string;
         };
         ResolveConflictResponse: {
             message: string;
@@ -4701,9 +5244,38 @@ export interface components {
             /** Format: uuid */
             preferredMachineId?: null | string;
         };
+        SetPlaythroughCopiesBody: {
+            mode: components["schemas"]["PlaythroughCopyMode"];
+        };
         ShareSwitchUserRequest: {
             id: string;
             name: string;
+        };
+        StartFileDto: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            keepByDefault: boolean;
+        };
+        StoredCopyDto: {
+            /** Format: uuid */
+            playthroughId: string;
+            name: null | string;
+            /** Format: date-time */
+            capturedAt: string;
+            uploaded: boolean;
+            /** Format: int64 */
+            size: number;
+            /** Format: int32 */
+            fileCount: number;
+        };
+        StoredCopyGameDto: {
+            /** Format: uuid */
+            gameId: string;
+            gameName: string;
+            /** Format: uuid */
+            playthroughId: string;
+            playthroughName: null | string;
         };
         SuggestedPathDto: {
             path: null | string;
@@ -4747,6 +5319,14 @@ export interface components {
             collisions: components["schemas"]["SwitchCollisionDto"][];
             canUndo: boolean;
             note: null | string;
+        };
+        SwitchPlaythroughResponse: {
+            ok: boolean;
+            message: string;
+            /** @default false */
+            offline: boolean;
+            /** Format: uuid */
+            playthroughId?: null | string;
         };
         SwitchUserActionResponse: {
             state: components["schemas"]["SwitchUserSharingDto"];
@@ -4864,6 +5444,16 @@ export interface components {
             ownFileNames?: null | components["schemas"]["FileNameDto"][];
             emulators?: null | string[];
             title?: null | components["schemas"]["TitleInfo"];
+            /** Format: uuid */
+            playthroughId?: null | string;
+            playthroughName?: null | string;
+            /**
+             * Format: int32
+             * @default 1
+             */
+            playthroughCount: number;
+            /** @default false */
+            playthroughSelectPending: boolean;
         };
         TransferAnswerRequest: {
             approve: boolean;

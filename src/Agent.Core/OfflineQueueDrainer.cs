@@ -31,9 +31,20 @@ public sealed class OfflineQueueDrainer : IDisposable
 
     private async void OnTick(object? _)
     {
-        if (_queue.IsEmpty) return;
+        // Saves kept at an offline playthrough switch and selections the server was not told wait here too.
+        var playthroughWork = false;
+        try { playthroughWork = _engine().HasPlaythroughWork(); } catch (Exception) { /* the engine is being replaced */ }
+        if (_queue.IsEmpty && !playthroughWork) return;
         if (Interlocked.CompareExchange(ref _draining, 1, 0) != 0) return;
-        try { await DrainAsync(); }
+        try
+        {
+            if (playthroughWork)
+            {
+                try { await _engine().FlushPlaythroughWorkAsync(); }
+                catch (Exception ex) { _log($"[OfflineQueue] playthrough work failed: {ex.Message}"); }
+            }
+            if (!_queue.IsEmpty) await DrainAsync();
+        }
         finally { Interlocked.Exchange(ref _draining, 0); }
     }
 

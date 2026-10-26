@@ -94,6 +94,11 @@ SaveLocker/
 │   ├── Agent.Core/                      # SaveLocker.Agent.Core.csproj (net10.0 — NO WinForms)
 │   │   │                               # The platform-neutral sync brain, shared by both hosts.
 │   │   ├── SyncEngine.cs                # push / pull / pre-launch / post-exit
+│   │   ├── SyncEngine.Playthroughs.cs   # Playthroughs on the agent: which line a game follows, SwitchPlaythroughAsync (push the outgoing save to its own line, restore the
+│   │   │                               #   target, tell the server; a failure leaves the old one), NewPlaythroughAsync (Current save / Start fresh), the offline flush
+│   │   ├── PlaythroughStore.cs          # Local copies of playthrough saves: deduplicated blobs + one snapshot per game and playthrough, written blob-then-snapshot,
+│   │   │                               #   verified file by file on restore, mark-and-sweep. The mode setting is AgentConfig.PlaythroughCopies
+│   │   ├── AgentApiServer.Playthroughs.cs # The local API's playthrough routes + settings (tabs, switch, new, start-files, rename/archive, copies)
 │   │   ├── SaveSettler.cs               # Settle gate: wait for the game to finish writing
 │   │   ├── GameActivity.cs              # THE one answer to "is this game running right now?" — every
 │   │   │                               #   surface that could restore over a live save asks this
@@ -384,6 +389,8 @@ SaveLocker/
 │           ├── ActivityView.tsx         # The full feed, the offline queue, Open agent.log
 │           ├── SaveFilesCard.tsx        # The game page's "Save files on this device": nested tree, a dot per file (in sync /
 │           │                           #   will push / will pull), other games' files folded. Loaded on demand, never polled
+│           ├── PlaythroughTabs.tsx · PlaythroughDialogs.tsx · PlaythroughCopiesCard.tsx   # The game page's playthrough tabs, the New-playthrough and switch
+│           │                           #   dialogs (steps from the activity feed), and Settings › Sync's copies row
 │           ├── VersionsCard.tsx · GameManagement.tsx   # The game page's server versions; its folder / process /
 │           │                           #   stop-tracking controls (a confirm is the agent's `needsConfirm`, never a sentence)
 │           ├── FolderSuggestionsModal.tsx # "More save folders found": the start-up, one-game-at-a-time
@@ -444,6 +451,8 @@ SaveLocker/
 │   │                                   #   lists the server validates, mark geometry vs the SVGs AND vs the two C# ports
 │   │                                   #   (MarkIcon.cs, AppMark.cs), the token files AND the Deck's Theme.cs, the
 │   │                                   #   OS-following theme rule, and NO #hex in any view
+│   ├── run-playthrough-agent-tests.ps1 # Playthroughs, agent half (Group 2): one device through the real CLI against a real server it starts
+│   │                                   #   (and stops, for the offline sections): fork, switch, two lines at once, refusals, start fresh, offline copies. Own server on :5187
 │   ├── run-playthrough-tests.ps1       # Playthroughs, server half (tasks/save-playthroughs): a previous-schema database
 │   │                                   #   migrated to "Main", per-playthrough push/pull/conflict/lease/retention/delta,
 │   │                                   #   fan-out only to followers, archive/default, the switch command's version gate.

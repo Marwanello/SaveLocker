@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
-import type { Conflict, DlcCheck, EmptiedHold, GameState, GameSyncMode, SaveVersion, SyncStatus, TrackedGame, View } from '../types'
+import type { Conflict, DlcCheck, EmptiedHold, GamePlaythroughs, GameState, GameSyncMode, SaveVersion, SyncStatus, TrackedGame, View } from '../types'
 import { api } from '../api'
 import { formatAgo, formatBytes, formatDateTime } from '../format'
 import { refreshActivity, useActivityBusy, useFilesChangedAt } from '../useActivity'
@@ -13,6 +13,8 @@ import { emulatorSettingsFor } from '../emulators'
 import { ReleaseChip } from './ReleaseChip'
 import { SourceChip } from './SourceChip'
 import { VersionsCard } from './VersionsCard'
+import { PlaythroughTabs } from './PlaythroughTabs'
+import { NewPlaythroughDialog, PlaythroughProgress } from './PlaythroughDialogs'
 import { EmptiedHoldBanner } from './EmptiedHoldBanner'
 import { Banner } from './ui/Banner'
 import { Button } from './ui/Button'
@@ -91,6 +93,14 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   // Emulator settings, open on one of its sections; null is the game's own page.
   const [emuTab, setEmuTab] = useState<EmulatorTab | null>(null)
   const [dlc, setDlc] = useState<DlcCheck | null>(null)
+  // Playthroughs (tasks/save-playthroughs Phase 6): the server's list with the one this device plays, the tab being looked at
+  // (null = this device's own), and the dialogs a switch or a new playthrough runs in.
+  const [pts, setPts] = useState<GamePlaythroughs | null>(null)
+  const [viewing, setViewing] = useState<string | null>(null)
+  const [switching, setSwitching] = useState<{ id: string; name: string } | null>(null)
+  const [creating, setCreating] = useState<{ fromVersion: { id: string; label: string } | null } | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [confirmArchive, setConfirmArchive] = useState(false)
   const emulator = emulatorSettingsFor(game)
   const titled = trees.length > 1
   const lead = trees.find(t => t.title?.lead) ?? trees[0]
@@ -104,7 +114,12 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       .catch(err => setStateError(err instanceof Error ? err.message : 'Could not reach the server.'))
   }, [game.id])
 
-  useEffect(() => { setState(null); setCheck(null); setEmuTab(null); load() }, [load])
+  useEffect(() => { setState(null); setCheck(null); setEmuTab(null); setPts(null); setViewing(null); load() }, [load])
+
+  const loadPlaythroughs = useCallback(() => {
+    if (!game.path) { setPts(null); return }
+    api.playthroughs(game.id).then(setPts).catch(() => setPts(null))
+  }, [game.id, game.path])
 
   // The agent's word that this game's files here changed, or that a push, pull or hold ran for it from anywhere (the
   // folder watcher, Sync all, the launch gate, another surface): everything a sync from this page refreshes follows.
@@ -116,6 +131,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
     setSyncCount(n => n + 1)
     load()
   }, [changedAt, load])
+  useEffect(() => { loadPlaythroughs() }, [loadPlaythroughs, syncCount])
 
   // What the page needs to point at Emulator settings: packs missing here, and other machines asking for this one's.
   useEffect(() => {
@@ -172,13 +188,82 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
 
   // Another sync (Sync all, the tray, a game exiting) holds the agent's single gate; a press now
   // would only be told so.
-  const locked = busy || pending !== null
-  const head = state?.head ?? null
+  const locked = busy || pending !== null || switching !== null
+  // The state route's head is the game's DEFAULT playthrough; this device's own is the one on the tab it plays.
+  const selectedPt = pts?.playthroughs.find(p => p.id === pts.selectedId) ?? null
+  const several = (pts?.playthroughs.length ?? 0) > 1
+  const otherPt = pts && viewing && viewing !== pts.selectedId ? pts.playthroughs.find(p => p.id === viewing) ?? null : null
+  const head = (selectedPt ? selectedPt.head : state?.head) ?? null
   const holder = state?.lease?.holderMachineName ?? null
   const heldElsewhere = holder !== null && holder !== machineName
   const dlcMissing = dlc?.packages?.filter(p => !p.here).length ?? 0
   const dlcAsking = dlc?.asked?.filter(t => t.status === 'Requested') ?? []
   const emuCount = (dlcMissing > 0 ? 1 : 0) + dlcAsking.length
+
+  async function changePlaythrough(action: 'rename' | 'archive' | 'unarchive', id: string, name?: string) {
+    try {
+      const r = action === 'rename' ? await api.renamePlaythrough(game.id, id, name ?? '')
+        : action === 'archive' ? await api.archivePlaythrough(game.id, id) : await api.unarchivePlaythrough(game.id, id)
+      setToast({ text: r.message, failed: !r.ok })
+      if (r.ok) { setRenaming(null); setConfirmArchive(false); loadPlaythroughs(); onChanged() }
+    } catch (err) {
+      setToast({ text: err instanceof Error ? err.message : 'The change failed.', failed: true })
+    }
+  }
+
+  // Looking at a playthrough this device is not on: read-only, with the one way to change that.
+  const otherPanel = otherPt && (
+    <>
+      <Card title={`${otherPt.name}${otherPt.isDefault ? ' · default' : ''}${otherPt.archivedAt ? ' · archived' : ''}`}
+        headerRight={otherPt.hasOpenConflict ? <Chip tone="crit">Conflict</Chip> : undefined}>
+        <div className="sl-stack" style={{ gap: 12 }}>
+          <dl className="sl-kv">
+            <dt>Latest save</dt>
+            <dd title={otherPt.head ? formatDateTime(otherPt.head.createdAt) : undefined}>
+              {otherPt.head ? `${formatAgo(otherPt.head.createdAt)} · ${otherPt.head.machineName} · ${formatBytes(otherPt.head.size)}` : 'No save yet'}
+            </dd>
+            <dt>Versions</dt><dd>{otherPt.versionCount} uploaded to it</dd>
+            <dt>Played on</dt>
+            <dd>{otherPt.devices.length > 0 ? otherPt.devices.map(d => d.machineName).join(', ') : 'No device right now'}</dd>
+          </dl>
+          <p className="sl-empty" style={{ padding: 0, textAlign: 'left' }}>
+            This device plays {pts?.selectedName ?? 'another playthrough'}; looking at this one changes nothing. Playing it here saves
+            {' '}{pts?.selectedName ?? 'your current playthrough'} to its own line first, then puts this one's latest save in the save folder.
+          </p>
+          <div className="sl-actions">
+            <Button variant="primary" disabled={locked || !!otherPt.archivedAt || pts?.offline === true && !pts.copies.some(c => c.playthroughId === otherPt.id)}
+              data-pad-label={`Play ${otherPt.name} here`} onClick={() => setSwitching({ id: otherPt.id, name: otherPt.name })}>
+              Play this one here
+            </Button>
+            {renaming === null ? (
+              <Button disabled={locked || pts?.offline === true} data-pad-label="Rename this playthrough" onClick={() => setRenaming(otherPt.name)}>Rename…</Button>
+            ) : (
+              <span className="sl-inline">
+                <input className="sl-input" style={{ width: 200 }} aria-label="New name" maxLength={60} value={renaming} autoFocus
+                  onChange={e => setRenaming(e.target.value)} />
+                <Button variant="primary" disabled={!renaming.trim()} onClick={() => void changePlaythrough('rename', otherPt.id, renaming)}>Save name</Button>
+                <Button variant="quiet" onClick={() => setRenaming(null)}>Cancel</Button>
+              </span>
+            )}
+            {!otherPt.isDefault && (otherPt.archivedAt ? (
+              <Button disabled={locked} onClick={() => void changePlaythrough('unarchive', otherPt.id)}>Unarchive</Button>
+            ) : confirmArchive ? (
+              <span className="sl-confirm">
+                <span>Archive {otherPt.name}? Its saves are kept, and nothing syncs to it until you unarchive it.</span>
+                <Button variant="primary" onClick={() => void changePlaythrough('archive', otherPt.id)}>Archive</Button>
+                <Button variant="quiet" onClick={() => setConfirmArchive(false)}>Keep</Button>
+              </span>
+            ) : (
+              <Button disabled={locked || pts?.offline === true} onClick={() => setConfirmArchive(true)}>Archive…</Button>
+            ))}
+          </div>
+        </div>
+      </Card>
+      <VersionsCard key={otherPt.id} gameId={game.id} headId={otherPt.head?.id ?? null} refreshKey={syncCount}
+        onLoaded={() => {}} playthrough={otherPt.id} title={`Versions on the server · ${otherPt.name}`}
+        onFork={v => setCreating({ fromVersion: { id: v, label: `a version of ${otherPt.name}` } })} />
+    </>
+  )
 
   const toastView = toast && (
     <Toast tone={toast.failed ? 'warn' : 'default'} onDismiss={() => setToast(null)}>{toast.text}</Toast>
@@ -214,6 +299,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
           )}
           <div className="sl-gamehead__chips">
             {!enrolled && <Chip tone="warn">Not set up on this device</Chip>}
+            {several && selectedPt && <Chip>Playing {selectedPt.name}</Chip>}
             {inConflict && <Chip tone="crit">Conflict</Chip>}
             {conflictElsewhere && <Chip tone="crit">Conflict in {emulatorOf(conflictElsewhere) ?? conflictElsewhere.name}</Chip>}
             {emptiedHold && <Chip tone="crit">Save files gone</Chip>}
@@ -224,6 +310,14 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       </div>
 
       {titled && <EmulatorTabs trees={trees} current={game.id} conflicted={conflicted} onPick={id => onPickTree?.(id)} />}
+
+      {enrolled && pts && (pts.playthroughs.length > 0 || pts.selectedId) && (
+        <PlaythroughTabs
+          data={pts} viewing={viewing} disabled={locked} machineName={machineName}
+          onView={id => { setViewing(id === pts.selectedId ? null : id); setRenaming(null); setConfirmArchive(false) }}
+          onNew={() => setCreating({ fromVersion: null })}
+        />
+      )}
 
       {inConflict && (
         <Banner
@@ -287,6 +381,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
         />
       )}
 
+      {otherPt ? otherPanel : <>
       {enrolled ? (
         <div className="sl-actions">
           <Button variant="primary" data-pad-action="sync-this-game" disabled={locked} onClick={() => void run('sync')}>
@@ -316,6 +411,18 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
           <Button variant="quiet" disabled={locked} onClick={() => void checkNow()}>
             {pending === 'check' ? 'Checking…' : 'Check now'}
           </Button>
+          {several && selectedPt && pts?.offline === false && (renaming === null ? (
+            <Button variant="quiet" disabled={locked} data-pad-label="Rename this playthrough" onClick={() => setRenaming(selectedPt.name)}>
+              Rename playthrough…
+            </Button>
+          ) : (
+            <span className="sl-inline">
+              <input className="sl-input" style={{ width: 200 }} aria-label="New name" maxLength={60} value={renaming} autoFocus
+                onChange={e => setRenaming(e.target.value)} />
+              <Button variant="primary" disabled={!renaming.trim()} onClick={() => void changePlaythrough('rename', selectedPt.id, renaming)}>Save name</Button>
+              <Button variant="quiet" onClick={() => setRenaming(null)}>Cancel</Button>
+            </span>
+          ))}
         </div>
       ) : (
         <Banner
@@ -401,12 +508,18 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       </div>
 
       <div className="sl-grid2">
-        <VersionsCard gameId={game.id} headId={state?.head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions}
-          title={titled ? `Versions on the server · ${treeName}` : undefined} onCopy={titled ? setCopyFrom : undefined} />
+        <VersionsCard gameId={game.id} headId={head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions}
+          title={[titled ? treeName : null, several ? selectedPt?.name : null].some(Boolean)
+            ? `Versions on the server · ${[titled ? treeName : null, several ? selectedPt?.name : null].filter(Boolean).join(' · ')}`
+            : undefined}
+          onCopy={titled ? setCopyFrom : undefined}
+          playthrough={selectedPt && several ? selectedPt.id : undefined}
+          onFork={v => setCreating({ fromVersion: { id: v, label: `a version of ${selectedPt?.name ?? 'this playthrough'}` } })} />
         <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
       </div>
 
       {enrolled && <SaveFilesCard gameId={game.id} refreshKey={syncCount} />}
+      </>}
 
       {copyFrom && versions && (
         <CopySaveModal
@@ -417,6 +530,31 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
             onSynced()
             if (onNote && onPickTree) { onNote(text); onPickTree(target) }
             else setToast({ text, failed: false })
+          }}
+        />
+      )}
+
+      {switching && (
+        <PlaythroughProgress
+          game={game} title={`Play ${switching.name} on this device`}
+          run={() => api.switchPlaythrough(game.id, switching.id)}
+          onDone={r => {
+            setSwitching(null)
+            if (r.ok) setViewing(null)
+            setToast({ text: r.message, failed: !r.ok })
+            setSyncCount(n => n + 1); refreshActivity(); load(); onSynced(); onChanged()
+          }}
+        />
+      )}
+      {creating && pts && (
+        <NewPlaythroughDialog
+          game={game} data={pts} fromVersion={creating.fromVersion}
+          onClose={() => setCreating(null)}
+          onDone={r => {
+            setCreating(null)
+            setViewing(null)
+            setToast({ text: r.message, failed: !r.ok })
+            setSyncCount(n => n + 1); refreshActivity(); load(); onSynced(); onChanged()
           }}
         />
       )}

@@ -14,7 +14,7 @@ small, and both are only checkable once the console and agent already show playt
 | Group | Contents | Status |
 |---|---|---|
 | 1 | Phases 1, 2, 3 — server model, sync scoping, API + per-device selection | ✅ Shipped 2026-10-26 (branch `playthroughs-group-1`) |
-| 2 | Phases 4, 5, 6 — agent switch, local copy store, agent UI + CLI | ⏳ Not started |
+| 2 | Phases 4, 5, 6 — agent switch, local copy store, agent UI + CLI | ✅ Shipped 2026-10-26 (`playthroughs-group-2`) — tested on one Windows agent against a dev server and the testenv console; not on a Deck or a controller |
 | 3 | Phases 7, 8, 9, 10 — console, Decky, Playnite, delete to trash | ⏳ Not started — delete needs version-history Group 1 (trash) |
 
 ## Groups

@@ -16,7 +16,7 @@ public static class AgentCli
         "register" or "enroll" or "trust" or "set-server" or "whoami" or "search" or "scan" or
         "resolve" or "add-game" or "remove-game" or "list" or "status" or "push" or "pull" or
         "conflicts" or "resolve-conflict" or "emptied-hold" or "add-path" or "remove-path" or
-        "refresh-manifest" or "log" or "hash" or "check-update" or "dlc";
+        "refresh-manifest" or "log" or "hash" or "check-update" or "dlc" or "playthrough";
 
     /// <summary>Run one command. Returns the process exit code.</summary>
     public static async Task<int> RunAsync(
@@ -550,6 +550,9 @@ public static class AgentCli
                 case "dlc":
                     return await DlcAsync(positionals, config, Api());
 
+                case "playthrough":
+                    return await PlaythroughAsync(opts, positionals, config, Api(), Engine());
+
                 case "check-update":
                 {
                     // Ask the configured server what it is offering, and optionally fetch and VERIFY
@@ -808,6 +811,98 @@ public static class AgentCli
     }
 
     /// <summary>
+    /// <c>playthrough list &lt;game&gt;</c>, <c>playthrough switch &lt;game&gt; &lt;name&gt;</c>, <c>playthrough new &lt;game&gt; &lt;name&gt;</c>
+    /// (tasks/save-playthroughs Phase 6): the same actions as the game page's playthrough tabs. The exit code says whether the
+    /// switch or the new playthrough happened.
+    /// </summary>
+    private static async Task<int> PlaythroughAsync(
+        Dictionary<string, string> opts, List<string> positionals, AgentConfig config, ApiClient api, SyncEngine engine)
+    {
+        const string usage = "Usage: playthrough list <game> | playthrough switch <game> <name> | " +
+                             "playthrough new <game> <name> [--from <playthrough>] [--from-version <id>] [--fresh [--keep <file,file>]] [--no-switch] | playthrough flush";
+        var verb = positionals.FirstOrDefault() ?? throw new ArgumentException(usage);
+        if (verb == "flush")
+        {
+            // What the daemon's drainer does on its tick, for a box with no daemon: saves kept at an offline switch go up, and
+            // the server is told which playthrough this device is on.
+            await engine.FlushPlaythroughWorkAsync();
+            Console.WriteLine(engine.HasPlaythroughWork()
+                ? "Some playthrough work is still waiting for the server."
+                : "Nothing is waiting for the server.");
+            return 0;
+        }
+        var gameName = positionals.Skip(1).FirstOrDefault() ?? throw new ArgumentException(usage);
+        var game = config.FindGame(gameName) ?? throw new InvalidOperationException($"'{gameName}' is not tracked here.");
+        List<PlaythroughDto>? list = null;
+        var reachable = true;
+        try { list = await api.ListPlaythroughsAsync(game.GameId); }
+        catch (Exception ex) when (ServerReachability.IsUnreachable(ex)) { reachable = false; }
+        if (list is not null) engine.RememberFollowed(game, list);
+
+        PlaythroughDto Named(string name) =>
+            list?.FirstOrDefault(p => string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"'{game.Name}' has no playthrough called '{name}'. See: playthrough list \"{game.Name}\"");
+
+        switch (verb)
+        {
+            case "list":
+            {
+                if (list is null)
+                {
+                    Console.WriteLine(reachable
+                        ? "This server does not have playthroughs yet."
+                        : $"The server is not reachable. {game.Name} follows {game.PlaythroughName ?? "its default playthrough"}.");
+                    foreach (var copy in PlaythroughStore.For(config).All(game.GameId))
+                        Console.WriteLine($"    copy on this device: {copy.PlaythroughName ?? copy.PlaythroughId.ToString()}" +
+                                          (copy.Uploaded ? "" : "  (not uploaded yet)"));
+                    return reachable ? 1 : 0;
+                }
+                foreach (var p in list)
+                {
+                    var here = p.Id == game.PlaythroughId ? "*" : " ";
+                    var latest = p.Head is { } h ? $"latest {h.CreatedAt:u} from {h.MachineName}" : "no save yet";
+                    var others = p.Devices.Where(d => d.MachineId != config.MachineId).Select(d => d.MachineName).ToArray();
+                    Console.WriteLine($"  {here} {p.Name}{(p.IsDefault ? " (default)" : "")}{(p.ArchivedAt is not null ? " [archived]" : "")}" +
+                                      $" - {latest}, {p.VersionCount} version(s)" +
+                                      (others.Length > 0 ? $", also on {string.Join(", ", others)}" : "") +
+                                      (p.HasOpenConflict ? "  ** CONFLICT **" : ""));
+                }
+                Console.WriteLine("  (* = this device)");
+                return 0;
+            }
+            case "switch":
+            {
+                var name = positionals.Skip(2).FirstOrDefault() ?? throw new ArgumentException(usage);
+                var target = list is null
+                    ? PlaythroughStore.For(config).All(game.GameId).FirstOrDefault(c => string.Equals(c.PlaythroughName, name, StringComparison.OrdinalIgnoreCase))?.PlaythroughId
+                      ?? throw new InvalidOperationException("The server is not reachable and no copy of that playthrough is kept on this device.")
+                    : Named(name).Id;
+                var result = await engine.SwitchPlaythroughAsync(game, target);
+                (result.Ok ? Console.Out : Console.Error).WriteLine(result.Message);
+                return result.Ok ? 0 : 1;
+            }
+            case "new":
+            {
+                var name = positionals.Skip(2).FirstOrDefault() ?? throw new ArgumentException(usage);
+                if (list is null) throw new InvalidOperationException("A new playthrough needs the server.");
+                Guid? fromVersion = null;
+                if (opts.TryGetValue("from-version", out var versionText))
+                    fromVersion = Guid.TryParse(versionText, out var v) ? v : throw new ArgumentException("--from-version needs a version id.");
+                Guid? from = opts.TryGetValue("from", out var fromName) ? Named(fromName).Id : null;
+                var keep = opts.TryGetValue("keep", out var keepText)
+                    ? keepText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    : null;
+                var result = await engine.NewPlaythroughAsync(game, name, from, opts.ContainsKey("fresh"), keep,
+                    playHere: !opts.ContainsKey("no-switch"), fromVersionId: fromVersion);
+                (result.Ok ? Console.Out : Console.Error).WriteLine(result.Message);
+                return result.Ok ? 0 : 1;
+            }
+            default:
+                throw new ArgumentException(usage);
+        }
+    }
+
+    /// <summary>
     /// <c>dlc status [game]</c>, <c>dlc ask &lt;game&gt;</c>, <c>dlc send|decline &lt;request id&gt;</c> (tasks/emulator-saves Phase 5c):
     /// what the latest save needs against what is here, a hand-over request to the machine the save came from, and an
     /// answer to another machine's request. The daemon does the moving.
@@ -826,7 +921,7 @@ public static class AgentCli
                 foreach (var g in games)
                 {
                     if (ContentInventory.For(g) is not { } here) continue;
-                    var head = (await api.GetStateAsync(g.GameId))?.Head;
+                    var head = await api.GetPlaythroughHeadAsync(g.GameId, g.PlaythroughId);
                     var missing = DlcCheck.Missing(head?.Content, here);
                     var held = DlcHoldStore.For(config).For(g.GameId) is not null;
                     Console.WriteLine($"  {g.Name}: {here.Length} package(s) here; latest save " +
@@ -841,7 +936,7 @@ public static class AgentCli
             {
                 var g = config.FindGame(arg ?? throw new ArgumentException("Pass a game name, e.g. dlc ask \"Forza Horizon\""))
                         ?? throw new InvalidOperationException($"'{arg}' is not tracked here.");
-                var head = (await api.GetStateAsync(g.GameId))?.Head;
+                var head = await api.GetPlaythroughHeadAsync(g.GameId, g.PlaythroughId);
                 var missing = DlcCheck.Missing(head?.Content, ContentInventory.For(g));
                 if (head?.MachineId is not { } from || missing.Count == 0 || from == config.MachineId)
                 {

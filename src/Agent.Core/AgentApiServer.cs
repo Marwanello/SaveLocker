@@ -15,7 +15,7 @@ namespace SaveLocker.Agent;
 /// ASP.NET Core host that drives the SaveLocker Agent UI. It serves the bundled React app and a
 /// typed local API whose OpenAPI document is the source for the UI's generated TypeScript types.
 /// </summary>
-public sealed class AgentApiServer : IDisposable
+public sealed partial class AgentApiServer : IDisposable
 {
     private readonly AgentConfig _config;
     private readonly Func<Task<IReadOnlyList<ScanCandidate>>> _doScan;
@@ -102,6 +102,8 @@ public sealed class AgentApiServer : IDisposable
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     // One manual sync per GAME (POST /api/games/{id}/sync). Deliberately not _syncGate — see that route.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> _gameSyncGates = new();
+    /// <summary>The host's engine in use right now (it is replaced when the server connection changes); playthrough routes ask it.</summary>
+    private readonly Func<SyncEngine>? _engine;
     // Games whose post-exit-sync arrived while _syncGate was held, queued to run once it frees.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> _deferredExits = new();
     // A queued game's folder size, measured at most once a minute — see /api/offline-queue.
@@ -158,8 +160,10 @@ public sealed class AgentApiServer : IDisposable
         Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? resolveConflict = null,
         Func<TrackedGame, Func<Task<string?>>, Task<(bool Ran, string? Result)>>? withGameLock = null,
         Func<TrackedGame, bool, CancellationToken, Task<(bool Ok, string Message)>>? takeSide = null,
-        Func<TrackedGame, bool, CancellationToken, Task<(bool Ok, string Message)>>? answerEmptied = null)
+        Func<TrackedGame, bool, CancellationToken, Task<(bool Ok, string Message)>>? answerEmptied = null,
+        Func<SyncEngine>? engine = null)
     {
+        _engine = engine;
         _resolveConflict = resolveConflict;
         _takeSide = takeSide ?? ((_, _, _) => Task.FromResult((false, "Not available.")));
         _answerEmptied = answerEmptied ?? ((_, _, _) => Task.FromResult((false, "Not available.")));
@@ -301,6 +305,7 @@ public sealed class AgentApiServer : IDisposable
 
     private void MapApi(WebApplication app)
     {
+        MapPlaythroughs(app);
         app.MapGet("/api/state", () =>
         {
             var warnings = _leaseWarnings.Read()
@@ -649,7 +654,8 @@ public sealed class AgentApiServer : IDisposable
                 g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt,
                 SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null, g.Release, g.IncludeGlobs.FirstOrDefault(),
                 SameGameAsDto.For(g, _config.Games), g.OwnFileNames.Count > 0 ? g.OwnFileNames.ToArray() : null,
-                g.Emulators.Count > 0 ? g.Emulators.ToArray() : null, g.Title))
+                g.Emulators.Count > 0 ? g.Emulators.ToArray() : null, g.Title,
+                g.PlaythroughId, g.PlaythroughName, g.PlaythroughCount, g.PlaythroughSelectPending))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -1211,7 +1217,7 @@ public sealed class AgentApiServer : IDisposable
             try
             {
                 var api = ApiClient.For(_config);
-                var head = (await api.GetStateAsync(id))?.Head;
+                var head = await api.GetPlaythroughHeadAsync(id, game.PlaythroughId);
                 var check = DlcCheck.Describe(head, ContentInventory.For(game), DlcHoldStore.For(_config).For(id) is not null);
                 ContentTransferDto[] transfers = [];
                 try { transfers = [.. (await api.ListTransfersAsync()).Where(t => t.GameId == id)]; }
@@ -1258,7 +1264,7 @@ public sealed class AgentApiServer : IDisposable
             try
             {
                 var api = ApiClient.For(_config);
-                var head = (await api.GetStateAsync(id))?.Head;
+                var head = await api.GetPlaythroughHeadAsync(id, game.PlaythroughId);
                 var missing = DlcCheck.Missing(head?.Content, ContentInventory.For(game));
                 if (head?.MachineId is not { } from || missing.Count == 0)
                     return TypedResults.BadRequest(new ErrorResponse("Nothing to ask for: this machine has every pack the latest save needs."));
@@ -1433,7 +1439,8 @@ public sealed class AgentApiServer : IDisposable
                 .Where(s => s.Kind == GameSourceKinds.Emulator && SwitchEmulators.IsSwitch(s.Detail))
                 .Select(s => SwitchEmulators.Names.First(n => string.Equals(n, s.Detail, StringComparison.OrdinalIgnoreCase)))
                 .Distinct().ToArray();
-            if (state?.Head is not { } head) return TypedResults.Ok(new SaveVsCloudDto(SaveVsCloud.NoCloud, null, null, emulators));
+            var followedHead = await ApiClient.For(_config).GetPlaythroughHeadAsync(id, game.PlaythroughId);
+            if (followedHead is not { } head) return TypedResults.Ok(new SaveVsCloudDto(SaveVsCloud.NoCloud, null, null, emulators));
             var headVersion = SwitchCopies.TitleId(game) is null ? null : SwitchGameVersion.VersionOf(head.Content);
             _config.RefreshGameSyncState(game);
             var local = game.IsEnrolledHere && Directory.Exists(game.SaveDirectory)
@@ -1684,10 +1691,10 @@ public sealed class AgentApiServer : IDisposable
         // Every version the server keeps of one game, for the game page's "Versions on the server".
         // One small server round trip, no disk work here.
         app.MapGet("/api/games/{id:guid}/versions",
-            async Task<Results<Ok<SaveVersionDto[]>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+            async Task<Results<Ok<SaveVersionDto[]>, NotFound, InternalServerError<ErrorResponse>>> (Guid id, Guid? playthrough) =>
         {
             if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
-            try { return TypedResults.Ok((await ApiClient.For(_config).GetGameVersionsAsync(id)).ToArray()); }
+            try { return TypedResults.Ok((await ApiClient.For(_config).GetGameVersionsAsync(id, playthrough: playthrough)).ToArray()); }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
 
@@ -1775,7 +1782,7 @@ public sealed class AgentApiServer : IDisposable
             {
                 var api = ApiClient.For(_config);
                 var state = await api.GetStateAsync(id);
-                var headHash = state?.Head?.ContentHash;
+                var headHash = (await api.GetPlaythroughHeadAsync(id, game.PlaythroughId))?.ContentHash;
                 var localHash = !string.IsNullOrWhiteSpace(game.SaveDirectory) && Directory.Exists(game.SaveDirectory)
                     ? await Task.Run(() => game.LocalHash(_config.StateDir))
                     : null;
@@ -2453,7 +2460,14 @@ public sealed record TrackedGameDto(
     /// <summary>The emulators any machine found it through, as the server keeps them; null when none did.</summary>
     string[]? Emulators = null,
     /// <summary>The title it is one emulator's tree of (tasks/multi-emulator-games); null for a game shown on its own.</summary>
-    TitleInfo? Title = null);
+    TitleInfo? Title = null,
+    /// <summary>The playthrough this device follows (tasks/save-playthroughs); null until it has been named once. Additive.</summary>
+    Guid? PlaythroughId = null,
+    string? PlaythroughName = null,
+    /// <summary>How many playthroughs the game had when this device last asked; the name is only shown above one.</summary>
+    int PlaythroughCount = 1,
+    /// <summary>A switch made while the server could not be told.</summary>
+    bool PlaythroughSelectPending = false);
 
 /// <summary>A tracked emulator game a tracked Steam shortcut game is a copy of: its id, name and emulator.</summary>
 public sealed record SameGameAsDto(Guid GameId, string Name, string? Emulator)

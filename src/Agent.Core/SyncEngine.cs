@@ -88,7 +88,7 @@ public record LaunchGateResult(
 /// Updates the persisted config with the last-known version and hash so the
 /// next push carries the correct parent for conflict detection.
 /// </summary>
-public sealed class SyncEngine : IAsyncDisposable, IDisposable
+public sealed partial class SyncEngine : IAsyncDisposable, IDisposable
 {
     private readonly AgentConfig _config;
     private readonly ApiClient _api;
@@ -168,6 +168,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         _tempDir = Path.Combine(config.StateDir, "tmp");
         Directory.CreateDirectory(_tempDir);
         CleanStaleTemps();
+        SweepPlaythroughStore();
     }
 
     /// <summary>
@@ -449,7 +450,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     game.ConsecutiveConflicts = 0;
                     countPush = true;
                     touchSyncTime = true;
-                    _log($"[{game.Name}] pushed new version.");
+                    _log($"[{game.Name}] pushed new version{InPlaythrough(game)}.");
                     MarkSynced(game.GameId);
                     break;
                 case UploadStatus.NoChange:
@@ -457,7 +458,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     game.LastSyncedHash = hash;
                     game.ConsecutiveConflicts = 0;
                     touchSyncTime = true;
-                    _log($"[{game.Name}] server already had this content.");
+                    _log($"[{game.Name}] server already had this content{InPlaythrough(game)}.");
                     MarkSynced(game.GameId);
                     break;
                 case UploadStatus.Conflict:
@@ -485,10 +486,10 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     // The server already recorded the ConflictFlag, so the dashboard knows a conflict
                     // exists. What it cannot know is WHICH machine is stuck behind it — that is this.
                     Alert(game.ConsecutiveConflicts >= ConflictUploadLimit
-                            ? $"[{game.Name}] CONFLICT: your save diverged from the server. " +
+                            ? $"[{game.Name}] CONFLICT{InPlaythrough(game)}: your save diverged from the server. " +
                               $"Automatic uploads are now paused after {game.ConsecutiveConflicts} attempts " +
                               "until the conflict is resolved and pulled."
-                            : $"[{game.Name}] CONFLICT: your save diverged from the server. " +
+                            : $"[{game.Name}] CONFLICT{InPlaythrough(game)}: your save diverged from the server. " +
                               "Resolve it in the dashboard.",
                         AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
                     break;
@@ -576,7 +577,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             return await SendFullArchiveAsync(game, roots, hash, force, Progress, ct);
 
         var begin = await _api.BeginUploadAsync(
-            game.GameId, hash, game.LastKnownVersionId, force: false, manifest.ToArray(), ct);
+            game.GameId, hash, game.LastKnownVersionId, force: false, manifest.ToArray(), ct, game.PlaythroughId);
         if (begin is null)                                    // server predates the chunked routes
             return await SendFullArchiveAsync(game, roots, hash, force, Progress, ct);
         if (begin.NoChange is { } noChange) return noChange;
@@ -631,7 +632,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         {
             SaveArchive.CreateArchive(roots, archive, game.ExcludeGlobs);
             return await _api.UploadAsync(
-                game.GameId, hash, game.LastKnownVersionId, force, archive, onProgress, ct);
+                game.GameId, hash, game.LastKnownVersionId, force, archive, onProgress, ct, game.PlaythroughId);
         }
         finally { TryDeleteTemp(archive); }
     }
@@ -663,7 +664,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     {
         try
         {
-            if ((await _api.GetOpenConflictsForMachineAsync(_config.MachineId, ct)).Any(c => c.GameId == game.GameId))
+            if ((await _api.GetOpenConflictsForMachineAsync(_config.MachineId, ct)).Any(c => c.GameId == game.GameId && FollowsConflict(game, c)))
                 return true;
         }
         catch (Exception) when (!ct.IsCancellationRequested) { return null; }
@@ -728,7 +729,11 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// <summary>Download the server head and restore it locally if it differs.</summary>
     /// <param name="skipDlcCheck">“Pull anyway” from the DLC check: restore even though the latest save was made with
     /// DLC this machine lacks. A forced pull skips the check too.</param>
-    public async Task<PullOutcome> PullAsync(TrackedGame game, bool force = false, CancellationToken ct = default, bool skipDlcCheck = false)
+    /// <param name="switchTo">Set only by <see cref="SwitchPlaythroughAsync"/>: the playthrough to restore the head of, which the game
+    /// is made to follow in the same step that records the restored version. The switch never names it on the game before the
+    /// restore, or a folder-watch push in between would send the old save into the new line.</param>
+    public async Task<PullOutcome> PullAsync(TrackedGame game, bool force = false, CancellationToken ct = default, bool skipDlcCheck = false,
+        PlaythroughDto? switchTo = null)
     {
         if (RefuseIfRetired(game, "pull")) return PullOutcome.Refused;
         using var linked = LinkRetirement(ct);
@@ -778,10 +783,10 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 return PullOutcome.HeldEmptied;
             if (!force && !skipDlcCheck && await HoldForDlcAsync(game, ct)) return PullOutcome.HeldForDlc;
 
-            var head = await _api.DownloadHeadAsync(game.GameId, archive, ct);
+            var head = await _api.DownloadHeadAsync(game.GameId, archive, ct, switchTo?.Id ?? game.PlaythroughId);
             if (head is null)
             {
-                _log($"[{game.Name}] server has no saves yet; nothing to pull.");
+                _log($"[{game.Name}] server has no saves yet{InPlaythrough(game, switchTo)}; nothing to pull.");
                 return PullOutcome.NothingOnServer;
             }
 
@@ -796,6 +801,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 game.LastKnownVersionId = versionId;
                 game.LastSyncedHash = headHash;
                 game.ConsecutiveConflicts = 0;
+                if (switchTo is not null) FollowPlaythrough(game, switchTo);
                 _config.SaveGameSyncState(game);
                 _log($"[{game.Name}] already up to date.");
                 MarkSynced(game.GameId);
@@ -860,8 +866,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             game.LastKnownVersionId = versionId;
             game.LastSyncedHash = headHash;
             game.ConsecutiveConflicts = 0;
+            if (switchTo is not null) FollowPlaythrough(game, switchTo);
             _config.SaveGameSyncState(game, touchSyncTime: true);
-            _log($"[{game.Name}] restored latest save from server.");
+            _log($"[{game.Name}] restored latest save{InPlaythrough(game, switchTo)} from server.");
             MarkSynced(game.GameId);
             DlcHoldStore.For(_config).Clear(game.GameId);
             SwitchCopies.Reconcile(_config, game, _log);
@@ -1070,7 +1077,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     {
         var game = _config.Games.FirstOrDefault(g => g.GameId == conflict.GameId);
         var keepCloud = winningVersionId == conflict.VersionAId;
-        var here = game is { IsEnrolledHere: true } && conflict.MachineId == _config.MachineId;
+        var here = game is { IsEnrolledHere: true } && conflict.MachineId == _config.MachineId && FollowsConflict(game, conflict);
         string? rejectedHash = null;
         if (here && keepCloud && !keepBoth)
         {
@@ -1128,7 +1135,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         var holds = DlcHoldStore.For(_config);
         if (ContentInventory.For(game) is not { } here) return false;
         SaveVersionDto? head;
-        try { head = (await _api.GetStateAsync(game.GameId, ct))?.Head; }
+        try { head = await FollowedHeadAsync(game, ct); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return false; }
         if (head?.Content is not { } content) return false;
         var missing = head.MachineId == _config.MachineId || head.Id == game.LastKnownVersionId
@@ -1483,11 +1490,11 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         using var linked = LinkRetirement(ct);
         ct = linked.Token;
 
-        var lease = await _api.AcquireLeaseAsync(game.GameId);
+        var lease = await _api.AcquireLeaseAsync(game.GameId, game.PlaythroughId);
         if (!lease.Granted)
         {
             var holder = lease.Lease.HolderMachineName;
-            Alert($"[{game.Name}] WARNING: saves are checked out by '{holder}'. " +
+            Alert($"[{game.Name}] WARNING: saves{InPlaythrough(game)} are checked out by '{holder}'. " +
                  "Launched without pulling — a conflict may occur on exit.",
                 AgentEventCodes.LeaseHeldElsewhere, AgentEventSeverity.Warning, game.GameId);
             return (false, holder);
@@ -1533,11 +1540,11 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         if (await FindOpenConflictAsync(game) is { } already)
             return Blocked(game, already);
 
-        var lease = await _api.AcquireLeaseAsync(game.GameId);
+        var lease = await _api.AcquireLeaseAsync(game.GameId, game.PlaythroughId);
         if (!lease.Granted)
         {
             var holder = lease.Lease.HolderMachineName;
-            Alert($"[{game.Name}] WARNING: saves are checked out by '{holder}'. " +
+            Alert($"[{game.Name}] WARNING: saves{InPlaythrough(game)} are checked out by '{holder}'. " +
                  "Launched without pulling — a conflict may occur on exit.",
                 AgentEventCodes.LeaseHeldElsewhere, AgentEventSeverity.Warning, game.GameId);
             CheckXeniaProfile(game, canAsk: false);
@@ -1645,8 +1652,10 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         {
             var state = await _api.GetStateAsync(game.GameId);
             if (state?.HasOpenConflict != true) return null;
-            var conflicts = await _api.GetOpenConflictsAsync();
-            return conflicts.FirstOrDefault(c => c.GameId == game.GameId);
+            var conflicts = (await _api.GetOpenConflictsAsync()).Where(c => c.GameId == game.GameId).ToList();
+            // A conflict on a playthrough this device is not on is that line's business, never a reason to stop this launch.
+            var followed = conflicts.Count == 0 ? null : await FollowedIdAsync(game);
+            return conflicts.FirstOrDefault(c => c.PlaythroughId is null || followed is null || c.PlaythroughId == followed);
         }
         catch (Exception ex)
         {

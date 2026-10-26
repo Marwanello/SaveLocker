@@ -158,19 +158,21 @@ function pageRoot(): HTMLElement | null {
 /** One game's page and Settings, split into their big blocks (cards, action rows). */
 function tilesOf(root: HTMLElement): HTMLElement[] {
   const out: HTMLElement[] = []
-  for (const child of Array.from(root.children) as HTMLElement[]) {
-    if (child.classList.contains('sl-back') || child.classList.contains('sl-toast')) continue
-    if (child.hidden) continue
-    if (child.classList.contains('sl-collapse-empty')) {
-      out.push(...(Array.from(child.children) as HTMLElement[]))
-      continue
+  const add = (child: HTMLElement) => {
+    if (child.classList.contains('sl-back') || child.classList.contains('sl-toast')) return
+    if (child.hidden) return
+    // A wrapper that only groups tiles (Settings' sections, the plugin cards' collapse-when-empty box) is not a tile itself.
+    if (child.classList.contains('sl-collapse-empty') || child.classList.contains('sl-section')) {
+      for (const c of Array.from(child.children) as HTMLElement[]) add(c)
+      return
     }
     if (TILE_GRIDS.some(c => child.classList.contains(c))) {
       out.push(...(Array.from(child.children) as HTMLElement[]))
-      continue
+      return
     }
     out.push(child)
   }
+  for (const child of Array.from(root.children) as HTMLElement[]) add(child)
   return out
 }
 
@@ -619,7 +621,21 @@ function pressR3() {
   }
 }
 
+/** On Settings, LB/RB walk the page's own sections (the bar under the title) before they leave for the next rail entry:
+ *  true when the press stayed on the page. */
+function settingsStep(delta: number): boolean {
+  if (currentSection() !== 'Settings') return false
+  const jumps = [...document.querySelectorAll<HTMLButtonElement>('.sl-content .sl-jump button')]
+  if (jumps.length === 0) return false
+  const at = jumps.findIndex(b => b.getAttribute('aria-pressed') === 'true')
+  const next = at + delta
+  if (next < 0 || next >= jumps.length) return false
+  jumps[next].click()
+  return true
+}
+
 function sectionStep(delta: number) {
+  if (settingsStep(delta)) return
   const navs = [...document.querySelectorAll<HTMLButtonElement>('.sl-nav')]
   if (navs.length === 0) return
   const index = navs.findIndex(n => n.getAttribute('aria-current') === 'page')

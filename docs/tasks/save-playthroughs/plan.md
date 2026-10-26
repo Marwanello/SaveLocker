@@ -16,9 +16,9 @@ implementation-grouping.md]] says which phases share a session and in what order
 | 1 — Server model: `Playthrough`, per-playthrough head, migration to "Main" | ✅ Shipped 2026-10-26 (Group 1, branch `playthroughs-group-1`) — migration `AddPlaythroughs`, proved on a previous-schema seeded database; no copy of a real dev database existed to run it against |
 | 2 — Server sync scoped per playthrough (push, pull, conflicts, leases, delta, fan-out, retention) | ✅ Shipped 2026-10-26 — `run-playthrough-tests.ps1` 96/96, mutation-checked (fan-out and retention each fail when broken) |
 | 3 — Server playthrough API + per-device selection | ✅ Shipped 2026-10-26 — all but *delete* (Phase 10); `SwitchPlaythrough` is queued and gated by agent version, no agent runs it until Group 2 |
-| 4 — Agent core: follow a playthrough, switch safely | ⏳ Not started |
-| 5 — Agent local copy store (deduplicated, three modes) | ⏳ Not started |
-| 6 — Agent UI (playthrough tabs, Settings in sections) + CLI | ⏳ Not started |
+| 4 — Agent core: follow a playthrough, switch safely | ✅ Shipped 2026-10-26 (Group 2, branch `playthroughs-group-2`) — `run-playthrough-agent-tests.ps1` drives it end to end; the console's switch command (`AgentCommand`) runs the same method |
+| 5 — Agent local copy store (deduplicated, three modes) | ✅ Shipped 2026-10-26 — `PlaythroughStoreTests` (dedup, verify-on-restore, sweep grace, clear keeps the only copy) + the offline sections of the agent suite |
+| 6 — Agent UI (playthrough tabs, Settings in sections) + CLI | ✅ Shipped 2026-10-26 — tabs, New playthrough, switch dialog, Settings in six sections with LB/RB; checked in the browser pane against the testenv console and tray; **not** on a controller or a Deck |
 | 7 — Console: Saves card, fork, switch a device | ⏳ Not started |
 | 8 — Decky: dropdown on the Games row and in the QAM, icons, List / Grid | ⏳ Not started |
 | 9 — Playnite: Playthrough submenu | ⏳ Not started |
@@ -234,6 +234,29 @@ An agent setting, **Playthrough copies on this device**:
    `playthrough new <game> <name> [--from-version <id>]`.
 6. No toast at launch: the maintainer doesn't want a launch notification. The Selected name just shows where the
    game is shown.
+
+### What Group 2 settled (2026-10-26)
+
+- **A switch changes the game's playthrough only inside the restore that records the version it restored** (`PullAsync(..., switchTo)`): naming the new line
+  first would let a folder-watch push send the old save into it, and restoring first would leave a window with the new files on the old line.
+- **Push first, then restore — and the push is of the *outgoing* line.** A conflict in it, an emptied-folder hold, or a refused push stops the switch; the
+  device stays where it was with its edit intact. Only a push that failed because the server **could not be reached** may continue, and only from a copy
+  (below); the generic offline-queue entry is dropped then, because a queued push of the folder would later send the *new* line's files to the wrong line.
+- **Copies are a deduplicated blob store** (`playthrough-store/blobs/{ab}/{sha256}` + `snapshots/{game}/{playthrough}.json`), written blob-then-snapshot, verified file
+  by file on restore, swept (older than an hour, named by no snapshot) at engine start and after every switch. *Only until uploaded*: kept for the switch only,
+  removed once the server confirms; *Keep for offline switching*: kept, marked uploaded; *Off*: nothing, so an offline switch is refused. The only copy of a save
+  that never reached the server is never cleared.
+- **An offline switch** restores the target from its copy with the copy's version as the parent of the next push (so a gap to the server is an ordinary conflict),
+  keeps the outgoing save as a copy marked *not uploaded*, and `OfflineQueueDrainer` sends it — and then the selection — when the server is back (`playthrough flush`
+  does the same from the CLI on a box with no daemon).
+- **Start fresh** empties the folder through the same restore a pull uses (an archive of only the kept files, plus the markers of every extra folder, so its
+  delete pass applies); the new line has no version until the game writes something and the next push makes its first.
+- **Everything that compares "this device's save" with "the cloud" reads the followed playthrough's head** (`ApiClient.GetPlaythroughHeadAsync`), never the state
+  route's head, which is the default's: Check now, Save files on this device, the DLC check, the CLI's `dlc`, the Switch emulator's vs-cloud read.
+- **Server routes added to the agent group** (Group 1 had only list / create / select): `rename`, `archive`, `unarchive` — the agent's tab menu needs them and an
+  agent has no admin credential. Same service methods and audit entries as the admin routes, under the machine's name.
+- **`Playthroughs.MinAgentVersion` stays `0.9.0`.** A testenv build is stamped one patch above the last tag (`0.8.2-test`), which the server treats as too old to be sent
+  a switch; build with `testenv build -Version 0.9.0-test` to try the console's command.
 
 ## Phase 7 — Console: Saves card, fork, switch a device
 

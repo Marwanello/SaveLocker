@@ -45,7 +45,11 @@ const entry = (t: GameTitle) => t.trees.find(g => g.path) ?? t.lead
 
 /** The row's second line: a game's folder, or a title's emulators and which of them are not set up here. */
 function subtext(t: GameTitle) {
-  if (t.trees.length === 1) return t.lead.path || 'No save folder on this machine'
+  if (t.trees.length === 1) {
+    const g = t.lead
+    const playing = g.playthroughCount > 1 && g.playthroughName ? ` · Playing ${g.playthroughName}` : ''
+    return (g.path || 'No save folder on this machine') + playing
+  }
   const away = t.trees.filter(g => !g.path).map(g => emulatorOf(g) ?? g.name)
   return <><EmulatorBadges trees={t.trees} />{t.trees.map(g => emulatorOf(g) ?? g.name).join(' · ')}
     {away.length > 0 && <i> · {away.join(', ')} not set up here</i>}</>
@@ -98,7 +102,9 @@ function Group({ title, note, games, mode, conflicted, onOpen }: GroupProps) {
                 <span className="sl-tile__name">{t.name}</span>
                 {t.trees.length > 1
                   ? <span className="sl-tile__sub">{t.trees.length} emulators</span>
-                  : region(g) && <span className="sl-tile__sub">{region(g)}</span>}
+                  : g.playthroughCount > 1 && g.playthroughName
+                    ? <span className="sl-tile__sub">{g.playthroughName}</span>
+                    : region(g) && <span className="sl-tile__sub">{region(g)}</span>}
               </button>
             )
           })}

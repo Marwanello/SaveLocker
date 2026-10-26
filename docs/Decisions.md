@@ -1016,6 +1016,16 @@ session can judge an edge case, not to reopen the choice.
 - **Playthroughs: merging a game that has playthroughs of its own is refused** (2026-10-26) — its versions would all pour into the target's Main,
   mixing lines. The merged-in versions of an ordinary game become read-only history of the target's default playthrough.
 
+- **Playthroughs: the switch is push-then-restore, and only an *unreachable* server may skip the push** (2026-10-26, Group 2). A conflict, an emptied-folder hold or a
+  refused push stops it with the device untouched. When the server cannot be reached the outgoing save is kept as a copy marked *not uploaded* and pushed from the copy
+  later (parent = the version it was made from); the folder is never queued, because by then it holds another line's files.
+- **Playthroughs: the game follows the new line in the same step that records the restored version** (`PullAsync`'s `switchTo`), and a failed restore is put back from
+  the copy taken first — or, with copies off, from the server, where the push already put it.
+- **Playthroughs: copies are deduplicated blobs verified on restore, and the only copy of an unuploaded save is never cleared.** Chunking for single huge files stays the storage
+  task's job (its Phase 9).
+- **Playthroughs: *Start fresh* ticks profile and settings files by file name** (anything with profile/setting/config/option/pref in it, or `.ini`/`.cfg`/`.conf`) and nothing else;
+  every tick can be changed. A heuristic on purpose: no game tells us which of its files is a profile.
+
 ## Environment facts (user-provided)
 - Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual
   `--dir` fallback is the primary path, not a fallback, on Linux.

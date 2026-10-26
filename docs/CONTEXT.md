@@ -18,6 +18,19 @@ and 1 — both resolve to the same rollout: the console and fleet are now curren
 which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
 fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
+**Playthroughs Group 2 — one device — built (2026-10-26, branch `playthroughs-group-2`, stacked on `playthroughs-group-1`, PR open, not merged).** Phases 4–6 of
+[[tasks/save-playthroughs/plan]]: an agent now **follows one playthrough per game** and can **switch**. `SyncEngine.SwitchPlaythroughAsync` refuses while the game
+runs, a session is open here or a conflict is open, pushes the outgoing save to **its own** playthrough, restores the target's latest (or empties the folder for
+*Start fresh*), then tells the server; a failure leaves the device on the old one. `PlaythroughStore` keeps deduplicated local copies (*Only until uploaded* /
+*Keep for offline switching* / *Off*), which is what makes an **offline switch** possible — the outgoing save and the selection go up when the server is back. New
+surfaces: playthrough **tabs** under a game's page, **New playthrough** (Current save / Start fresh) and a switch **dialog** with the steps as they happen, Settings
+split into six sections with a jump bar (LB/RB on a controller) and the copies row under *Sync*, `savelocker playthrough list|switch|new|flush`, and the console's
+`SwitchPlaythrough` command now actually runs. Rationale in [[tasks/save-playthroughs/plan]] → *What Group 2 settled*. Verified by the new
+`tests/run-playthrough-agent-tests.ps1` (60 checks: fork, switch, two lines at once, running refusal, conflict refusal, start fresh, offline from a copy, copies off,
+tampered copy, only-until-uploaded) and `PlaythroughStoreTests` (13), plus the existing server and agent suites (see [[Build and Run]] → Suite baseline). **Not verified:**
+a Deck, a controller, the Linux launch wrapper with a non-default playthrough, the console's switch command through a real fleet (testenv pass).
+**Next action:** the maintainer's testenv pass of the steps in the PR (build with `-Version 0.9.0-test`), then merge; Group 3 (console Saves card, Decky, Playnite, delete) is next.
+
 **Playthroughs Group 1 — the server — built (2026-10-26, branch `playthroughs-group-1`, PR open, not merged).** Phases 1–3 of
 [[tasks/save-playthroughs/plan]]: a game now has one or more **playthroughs** (named lines of saves), each with its own head, versions, conflicts,
 lease and retention, and each device follows one per game. Nothing is visible yet — no UI, and the agent does not know about them (Group 2) —

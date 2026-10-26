@@ -664,3 +664,43 @@ html.sl-pad-mode .sl-app { padding-bottom: var(--sl-hintbar-h, 44px); }
 .sl-map__arrow { color: var(--color-accent-ink); }
 .sl-map__to { color: var(--color-fg); }
 .sl-copied { display: block; margin-top: 3px; font-size: 11px; color: var(--color-info-ink); }
+
+/* ---- Playthroughs (tasks/save-playthroughs Phase 6) ---------------------------------------------- */
+.sl-ptabs { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; border-bottom: 1px solid var(--color-line); }
+.sl-ptab {
+  display: flex; align-items: center; gap: 9px; margin-bottom: -1px; padding: 8px 14px 10px; font: inherit; color: var(--color-dim);
+  background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 10px 10px 0 0; cursor: pointer; text-align: left;
+  transition: background-color .15s var(--ease), color .15s var(--ease);
+}
+.sl-ptab:hover:not(:disabled) { color: var(--color-fg); background: var(--color-raise); }
+.sl-ptab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.sl-ptab[aria-selected="true"] { color: var(--color-fg); border-bottom-color: var(--color-accent); }
+.sl-ptab:disabled { opacity: .5; cursor: default; }
+.sl-ptab--archived { font-style: italic; }
+.sl-ptab--new { margin-left: auto; align-self: center; margin-bottom: 4px; padding: 6px 12px; border: 1px dashed var(--color-line); border-radius: 8px; font-size: 12.5px; }
+.sl-ptab__t1 { display: block; font-size: 13px; font-weight: 600; }
+.sl-ptab__t2 { display: block; font-size: 10.5px; color: var(--color-faint); }
+.sl-ptab__tick {
+  display: inline-grid; place-items: center; flex: none; width: 17px; height: 17px; border-radius: 50%;
+  border: 1.5px solid var(--color-line); font-size: 10px; font-weight: 700; line-height: 1; color: transparent;
+}
+.sl-ptab__tick--on { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent-ink); }
+.sl-keeprow { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border-radius: 7px; font-size: 12.5px; color: var(--color-fg); cursor: pointer; }
+.sl-keeprow:hover { background: var(--color-hover); }
+.sl-keeprow small { margin-left: auto; color: var(--color-dim); }
+.sl-viewing { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Settings sections: a sticky bar of jump buttons under the title; the one in view is pressed (LB/RB move along it). */
+.sl-jump {
+  position: sticky; top: 0; z-index: 20; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 0;
+  background: var(--color-ink); border-bottom: 1px solid var(--color-line);
+}
+.sl-jump button {
+  font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  color: var(--color-dim); background: transparent; border: 1px solid var(--color-line);
+}
+.sl-jump button:hover { color: var(--color-fg); background: var(--color-raise); }
+.sl-jump button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-jump button[aria-pressed="true"] { color: var(--color-accent-ink); background: var(--color-accent-soft); border-color: var(--color-accent-line); }
+.sl-section { display: flex; flex-direction: column; gap: 12px; scroll-margin-top: 56px; }
+.sl-section__title { margin: 6px 0 -2px; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--color-faint); }

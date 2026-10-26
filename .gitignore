@@ -65,6 +65,7 @@ artifacts/
 .verify-suites/
 .verify-schedule/
 .verify-playthroughs/
+.verify-playthrough-agent/
 
 # WSLg dev-run scratch config for `savelocker ui` (tests/linux/run-ui-wslg.sh)
 .wslg-ui/

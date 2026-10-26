@@ -51,6 +51,12 @@ export function ConflictsView({ conflicts, emptied, games, machineName, onRefres
   }
 
   const gameName = (id: string) => games.find(g => g.id === id)?.name ?? id
+  // Once a game has several playthroughs a conflict says which one it is in (tasks/save-playthroughs).
+  const conflictName = (c: { gameId: string; playthroughId?: string | null }) => {
+    const g = games.find(x => x.id === c.gameId)
+    return g && g.playthroughCount > 1 && g.playthroughName && (!c.playthroughId || c.playthroughId === g.playthroughId)
+      ? `${g.name} · ${g.playthroughName}` : gameName(c.gameId)
+  }
   const oldest = conflicts.length > 0
     ? Math.min(...conflicts.map(c => new Date(asUtc(c.createdAt)).getTime()))
     : null
@@ -63,7 +69,7 @@ export function ConflictsView({ conflicts, emptied, games, machineName, onRefres
           <tbody>
             {resolved.map(c => (
               <tr key={c.id}>
-                <td>{gameName(c.gameId)}</td>
+                <td>{conflictName(c)}</td>
                 <td>{c.resolvedVersionId === c.versionBId ? 'This device' : c.resolvedVersionId === c.versionAId ? 'The cloud' : 'Another version'}</td>
                 <td className="sl-dim" title={c.resolvedAt ? formatDateTime(c.resolvedAt) : undefined}>
                   {c.resolvedAt ? formatAgo(c.resolvedAt) : '—'}
@@ -130,7 +136,7 @@ export function ConflictsView({ conflicts, emptied, games, machineName, onRefres
           <div key={c.id} className="sl-stack">
             <ConflictCard
               conflict={c}
-              gameName={gameName(c.gameId)}
+              gameName={conflictName(c)}
               machineName={machineName}
               versionA={a}
               versionB={b}
