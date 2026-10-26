@@ -18,7 +18,7 @@ implementation-grouping.md]] says which phases share a session and in what order
 | 3 — Server playthrough API + per-device selection | ✅ Shipped 2026-10-26 — all but *delete* (Phase 10); `SwitchPlaythrough` is queued and gated by agent version, no agent runs it until Group 2 |
 | 4 — Agent core: follow a playthrough, switch safely | ✅ Shipped 2026-10-26 (Group 2, branch `playthroughs-group-2`) — `run-playthrough-agent-tests.ps1` drives it end to end; the console's switch command (`AgentCommand`) runs the same method |
 | 5 — Agent local copy store (deduplicated, three modes) | ✅ Shipped 2026-10-26 — `PlaythroughStoreTests` (dedup, verify-on-restore, sweep grace, clear keeps the only copy) + the offline sections of the agent suite |
-| 6 — Agent UI (playthrough tabs, Settings in sections) + CLI | ✅ Shipped 2026-10-26 — tabs, New playthrough, switch dialog, Settings in six sections with LB/RB; checked in the browser pane against the testenv console and tray; **not** on a controller or a Deck |
+| 6 — Agent UI (playthrough tabs, Settings in sections) + CLI | ✅ Shipped 2026-10-26 — tabs, New playthrough, switch dialog, Settings in six sections with LT/RT; checked in the browser pane against the testenv console and tray; **not** on a controller or a Deck |
 | 7 — Console: Saves card, fork, switch a device | ⏳ Not started |
 | 8 — Decky: dropdown on the Games row and in the QAM, icons, List / Grid | ⏳ Not started |
 | 9 — Playnite: Playthrough submenu | ⏳ Not started |
@@ -51,7 +51,7 @@ Across all of them:
 ### Agent Settings in sections
 
 The agent's Settings page is split into sections, most used first, with a sticky bar under the title to jump
-between them (the one in view is pressed; LB/RB on a controller):
+between them (the one in view is pressed; LT/RT on a controller):
 
 | Section | Holds |
 |---|---|
@@ -229,7 +229,7 @@ An agent setting, **Playthrough copies on this device**:
    another one read-only (plus "New playthrough from this version").
 3. Settings: the Phase 5 mode as one row with a three-way switch, under **Sync**.
 4. Settings in sections (see *Agent Settings in sections* above): `SettingsView.tsx` gets a section header per
-   group and a sticky jump bar; each button is a pad stop and LB/RB move between sections.
+   group and a sticky jump bar; each button is a pad stop and LT/RT move between sections.
 5. CLI (`AgentCli.cs`, [[CLI Reference]] KB article): `playthrough list <game>`, `playthrough switch <game> <name>`,
    `playthrough new <game> <name> [--from-version <id>]`.
 6. No toast at launch: the maintainer doesn't want a launch notification. The Selected name just shows where the
