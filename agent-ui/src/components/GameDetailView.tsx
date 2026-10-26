@@ -193,8 +193,9 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   const selectedPt = pts?.playthroughs.find(p => p.id === pts.selectedId) ?? null
   const several = (pts?.playthroughs.length ?? 0) > 1
   const otherPt = pts && viewing && viewing !== pts.selectedId ? pts.playthroughs.find(p => p.id === viewing) ?? null : null
-  // Offline: the server's list is empty, so the other tab is a copy this device keeps.
-  const offline = pts?.offline === true || (!!stateError && !state)
+  // Offline: the server's list is empty, so the other tab is a copy this device keeps. Only the playthroughs route can tell
+  // "unreachable" from any other failure; a state error alone (the game gone from the server, say) shows in "On the server".
+  const offline = pts?.offline === true
   const offlineCopy = pts?.offline && viewing && viewing !== pts.selectedId ? pts.copies.find(c => c.playthroughId === viewing) ?? null : null
   const head = (selectedPt ? selectedPt.head : state?.head) ?? null
   const holder = state?.lease?.holderMachineName ?? null
