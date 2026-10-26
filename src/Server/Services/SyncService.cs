@@ -12,7 +12,7 @@ namespace SaveLocker.Server.Services;
 /// Core orchestration: machine registration, leasing, conflict-aware uploads,
 /// downloads, and admin actions (conflict resolution, rollback).
 /// </summary>
-public sealed class SyncService
+public sealed partial class SyncService
 {
     private readonly AppDbContext _db;
     private readonly ArchiveStore _store;
@@ -420,6 +420,9 @@ public sealed class SyncService
         else if (await _db.Conflicts.Where(c => (c.GameId == fromId || c.GameId == intoId) && c.Status == ConflictStatus.Open)
                      .Select(c => c.GameId).FirstOrDefaultAsync() is var conflicted && conflicted != Guid.Empty)
             refusal = $"{(conflicted == fromId ? from.Name : into.Name)} has an open conflict. Resolve it first, so the version that wins is the one kept.";
+        else if (await _db.Playthroughs.CountAsync(p => p.GameId == fromId) > 1)
+            refusal = $"{from.Name} has more than one playthrough, and a merge would pour them all into {into.Name}'s default one. " +
+                      "Merging a game with several playthroughs is not supported yet (archiving them does not help).";
 
         var sameFolders = await SameFoldersAsync(from, into);
         var machines = await MergeMachinesAsync(fromId, intoId, sameFolders);
@@ -455,10 +458,13 @@ public sealed class SyncService
         var into = (await _db.Games.FindAsync(intoId))!;
         await using var tx = await _db.Database.BeginTransactionAsync();
 
-        // The versions keep their archives where they are (each has its own path); only their game changes.
+        // The versions keep their archives where they are (each has its own path); only their game changes. They become
+        // history of the other game's default playthrough, as they always were of its one line.
+        var intoDefault = (await DefaultPlaythroughAsync(intoId)).Id;
         foreach (var v in await _db.SaveVersions.Where(v => v.GameId == fromId).ToListAsync())
         {
             v.GameId = intoId;
+            v.PlaythroughId = intoDefault;
             v.Protected = true;
             v.MergedFrom ??= from.Name;
         }
@@ -571,6 +577,8 @@ public sealed class SyncService
             return (null, "A save can only be copied to another emulator's tree of the same game.");
         var plan = await PlanCopyAsync(source, version, target, await GetEmulatorMapAsync());
         if (plan.Dto.Refusal is { } refusal) return (null, refusal);
+        // The copy becomes the target's Latest, which is its default playthrough's.
+        var targetPlaythrough = await DefaultPlaythroughAsync(targetId, ct);
 
         var newId = Guid.NewGuid();
         var stage = _store.NewStagingPath(newId);
@@ -642,6 +650,7 @@ public sealed class SyncService
         {
             Id = newId,
             GameId = targetId,
+            PlaythroughId = targetPlaythrough.Id,
             MachineId = machineName is null ? null : machineId,
             MachineName = machineName ?? "Console",
             CreatedAt = DateTime.UtcNow,
@@ -656,7 +665,7 @@ public sealed class SyncService
         _db.SaveVersionFiles.AddRange(manifest);
         try
         {
-            await SetHeadAndPropagateAsync(target, newId, "version.copy",
+            await SetHeadAndPropagateAsync(target, targetPlaythrough, newId, "version.copy",
                 $"{plan.FromEmulator} {versionId} → {plan.ToEmulator}, by {by}", propagate: false, exceptMachineId: null, ct);
         }
         catch
@@ -665,7 +674,7 @@ public sealed class SyncService
             _store.TryDelete(rel);
             throw;
         }
-        await QueueHeadPullsAsync(targetId, null, ct);
+        await QueueHeadPullsAsync(targetId, targetPlaythrough.Id, null, ct);
         await PruneVersionsAsync(targetId, ct);
         await LoadMachine(created, ct);
         return (created.ToDto(), null);
@@ -683,9 +692,10 @@ public sealed class SyncService
         if (version.MergedFrom is not null) return Refuse("That version is history of a merged game; it can't be copied.");
         if (EmulatorSaveCopy.For(from, to) is not { } rule)
             return Refuse($"{from ?? source.Name} and {to ?? target.Name} keep this game's save in different formats, so it can't be copied between them.");
-        if (await _db.Conflicts.AnyAsync(c => c.GameId == target.Id && c.Status == ConflictStatus.Open))
+        var targetDefault = await DefaultPlaythroughAsync(target.Id);
+        if (await _db.Conflicts.AnyAsync(c => c.PlaythroughId == targetDefault.Id && c.Status == ConflictStatus.Open))
             return Refuse($"{to}'s save has an open conflict. Resolve it first.");
-        if (await ActiveLeaseAsync(target.Id) is { } lease)
+        if (await ActiveLeaseAsync(target.Id, targetDefault.Id) is { } lease)
             return Refuse($"{lease.Machine?.Name ?? "A machine"} is playing it in {to} right now. Copy it once that session ends.");
 
         List<(string Path, long Size)> PrimaryFiles(string rel) =>
@@ -1006,6 +1016,11 @@ public sealed class SyncService
             Enabled = true
         };
         _db.Games.Add(game);
+        // Every game has at least one playthrough, the default: where its versions go until someone forks another.
+        _db.Playthroughs.Add(new Playthrough
+        {
+            Id = Guid.NewGuid(), GameId = game.Id, Name = Playthroughs.DefaultName, CreatedAt = DateTime.UtcNow, IsDefault = true
+        });
         var order = 0;
         foreach (var extra in req.ExtraPaths ?? Array.Empty<SavePathDto>())
             _db.GameSavePaths.Add(NewSavePath(game.Id, extra, order++));
@@ -1033,6 +1048,8 @@ public sealed class SyncService
         _db.SaveVersions.RemoveRange(versions);
         _db.Leases.RemoveRange(await _db.Leases.Where(l => l.GameId == gameId).ToListAsync());
         _db.Conflicts.RemoveRange(await _db.Conflicts.Where(c => c.GameId == gameId).ToListAsync());
+        _db.DeviceSelections.RemoveRange(await _db.DeviceSelections.Where(d => d.GameId == gameId).ToListAsync());
+        _db.Playthroughs.RemoveRange(await _db.Playthroughs.Where(p => p.GameId == gameId).ToListAsync());
         _db.MachineSavePaths.RemoveRange(
             await _db.MachineSavePaths.Where(p => p.GameId == gameId).ToListAsync());
         _db.GameSavePaths.RemoveRange(
@@ -1084,11 +1101,15 @@ public sealed class SyncService
             Sources(sourcesByGame, s.GameId).Add(new GameSourceDto(s.Kind, s.Detail));
         }
 
+        var playthroughCounts = await _db.Playthroughs.GroupBy(p => p.GameId)
+            .Select(g => new { GameId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.GameId, x => x.Count);
+
         var result = new List<GameStateDto>(games.Count);
         foreach (var g in games)
         {
             var state = await GetGameStateAsync(g.Id, storageTotals.GetValueOrDefault(g.Id), extras[g.Id],
-                machinesByGame, sourcesByGame);
+                machinesByGame, sourcesByGame, playthroughCounts.GetValueOrDefault(g.Id, 1));
             if (state is not null) result.Add(state);
         }
         return result;
@@ -1103,24 +1124,30 @@ public sealed class SyncService
     /// <summary>
     /// One game's state. <paramref name="machinesByGame"/>/<paramref name="sourcesByGame"/> are the
     /// overview's bulk-loaded facets; omitted (a single-game route), each is queried for this game alone.
+    /// <paramref name="playthrough"/>: head, lease and conflict of that playthrough instead of the game's (the default's head,
+    /// any lease, any conflict) — what an agent asking about the line it syncs needs.
     /// </summary>
     public async Task<GameStateDto?> GetGameStateAsync(Guid gameId, long? precomputedStorage = null,
         IEnumerable<GameSavePath>? precomputedExtras = null,
         Dictionary<Guid, HashSet<Guid>>? machinesByGame = null,
-        Dictionary<Guid, List<GameSourceDto>>? sourcesByGame = null)
+        Dictionary<Guid, List<GameSourceDto>>? sourcesByGame = null,
+        int? playthroughCount = null,
+        Playthrough? playthrough = null)
     {
         var game = await _db.Games.FindAsync(gameId);
         if (game is null) return null;
         if (game.TitleId is not null) await _db.Entry(game).Reference(g => g.Title).LoadAsync();
 
-        var head = game.HeadVersionId is null
+        var headId = playthrough is null ? game.HeadVersionId : playthrough.HeadVersionId;
+        var head = headId is null
             ? null
             : await _db.SaveVersions.Include(v => v.Machine)
-                .FirstOrDefaultAsync(v => v.Id == game.HeadVersionId);
+                .FirstOrDefaultAsync(v => v.Id == headId);
 
-        var lease = await ActiveLeaseAsync(gameId);
+        var lease = await ActiveLeaseAsync(gameId, playthrough?.Id);
         var hasConflict = await _db.Conflicts
-            .AnyAsync(c => c.GameId == gameId && c.Status == ConflictStatus.Open);
+            .AnyAsync(c => c.GameId == gameId && c.Status == ConflictStatus.Open &&
+                           (playthrough == null || c.PlaythroughId == playthrough.Id));
 
         var totalStorage = precomputedStorage
             ?? await _db.SaveVersions.Where(v => v.GameId == gameId).SumAsync(v => v.Size);
@@ -1139,7 +1166,8 @@ public sealed class SyncService
         var emulator = sources.Where(s => s.Kind == GameSourceKinds.Emulator && s.Detail.Trim().Length > 0)
             .Select(s => s.Detail.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
         return new GameStateDto(game.ToDto(extras), head?.ToDto(), lease.ToDto(gameId), hasConflict, totalStorage,
-            CleanMachines(machines), CleanSources(sources), emulator.Length == 0 ? null : string.Join(" + ", emulator));
+            CleanMachines(machines), CleanSources(sources), emulator.Length == 0 ? null : string.Join(" + ", emulator),
+            playthroughCount ?? Math.Max(1, await _db.Playthroughs.CountAsync(p => p.GameId == gameId)));
     }
 
     /// <summary>Machines that have this game: a stored save folder or a recorded source (one small query each).</summary>
@@ -1194,24 +1222,26 @@ public sealed class SyncService
     /// and <see cref="SweepExpiredLeasesAsync"/> collects it.
     /// </para>
     /// </summary>
-    public async Task<Lease?> ActiveLeaseAsync(Guid gameId)
+    public async Task<Lease?> ActiveLeaseAsync(Guid gameId, Guid? playthroughId = null)
     {
-        var lease = await _db.Leases.Include(l => l.Machine)
-            .FirstOrDefaultAsync(l => l.GameId == gameId);
-        return lease is null || lease.ExpiresAt < DateTime.UtcNow ? null : lease;
+        // One lease per playthrough, so a game can have several; with no playthrough named, the newest live one speaks for it.
+        var now = DateTime.UtcNow;
+        var leases = _db.Leases.Include(l => l.Machine).Where(l => l.GameId == gameId && l.ExpiresAt >= now);
+        if (playthroughId is { } p) leases = leases.Where(l => l.PlaythroughId == p);
+        return await leases.OrderByDescending(l => l.AcquiredAt).FirstOrDefaultAsync();
     }
 
     /// <summary>
     /// Take the game's lease, or report who holds it.
     /// <para>
-    /// There is a unique index on <c>Lease.GameId</c>, and this used to read, decide, then insert.
+    /// There is a unique index on <c>Lease.GameId</c> + <c>PlaythroughId</c>, and this used to read, decide, then insert.
     /// Two machines launching the same game at the same moment both saw no lease and both inserted;
     /// one got a database exception and the caller got a 500 — at precisely the moment lease-based
     /// conflict prevention is the thing being relied on. Both steps below are atomic, and losing the
     /// race is an ordinary <c>Granted=false</c> answer, not an error.
     /// </para>
     /// </summary>
-    public async Task<LeaseAcquireResponse> AcquireLeaseAsync(Guid gameId, Guid machineId)
+    public async Task<LeaseAcquireResponse> AcquireLeaseAsync(Guid gameId, Guid machineId, Guid playthroughId)
     {
         var now = DateTime.UtcNow;
         var expires = now.Add(_leaseDuration);
@@ -1220,7 +1250,8 @@ public sealed class SyncService
         //    re-evaluated by the database as the UPDATE runs, so a row someone else just claimed no
         //    longer matches and this affects nothing.
         var claimed = await _db.Leases
-            .Where(l => l.GameId == gameId && (l.MachineId == machineId || l.ExpiresAt < now))
+            .Where(l => l.GameId == gameId && l.PlaythroughId == playthroughId &&
+                        (l.MachineId == machineId || l.ExpiresAt < now))
             .ExecuteUpdateAsync(s => s
                 .SetProperty(l => l.MachineId, machineId)
                 .SetProperty(l => l.AcquiredAt, now)
@@ -1235,6 +1266,7 @@ public sealed class SyncService
             {
                 Id = Guid.NewGuid(),
                 GameId = gameId,
+                PlaythroughId = playthroughId,
                 MachineId = machineId,
                 AcquiredAt = now,
                 ExpiresAt = expires
@@ -1254,7 +1286,7 @@ public sealed class SyncService
         }
 
         var holder = await _db.Leases.Include(l => l.Machine)
-            .FirstOrDefaultAsync(l => l.GameId == gameId);
+            .FirstOrDefaultAsync(l => l.GameId == gameId && l.PlaythroughId == playthroughId);
 
         // Re-checked against the row that actually exists rather than trusting the step above: it is
         // the holder on disk that decides, and it may have changed hands again in between.
@@ -1268,11 +1300,14 @@ public sealed class SyncService
         return new LeaseAcquireResponse(granted, holder.ToDto(gameId));
     }
 
-    public async Task ReleaseLeaseAsync(Guid gameId, Guid machineId)
+    /// <param name="playthroughId">Which of the game's leases; null releases every one this machine holds on it (a machine
+    /// plays a game once at a time), which is also what an agent that predates playthroughs asks for.</param>
+    public async Task ReleaseLeaseAsync(Guid gameId, Guid machineId, Guid? playthroughId = null)
     {
         // Conditional delete: only the holder can release, decided by the database in one statement.
         var removed = await _db.Leases
-            .Where(l => l.GameId == gameId && l.MachineId == machineId)
+            .Where(l => l.GameId == gameId && l.MachineId == machineId &&
+                        (playthroughId == null || l.PlaythroughId == playthroughId))
             .ExecuteDeleteAsync();
         if (removed > 0)
         {
@@ -1281,11 +1316,12 @@ public sealed class SyncService
         }
     }
 
-    public async Task<bool> RenewLeaseAsync(Guid gameId, Guid machineId)
+    public async Task<bool> RenewLeaseAsync(Guid gameId, Guid machineId, Guid? playthroughId = null)
     {
         var expires = DateTime.UtcNow.Add(_leaseDuration);
         var renewed = await _db.Leases
-            .Where(l => l.GameId == gameId && l.MachineId == machineId)
+            .Where(l => l.GameId == gameId && l.MachineId == machineId &&
+                        (playthroughId == null || l.PlaythroughId == playthroughId))
             .ExecuteUpdateAsync(s => s.SetProperty(l => l.ExpiresAt, expires));
         if (renewed == 0) return false;
 
@@ -1294,12 +1330,14 @@ public sealed class SyncService
         return true;
     }
 
-    /// <summary>Admin: force-release a stuck lease regardless of holder.</summary>
-    public async Task ForceReleaseLeaseAsync(Guid gameId)
+    /// <summary>Admin: force-release a stuck lease regardless of holder — one playthrough's, or every one the game has.</summary>
+    public async Task ForceReleaseLeaseAsync(Guid gameId, Guid? playthroughId = null)
     {
         // Same one-statement delete as the other lease paths: two admins clicking at once must not
         // turn the second click into a concurrency exception.
-        var removed = await _db.Leases.Where(l => l.GameId == gameId).ExecuteDeleteAsync();
+        var removed = await _db.Leases
+            .Where(l => l.GameId == gameId && (playthroughId == null || l.PlaythroughId == playthroughId))
+            .ExecuteDeleteAsync();
         if (removed > 0)
         {
             await Audit(null, gameId, "lease.force_release", null);
@@ -1331,10 +1369,10 @@ public sealed class SyncService
     /// </summary>
     public async Task<UploadResult> UploadAsync(
         Guid gameId, Guid machineId, Guid? parentVersionId,
-        string contentHash, Stream archive, bool force, CancellationToken ct = default)
+        string contentHash, Stream archive, bool force, Guid? playthroughId = null, CancellationToken ct = default)
     {
-        var (game, serverHead, diverged, noChange) =
-            await PrepareUploadAsync(gameId, parentVersionId, contentHash, force, ct);
+        var (game, playthrough, serverHead, diverged, noChange) =
+            await PrepareUploadAsync(gameId, machineId, playthroughId, parentVersionId, contentHash, force, ct);
         if (noChange is not null) return noChange;
 
         // Persist the incoming archive as a new version regardless of outcome,
@@ -1344,7 +1382,7 @@ public sealed class SyncService
 
         try
         {
-            return await IngestAsync(game, versionId, rel, size, machineId, parentVersionId,
+            return await IngestAsync(game, playthrough, versionId, rel, size, machineId, parentVersionId,
                 contentHash, serverHead, diverged, force, ct);
         }
         catch
@@ -1364,21 +1402,26 @@ public sealed class SyncService
     /// changed, and again at Complete against whatever the head has become by the time the last byte
     /// landed, which is the only moment that matters for what actually gets published.
     /// </summary>
-    private async Task<(Game Game, SaveVersion? ServerHead, bool Diverged, UploadResult? NoChange)> PrepareUploadAsync(
-        Guid gameId, Guid? parentVersionId, string contentHash, bool force, CancellationToken ct)
+    private async Task<(Game Game, Playthrough Playthrough, SaveVersion? ServerHead, bool Diverged, UploadResult? NoChange)>
+        PrepareUploadAsync(
+            Guid gameId, Guid machineId, Guid? requestedPlaythrough, Guid? parentVersionId, string contentHash, bool force,
+            CancellationToken ct)
     {
         var game = await _db.Games.FindAsync(new object?[] { gameId }, ct)
                    ?? throw new InvalidOperationException("Unknown game.");
 
-        var serverHead = game.HeadVersionId is null
+        // Everything below is against THIS playthrough's head: a machine on another playthrough of the game never
+        // diverges from it, and cannot be fast-forwarded onto it either.
+        var playthrough = await ResolvePlaythroughAsync(gameId, machineId, requestedPlaythrough, ct);
+        var serverHead = playthrough.HeadVersionId is null
             ? null
-            : await _db.SaveVersions.FindAsync(new object?[] { game.HeadVersionId }, ct);
+            : await _db.SaveVersions.FindAsync(new object?[] { playthrough.HeadVersionId }, ct);
 
         if (serverHead is not null && serverHead.ContentHash == contentHash)
-            return (game, serverHead, false, new UploadResult(UploadStatus.NoChange, serverHead.ToDto(), null));
+            return (game, playthrough, serverHead, false, new UploadResult(UploadStatus.NoChange, serverHead.ToDto(), null));
 
         var diverged = !force && serverHead is not null && serverHead.Id != parentVersionId;
-        return (game, serverHead, diverged, null);
+        return (game, playthrough, serverHead, diverged, null);
     }
 
     // ----- Upload (chunked) -----
@@ -1408,14 +1451,14 @@ public sealed class SyncService
     public async Task<(Guid? SessionId, UploadResult? NoChange, bool UseDeltaPath, string[]? NeedPaths)>
         BeginChunkedUploadAsync(
             Guid gameId, Guid machineId, Guid? parentVersionId, string contentHash, bool force,
-            FileManifestEntry[]? files, CancellationToken ct = default)
+            FileManifestEntry[]? files, Guid? playthroughId = null, CancellationToken ct = default)
     {
-        var (_, serverHead, diverged, noChange) =
-            await PrepareUploadAsync(gameId, parentVersionId, contentHash, force, ct);
+        var (_, playthrough, serverHead, diverged, noChange) =
+            await PrepareUploadAsync(gameId, machineId, playthroughId, parentVersionId, contentHash, force, ct);
         if (noChange is not null) return (null, noChange, false, null);
 
         var versionId = Guid.NewGuid();
-        var sessionId = _store.BeginSession(gameId, machineId, versionId, contentHash, parentVersionId, force);
+        var sessionId = _store.BeginSession(gameId, machineId, versionId, contentHash, parentVersionId, force, playthrough.Id);
 
         var useDelta = false;
         string[]? needPaths = null;
@@ -1515,8 +1558,8 @@ public sealed class SyncService
         if (!_store.TryGetSession(sessionId, out var info) || info.GameId != gameId || info.MachineId != machineId)
             throw new UnknownUploadSessionException(sessionId);
 
-        var (game, serverHead, diverged, noChange) =
-            await PrepareUploadAsync(gameId, info.ParentVersionId, info.ContentHash, info.Force, ct);
+        var (game, playthrough, serverHead, diverged, noChange) =
+            await PrepareUploadAsync(gameId, machineId, info.PlaythroughId, info.ParentVersionId, info.ContentHash, info.Force, ct);
         if (noChange is not null)
         {
             // The head caught up to this exact content while the chunks were in flight — nothing to
@@ -1550,7 +1593,7 @@ public sealed class SyncService
         UploadResult result;
         try
         {
-            result = await IngestAsync(game, info.VersionId, rel, size, machineId, info.ParentVersionId,
+            result = await IngestAsync(game, playthrough, info.VersionId, rel, size, machineId, info.ParentVersionId,
                 info.ContentHash, serverHead, diverged, info.Force, ct);
         }
         catch
@@ -1793,7 +1836,7 @@ public sealed class SyncService
     }
 
     private async Task<UploadResult> IngestAsync(
-        Game game, Guid versionId, string rel, long size, Guid machineId, Guid? parentVersionId,
+        Game game, Playthrough playthrough, Guid versionId, string rel, long size, Guid machineId, Guid? parentVersionId,
         string contentHash, SaveVersion? serverHead, bool diverged, bool force, CancellationToken ct)
     {
         var gameId = game.Id;
@@ -1808,6 +1851,7 @@ public sealed class SyncService
         {
             Id = versionId,
             GameId = gameId,
+            PlaythroughId = playthrough.Id,
             MachineId = machineId,
             MachineName = await _db.Machines.Where(m => m.Id == machineId)
                 .Select(m => m.Name).FirstOrDefaultAsync(ct) ?? "",
@@ -1837,6 +1881,7 @@ public sealed class SyncService
             // conflicts. Same shape as HealthService.ApplyEventAsync, and for the same reason.
             var conflict = await _db.Conflicts.FirstOrDefaultAsync(c =>
                 c.GameId == gameId &&
+                c.PlaythroughId == playthrough.Id &&
                 c.Status == ConflictStatus.Open &&
                 c.VersionAId == serverHead!.Id &&
                 c.MachineId == machineId, ct);
@@ -1847,6 +1892,7 @@ public sealed class SyncService
                 {
                     Id = Guid.NewGuid(),
                     GameId = gameId,
+                    PlaythroughId = playthrough.Id,
                     VersionAId = serverHead!.Id,
                     VersionBId = versionId,
                     MachineId = machineId,
@@ -1881,7 +1927,7 @@ public sealed class SyncService
         }
 
         // Fast-forward (or forced overwrite). No fan-out: see SetHeadAndPropagateAsync's `propagate`.
-        await SetHeadAndPropagateAsync(game, versionId,
+        await SetHeadAndPropagateAsync(game, playthrough, versionId,
             force ? "upload.force" : "upload.create", contentHash,
             propagate: false, exceptMachineId: machineId, ct);
 
@@ -1899,7 +1945,7 @@ public sealed class SyncService
         {
             try
             {
-                await CloseOrphanedConflictsOnForceAsync(gameId, versionId, machineId, version.MachineName, ct);
+                await CloseOrphanedConflictsOnForceAsync(gameId, playthrough.Id, versionId, machineId, version.MachineName, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -1920,9 +1966,10 @@ public sealed class SyncService
     }
 
     /// <summary>
-    /// Keep only the most recent N versions per game (per-game limit, falling back to the
-    /// server global default). Never prunes the current head, open-conflict versions, or versions
-    /// an admin protected.
+    /// Keep only the most recent N versions per playthrough (the game's limit, falling back to the
+    /// server global default, applies to each playthrough separately). Never prunes ANY playthrough's head — a fork's
+    /// head is a version of the playthrough it was forked from —, open-conflict versions, or versions an admin
+    /// protected; and an archived playthrough is not pruned at all.
     /// </summary>
     private async Task PruneVersionsAsync(Guid gameId, CancellationToken ct)
     {
@@ -1930,25 +1977,29 @@ public sealed class SyncService
         var limit = game?.RetainVersions ?? _retainPerGame;
         if (limit <= 0) return;
 
-        var versions = await _db.SaveVersions
-            .Where(v => v.GameId == gameId)
-            .OrderByDescending(v => v.CreatedAt)
-            .ToListAsync(ct);
-        if (versions.Count <= limit) return;
-
+        var playthroughs = await _db.Playthroughs.Where(p => p.GameId == gameId).ToListAsync(ct);
         var protectedIds = new HashSet<Guid>();
-        if (game?.HeadVersionId is { } head) protectedIds.Add(head);
+        foreach (var p in playthroughs)
+            if (p.HeadVersionId is { } head) protectedIds.Add(head);
+        if (game?.HeadVersionId is { } mirror) protectedIds.Add(mirror);
         var openConflicts = await _db.Conflicts
             .Where(c => c.GameId == gameId && c.Status == ConflictStatus.Open)
             .ToListAsync(ct);
         foreach (var c in openConflicts) { protectedIds.Add(c.VersionAId); protectedIds.Add(c.VersionBId); }
 
         var pruned = new List<SaveVersion>();
-        foreach (var old in versions.Skip(limit))
+        foreach (var playthrough in playthroughs.Where(p => p.ArchivedAt is null))
         {
-            if (old.Protected || protectedIds.Contains(old.Id)) continue;
-            _db.SaveVersions.Remove(old);
-            pruned.Add(old);
+            var versions = await _db.SaveVersions
+                .Where(v => v.PlaythroughId == playthrough.Id)
+                .OrderByDescending(v => v.CreatedAt)
+                .ToListAsync(ct);
+            foreach (var old in versions.Skip(limit))
+            {
+                if (old.Protected || protectedIds.Contains(old.Id)) continue;
+                _db.SaveVersions.Remove(old);
+                pruned.Add(old);
+            }
         }
         if (pruned.Count == 0) return;
 
@@ -2149,8 +2200,8 @@ public sealed class SyncService
         var version = await _db.SaveVersions.FindAsync(versionId);
         if (version is null || version.GameId != gameId) return (false, "not_found");
 
-        var game = await _db.Games.FindAsync(gameId);
-        if (game?.HeadVersionId == versionId) return (false, "Cannot delete the current head version.");
+        if (await _db.Playthroughs.AnyAsync(p => p.GameId == gameId && p.HeadVersionId == versionId))
+            return (false, "Cannot delete the current head version.");
 
         var inConflict = await _db.Conflicts.AnyAsync(c =>
             c.GameId == gameId && c.Status == ConflictStatus.Open &&
@@ -2179,11 +2230,13 @@ public sealed class SyncService
 
     // ----- Download -----
 
-    public async Task<(SaveVersion version, Stream content)?> DownloadHeadAsync(Guid gameId)
+    /// <summary>The latest save of the playthrough the machine follows (or the one named); null when it has none yet.</summary>
+    public async Task<(SaveVersion version, Stream content)?> DownloadHeadAsync(
+        Guid gameId, Guid? machineId = null, Guid? playthroughId = null)
     {
-        var game = await _db.Games.FindAsync(gameId);
-        if (game?.HeadVersionId is null) return null;
-        return await DownloadVersionAsync(game.HeadVersionId.Value);
+        var playthrough = await ResolvePlaythroughAsync(gameId, machineId, playthroughId);
+        if (playthrough.HeadVersionId is null) return null;
+        return await DownloadVersionAsync(playthrough.HeadVersionId.Value);
     }
 
     private Task<SaveVersion?> FindVersionAsync(Guid versionId) =>
@@ -2298,11 +2351,13 @@ public sealed class SyncService
     /// declared manifest — and cached per version id. Null for an unknown game; an empty list of folders
     /// and no head when nothing has been pushed yet.
     /// </summary>
-    public async Task<HeadFilesDto?> GetHeadFilesAsync(Guid gameId, CancellationToken ct = default)
+    public async Task<HeadFilesDto?> GetHeadFilesAsync(
+        Guid gameId, Guid? machineId = null, Guid? playthroughId = null, CancellationToken ct = default)
     {
         var game = await _db.Games.FindAsync(new object?[] { gameId }, ct);
         if (game is null) return null;
-        var head = game.HeadVersionId is { } headId
+        var playthrough = await ResolvePlaythroughAsync(gameId, machineId, playthroughId, ct);
+        var head = playthrough.HeadVersionId is { } headId
             ? await _db.SaveVersions.Include(v => v.Machine).FirstOrDefaultAsync(v => v.Id == headId, ct)
             : null;
         if (head is null || !_store.Exists(head.ArchivePath)) return new HeadFilesDto(head?.ToDto(), Array.Empty<HeadFolderDto>());
@@ -2433,11 +2488,14 @@ public sealed class SyncService
         var winner = await _db.SaveVersions.FindAsync(winningVersionId);
         if (game is null || winner is null)
             return (false, "The game or chosen version no longer exists.");
+        var playthrough = await _db.Playthroughs.FirstOrDefaultAsync(p => p.Id == conflict.PlaythroughId);
+        if (playthrough is null)
+            return (false, "The playthrough this conflict belongs to no longer exists.");
 
         var losingVersionId = winningVersionId == conflict.VersionAId ? conflict.VersionBId : conflict.VersionAId;
         var loser = await _db.SaveVersions.FindAsync(losingVersionId);
 
-        var currentHead = game.HeadVersionId is { } headId
+        var currentHead = playthrough.HeadVersionId is { } headId
             ? await _db.SaveVersions.FindAsync(headId)
             : null;
         if (currentHead is not null &&
@@ -2493,7 +2551,7 @@ public sealed class SyncService
                 : "");
 
         // Propagation is queued below rather than here, for the ordering reason spelled out there.
-        await SetHeadAndPropagateAsync(game, winningVersionId,
+        await SetHeadAndPropagateAsync(game, playthrough, winningVersionId,
             keepBoth ? "conflict.resolve_keep_both" : "conflict.resolve",
             resolveDetail,
             propagate: false, exceptMachineId: null, CancellationToken.None);
@@ -2528,11 +2586,12 @@ public sealed class SyncService
     /// </para>
     /// </summary>
     private async Task CloseOrphanedConflictsOnForceAsync(
-        Guid gameId, Guid winningVersionId, Guid forcingMachineId, string forcingMachineName,
+        Guid gameId, Guid playthroughId, Guid winningVersionId, Guid forcingMachineId, string forcingMachineName,
         CancellationToken ct)
     {
+        // Only this playthrough's: a forced push on one line says nothing about another line's conflicts.
         var open = await _db.Conflicts
-            .Where(c => c.GameId == gameId && c.Status == ConflictStatus.Open)
+            .Where(c => c.GameId == gameId && c.PlaythroughId == playthroughId && c.Status == ConflictStatus.Open)
             .ToListAsync(ct);
         if (open.Count == 0) return;
 
@@ -2561,7 +2620,7 @@ public sealed class SyncService
         // Same fan-out a real resolve gets: an agent's local parent only advances on its own push or
         // pull, so the other machine(s) this conflict involved need to be told the head moved, or they
         // stay stuck on stale versions and conflict again on their very next save.
-        await QueueHeadPullsAsync(gameId, forcingMachineId, ct);
+        await QueueHeadPullsAsync(gameId, playthroughId, forcingMachineId, ct);
     }
 
     /// <summary>
@@ -2601,19 +2660,19 @@ public sealed class SyncService
         // and queueing a command for one would violate the foreign key. <paramref name="exceptMachineId"/>
         // is the one machine that already holds the winner (the agent that auto-resolved its own
         // push); null for the admin path, which tells everyone.
-        QueueHeadPullsAsync(conflict.GameId, exceptMachineId, CancellationToken.None);
+        QueueHeadPullsAsync(conflict.GameId, conflict.PlaythroughId, exceptMachineId, CancellationToken.None);
 
     /// <summary>Admin: move the head pointer to an earlier version (rollback).</summary>
-    public Task<bool> RollbackAsync(Guid gameId, Guid versionId, string by) =>
-        SetHeadAsync(gameId, versionId, "rollback", by);
+    public Task<bool> RollbackAsync(Guid gameId, Guid versionId, string by, Guid? playthroughId = null) =>
+        SetHeadAsync(gameId, versionId, "rollback", by, playthroughId);
 
     /// <summary>
     /// Admin: designate a chosen version as the authoritative "Latest" agents pull
     /// (the same head-pointer move as rollback, used by the initial-sync wizard and
     /// the "Set as Latest" action — see "Latest" nomenclature in Decisions).
     /// </summary>
-    public Task<bool> SetAsLatestAsync(Guid gameId, Guid versionId, string by) =>
-        SetHeadAsync(gameId, versionId, "set_latest", by);
+    public Task<bool> SetAsLatestAsync(Guid gameId, Guid versionId, string by, Guid? playthroughId = null) =>
+        SetHeadAsync(gameId, versionId, "set_latest", by, playthroughId);
 
     /// <summary>
     /// The admin head move behind both rollback and Set as Latest.
@@ -2623,13 +2682,19 @@ public sealed class SyncService
     /// push or pull, so the fleet stayed on the previous head and conflicted on its next save.
     /// </para>
     /// </summary>
-    private async Task<bool> SetHeadAsync(Guid gameId, Guid versionId, string action, string by)
+    /// <param name="playthroughId">Whose head moves. Null = the playthrough the version was uploaded to; naming another
+    /// one puts the version at the head of that line too (a fork's head starts out that way).</param>
+    private async Task<bool> SetHeadAsync(Guid gameId, Guid versionId, string action, string by, Guid? playthroughId)
     {
         var game = await _db.Games.FindAsync(gameId);
         var version = await _db.SaveVersions.FindAsync(versionId);
         if (game is null || version is null || version.GameId != gameId) return false;
         // A merged game's version is history: its files may be another dump's names (tasks/emulator-saves Phase 17).
         if (version.MergedFrom is not null) return false;
+        var targetId = playthroughId ?? version.PlaythroughId;
+        var playthrough = await _db.Playthroughs.FirstOrDefaultAsync(p => p.Id == targetId && p.GameId == gameId);
+        if (playthrough is null) return false;
+        if (playthrough.ArchivedAt is not null) throw new PlaythroughArchivedException(playthrough.Name);
 
         // Close the conflicts this choice actually decides — the ones offering the chosen version.
         // Leaving those open would have the console insist the very version it was just told to
@@ -2639,7 +2704,7 @@ public sealed class SyncService
         // Latest (run-agent-tests covers exactly that sequence). Audited one by one, so this is
         // visible rather than a quiet side effect of clicking Set as Latest.
         var superseded = await _db.Conflicts
-            .Where(c => c.GameId == gameId && c.Status == ConflictStatus.Open
+            .Where(c => c.GameId == gameId && c.PlaythroughId == playthrough.Id && c.Status == ConflictStatus.Open
                         && (c.VersionAId == versionId || c.VersionBId == versionId))
             .ToListAsync();
         foreach (var c in superseded)
@@ -2652,15 +2717,15 @@ public sealed class SyncService
                 $"{action} to {versionId} by {by}");
         }
 
-        await SetHeadAndPropagateAsync(game, versionId, action, $"{versionId} by {by}",
+        await SetHeadAndPropagateAsync(game, playthrough, versionId, action, $"{versionId} by {by}",
             propagate: true, exceptMachineId: null, CancellationToken.None);
         return true;
     }
 
     /// <summary>
-    /// The one place <see cref="Game.HeadVersionId"/> moves. Upload, automatic conflict policy,
-    /// manual resolution, rollback and Set as Latest all come through here, so "who gets told about
-    /// a new head" is one rule rather than four that drifted apart.
+    /// The one place a playthrough's head moves (and, for the default one, <see cref="Game.HeadVersionId"/> with it).
+    /// Upload, automatic conflict policy, manual resolution, rollback and Set as Latest all come through here, so "who
+    /// gets told about a new head" is one rule rather than four that drifted apart.
     /// </summary>
     /// <param name="propagate">
     /// Whether to queue pulls for the game's other machines. False for an ordinary push: the
@@ -2677,19 +2742,21 @@ public sealed class SyncService
     /// command list at exactly the moment an admin is trying to read it.
     /// </param>
     private async Task SetHeadAndPropagateAsync(
-        Game game, Guid newHeadId, string action, string detail,
+        Game game, Playthrough playthrough, Guid newHeadId, string action, string detail,
         bool propagate, Guid? exceptMachineId, CancellationToken ct)
     {
-        game.HeadVersionId = newHeadId;
-        await Audit(exceptMachineId, game.Id, action, detail);
+        playthrough.HeadVersionId = newHeadId;
+        if (playthrough.IsDefault) game.HeadVersionId = newHeadId;
+        await Audit(exceptMachineId, game.Id, action, playthrough.IsDefault ? detail : $"{detail} [playthrough {playthrough.Name}]");
         await _db.SaveChangesAsync(ct);
 
-        if (propagate) await QueueHeadPullsAsync(game.Id, exceptMachineId, ct);
+        if (propagate) await QueueHeadPullsAsync(game.Id, playthrough.Id, exceptMachineId, ct);
     }
 
     /// <summary>
-    /// Queue a deduplicated, <b>unforced</b> Pull for every live machine that syncs this game, so a
-    /// server-authoritative head change actually reaches the fleet.
+    /// Queue a deduplicated, <b>unforced</b> Pull for every live machine that follows this playthrough of the game, so a
+    /// server-authoritative head change actually reaches the devices it concerns — a machine on another playthrough is
+    /// left alone.
     /// <para>
     /// Unforced is the safety property, and it is deliberate (see
     /// <see cref="QueueResolutionPullsAsync"/>): a machine that is already current no-ops, a machine
@@ -2698,7 +2765,7 @@ public sealed class SyncService
     /// forced one, because there a human is asking for exactly that.
     /// </para>
     /// </summary>
-    private async Task QueueHeadPullsAsync(Guid gameId, Guid? exceptMachineId, CancellationToken ct)
+    private async Task QueueHeadPullsAsync(Guid gameId, Guid playthroughId, Guid? exceptMachineId, CancellationToken ct)
     {
         // "Syncs this game" = has a mapped save folder for it, or has uploaded a version of it.
         // Two queries and a set rather than a Union: this has to survive a version whose machine
@@ -2710,6 +2777,14 @@ public sealed class SyncService
                      .Where(v => v.GameId == gameId && v.MachineId != null)
                      .Select(v => v.MachineId!.Value).Distinct().ToListAsync(ct))
             candidates.Add(id);
+
+        // Only the devices on this playthrough. One with no recorded selection is on the default, as an agent that
+        // predates playthroughs is.
+        var defaultId = await _db.Playthroughs.Where(p => p.GameId == gameId && p.IsDefault)
+            .Select(p => p.Id).FirstOrDefaultAsync(ct);
+        var selected = await _db.DeviceSelections.Where(d => d.GameId == gameId)
+            .ToDictionaryAsync(d => d.MachineId, d => d.PlaythroughId, ct);
+        candidates.RemoveWhere(m => (selected.TryGetValue(m, out var chosen) ? chosen : defaultId) != playthroughId);
 
         if (exceptMachineId is { } skip) candidates.Remove(skip);
         if (candidates.Count == 0) return;
@@ -2736,9 +2811,10 @@ public sealed class SyncService
         }
     }
 
-    public async Task<List<SaveVersion>> ListVersionsAsync(Guid gameId) =>
+    /// <param name="playthroughId">Only that playthrough's versions; null lists every playthrough's (each version names its own).</param>
+    public async Task<List<SaveVersion>> ListVersionsAsync(Guid gameId, Guid? playthroughId = null) =>
         await _db.SaveVersions.Include(v => v.Machine)
-            .Where(v => v.GameId == gameId)
+            .Where(v => v.GameId == gameId && (playthroughId == null || v.PlaythroughId == playthroughId))
             .OrderByDescending(v => v.CreatedAt)
             .ToListAsync();
 
@@ -2757,6 +2833,7 @@ public sealed class SyncService
     {
         foreach (var r in reqs)
             if (!Enum.IsDefined(r.Type)) return $"Unknown command type '{r.Type}'.";
+        if (await ValidateSwitchRequestsAsync(reqs) is { } badSwitch) return badSwitch;
 
         static string Unknown(string what, List<Guid> ids) =>
             $"Unknown {what}: {string.Join(", ", ids.Take(5))}" + (ids.Count > 5 ? $" (+{ids.Count - 5} more)" : "") + ".";
@@ -2823,7 +2900,8 @@ public sealed class SyncService
             if (skippedIds.Contains(r.MachineId)) continue;
 
             var existing = pending.FirstOrDefault(c =>
-                c.MachineId == r.MachineId && c.GameId == r.GameId && c.Type == r.Type && c.Force == r.Force);
+                c.MachineId == r.MachineId && c.GameId == r.GameId && c.Type == r.Type && c.Force == r.Force &&
+                c.PlaythroughId == r.PlaythroughId);
             if (existing is not null) { ids.Add(existing.Id); continue; }
 
             var cmd = new AgentCommand
@@ -2833,6 +2911,7 @@ public sealed class SyncService
                 GameId = r.GameId,
                 Type = r.Type,
                 Force = r.Force,
+                PlaythroughId = r.PlaythroughId,
                 Status = CommandStatus.Pending,
                 CreatedAt = now
             };
@@ -2860,6 +2939,7 @@ public sealed class SyncService
             GameId = req.GameId,
             Type = req.Type,
             Force = req.Force,
+            PlaythroughId = req.PlaythroughId,
             Status = CommandStatus.Pending,
             CreatedAt = DateTime.UtcNow
         };
@@ -2972,8 +3052,13 @@ public sealed class SyncService
         var now = DateTime.UtcNow;
         var token = Guid.NewGuid();
 
+        // An agent that predates playthroughs cannot even parse a SwitchPlaythrough: it stays queued until the machine
+        // updates, rather than breaking every command that comes after it.
+        var canSwitch = await AgentSupportsPlaythroughsAsync(machineId);
+
         var claimed = await _db.AgentCommands
             .Where(c => c.MachineId == machineId
+                        && (canSwitch || c.Type != AgentCommandType.SwitchPlaythrough)
                         && (c.Status == CommandStatus.Pending
                             || (c.Status == CommandStatus.Dispatched
                                 && c.LeaseExpiresAt != null

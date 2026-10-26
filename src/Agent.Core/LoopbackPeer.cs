@@ -19,11 +19,24 @@ namespace SaveLocker.Agent;
 /// </summary>
 public static class LoopbackPeer
 {
+    public const string AnyUserVariable = "SAVELOCKER_ALLOW_ANY_LOOPBACK_USER";
+
+    private static int _bypassLogged;
+
     /// <param name="clientPort">The connection's remote port, as the server sees it.</param>
     /// <param name="serverPort">The port the server accepted it on.</param>
     public static bool IsSameUser(IPAddress? clientAddress, int clientPort, int serverPort)
     {
         if (clientAddress is null || !IPAddress.IsLoopback(clientAddress)) return false;
+        // Test rigs only: WSL2 forwards Windows' localhost into the distro, so the browser never shows up as a
+        // local socket of this account and every page load would be refused. Said in the log once, so a variable left
+        // set outside a rig does not switch the protection off unnoticed.
+        if (Environment.GetEnvironmentVariable(AnyUserVariable) == "1")
+        {
+            if (Interlocked.Exchange(ref _bypassLogged, 1) == 0)
+                AgentLogger.Log($"WARNING: {AnyUserVariable}=1 — the agent UI page (and its local API token) is served to any local account. Test rigs only.");
+            return true;
+        }
         try
         {
             if (OperatingSystem.IsLinux()) return IsSameUserLinux(clientPort, serverPort);

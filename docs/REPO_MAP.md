@@ -39,13 +39,16 @@ SaveLocker/
 │   │   ├── Program.cs                   # ALL minimal-API endpoints + DI wiring
 │   │   ├── Data/
 │   │   │   ├── AppDbContext.cs          # EF Core context
-│   │   │   └── Entities.cs             # Machine, Game, SaveVersion, SaveVersionFile (per-version
+│   │   │   └── Entities.cs             # Machine, Game, Playthrough, DeviceSelection, SaveVersion, SaveVersionFile (per-version
 │   │   │                               #   per-file delta-upload baseline), Lease, ConflictFlag,
 │   │   │                               #   AuditLog, AgentCommand, AppSetting, MachineSavePath (per
 │   │   │                               #   machine per save folder key), GameSavePath (extra folders)
 │   │   ├── Migrations/                  # EF migrations (InitialSchema + incremental)
 │   │   ├── Services/
 │   │   │   ├── SyncService.cs           # Core: lease, upload, conflict, prune, resolve
+│   │   │   ├── SyncService.Playthroughs.cs # Playthroughs (partial of SyncService): which line a request is on
+│   │   │   │                           #   (`ResolvePlaythroughAsync`), list/create/rename/archive/default/select, the
+│   │   │   │                           #   switch command's agent-version gate. Tasks/save-playthroughs
 │   │   │   ├── EnrollmentService.cs     # Single-use enrollment tokens → machine API key
 │   │   │   ├── Tokens.cs                # Per-machine API keys + PBKDF2 password hashing. The on-disk
 │   │   │   │                           #   `v1:`/`v2:{iterations}:` formats are load-bearing — see Gotchas
@@ -80,6 +83,7 @@ SaveLocker/
 │   │   │   ├── SettingsService.cs       # DB-backed key/value (DB overrides appsettings)
 │   │   │   ├── LeaseSweeperService.cs   # Hourly BackgroundService: clear stale leases
 │   │   │   └── Mapping.cs              # Entity → DTO mapping helpers
+│   │   ├── PlaythroughErrorFilter.cs    # Unknown playthrough → 404, archived → 409, for both route groups
 │   │   ├── BuildInfo.cs                 # What this build is: env (baked by CI) -> assembly -> "dev"
 │   │   ├── docker-entrypoint.sh         # Runs the server unprivileged: one-time /data hand-over, then setpriv
 │   │   ├── Dockerfile                   # Multi-stage: Node (web/) + .NET SDK + aspnet runtime.
@@ -440,6 +444,10 @@ SaveLocker/
 │   │                                   #   lists the server validates, mark geometry vs the SVGs AND vs the two C# ports
 │   │                                   #   (MarkIcon.cs, AppMark.cs), the token files AND the Deck's Theme.cs, the
 │   │                                   #   OS-following theme rule, and NO #hex in any view
+│   ├── run-playthrough-tests.ps1       # Playthroughs, server half (tasks/save-playthroughs): a previous-schema database
+│   │                                   #   migrated to "Main", per-playthrough push/pull/conflict/lease/retention/delta,
+│   │                                   #   fan-out only to followers, archive/default, the switch command's version gate.
+│   │                                   #   Raw HTTP, no agent. Own server on :5186. Migration section needs dotnet-ef + python.
 │   ├── run-delta-upload-tests.ps1      # Per-file delta upload: self-healing baseline, byte-exact
 │   │                                   #   reconstruction across a full+full+delta chain, deletion,
 │   │                                   #   the size/count floor, a diverged push staying full, and a

@@ -115,6 +115,11 @@ On upload the agent sends the version it last knew (`parent`):
 
 Leases prevent most conflicts up front; hashing/lineage is the safety net.
 
+**All of the above is per playthrough** (tasks/save-playthroughs): `parent` is compared with the head of the playthrough the push is to,
+conflicts and leases belong to one playthrough, and two devices on two playthroughs of one game never conflict. A fork's head points at an existing
+version rather than copying it, so a delta upload's base is "the head of this playthrough" and a version can be a head of a playthrough other
+than the one it was uploaded to.
+
 **Conflict pressure is capped, not infinite.** The first three rejected payloads on a game
 preserve real divergent history; after that, further pushes report the conflict without
 re-uploading bytes. A conflict overdue past **6 hours** is surfaced on every heartbeat so a
@@ -150,11 +155,13 @@ new version" — see `tests/run-delta-upload-tests.ps1` for the end-to-end proof
 deliberately hostile delta payload that must be refused.
 
 ## Data model (SQLite via EF Core)
-EF-managed entities: `Machine`, `Game` (holds `HeadVersionId`), `SaveVersion` (parent chain +
+EF-managed entities: `Machine`, `Game` (holds `HeadVersionId` — a **mirror of the default playthrough's head**), `Playthrough`
+(a line of saves of a game: its own head, name unique ignoring case, `IsDefault` — exactly one per game —, `ArchivedAt`, `ForkedFromVersionId`;
+every game has at least "Main"), `DeviceSelection` (`(MachineId, GameId)` → the playthrough that device follows), `SaveVersion` (parent chain +
 `ContentHash`; `Protected` exempts a snapshot from automatic retention), `SaveVersionFile`
 (per-version per-file `(path, sha256, size)` baseline for the delta-upload diff above — cascades
 with its `SaveVersion`, and a version with no rows here just has no stored baseline yet), `Lease`
-(one per game, unique index), `ConflictFlag`, `AuditLog`, `AgentCommand`, `AppSetting` (key/value
+(one per game **and playthrough**, unique index), `ConflictFlag` (per playthrough), `AuditLog`, `AgentCommand`, `AppSetting` (key/value
 store), `MachineSavePath` (composite key `(MachineId, GameId, PathKey)` → a machine's stored folder
 for one of a game's save folders; `PathKey` is `main` for the primary one; FKs cascade), `GameSavePath`
 (a game's EXTRA save folders — key, label, template, include scope; the primary folder stays on `Game`).
@@ -192,3 +199,5 @@ After a successful upload, `SyncService.PruneVersionsAsync` keeps the newest
 `Storage:RetainVersionsPerGame` (default 10) per game, deleting older archives. Never prunes the
 head, versions referenced by an open conflict, or versions explicitly protected by an admin.
 Per-game override: `Game.RetainVersions` (nullable — null uses global default; 0 = unlimited).
+The limit applies **to each playthrough separately** (counting the versions uploaded to it). Every playthrough's head, archived or not, is protected — a fork's head
+is a version of the playthrough it was forked from — and an archived playthrough is not pruned at all.

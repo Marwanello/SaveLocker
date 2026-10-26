@@ -18,6 +18,22 @@ and 1 — both resolve to the same rollout: the console and fleet are now curren
 which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
 fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
+**Playthroughs Group 1 — the server — built (2026-10-26, branch `playthroughs-group-1`, PR open, not merged).** Phases 1–3 of
+[[tasks/save-playthroughs/plan]]: a game now has one or more **playthroughs** (named lines of saves), each with its own head, versions, conflicts,
+lease and retention, and each device follows one per game. Nothing is visible yet — no UI, and the agent does not know about them (Group 2) —
+but every existing game became one playthrough, **Main** (migration `AddPlaythroughs`; `Game.HeadVersionId` stays as a mirror of the default's head), and a
+client that names no playthrough lands on the one its device follows, so nobody's sync changes. New: `Playthrough` / `DeviceSelection` tables,
+`SyncService.Playthroughs.cs`, the admin and agent playthrough routes ([[API Reference]] → *Playthroughs*), a per-playthrough lease, a
+`SwitchPlaythrough` command the server only hands to an agent that reports ≥ `Playthroughs.MinAgentVersion` (placeholder `0.9.0`). Settled with the maintainer:
+a fork **points at** a version (nothing copied), and an archived playthrough is **frozen** (409) — both in [[Decisions]]. Verified by the new
+`tests/run-playthrough-tests.ps1` (96, including a previous-schema database seeded and migrated) plus the existing server suites (all unchanged,
+see [[Build and Run]] → Suite baseline). **Not verified:** a migration of a *real* database (none on this box), the testenv fleet, anything Docker.
+**Reviewed 2026-10-26 (PR #94), two findings fixed:** the agent state route (`savelocker status`, save-vs-cloud, the DLC check) described the
+*default* playthrough, so a device left on Main after the default moved compared itself with another line's save — it now answers for the
+calling machine's playthrough (or `?playthrough=`); and the merge refusal no longer tells the admin to delete playthroughs (not possible yet).
+`run-playthrough-tests` 96 → 99.
+**Next action:** the maintainer's testenv pass of the steps in the PR, then merge; Group 2 (agent switch, local copy store, agent UI + CLI) is next.
+
 **Full-repo security review: two findings fixed (2026-10-25, branch `security-review-fixes`, PR open, not merged).**
 (1) **One stolen machine key could plant code in every Windows agent's Startup folder:** an agent-created game's
 `SuggestedSaveDir` was never validated, every agent adopts server games and expands the template, `SavePathGuard`

@@ -13,9 +13,9 @@ implementation-grouping.md]] says which phases share a session and in what order
 
 | Phase | Status |
 |---|---|
-| 1 — Server model: `Playthrough`, per-playthrough head, migration to "Main" | ⏳ Not started |
-| 2 — Server sync scoped per playthrough (push, pull, conflicts, leases, delta, fan-out, retention) | ⏳ Not started |
-| 3 — Server playthrough API + per-device selection | ⏳ Not started |
+| 1 — Server model: `Playthrough`, per-playthrough head, migration to "Main" | ✅ Shipped 2026-10-26 (Group 1, branch `playthroughs-group-1`) — migration `AddPlaythroughs`, proved on a previous-schema seeded database; no copy of a real dev database existed to run it against |
+| 2 — Server sync scoped per playthrough (push, pull, conflicts, leases, delta, fan-out, retention) | ✅ Shipped 2026-10-26 — `run-playthrough-tests.ps1` 96/96, mutation-checked (fan-out and retention each fail when broken) |
+| 3 — Server playthrough API + per-device selection | ✅ Shipped 2026-10-26 — all but *delete* (Phase 10); `SwitchPlaythrough` is queued and gated by agent version, no agent runs it until Group 2 |
 | 4 — Agent core: follow a playthrough, switch safely | ⏳ Not started |
 | 5 — Agent local copy store (deduplicated, three modes) | ⏳ Not started |
 | 6 — Agent UI (playthrough tabs, Settings in sections) + CLI | ⏳ Not started |
@@ -136,6 +136,22 @@ Every place that reads "the game's head" must instead read "the playthrough's he
 **Compatibility:** an agent older than this release sends no playthrough. The server uses that machine's recorded
 selection for the game, or the default playthrough when there is none. Old agents can't switch, but they never
 write to the wrong line.
+
+### What Group 1 settled (2026-10-26)
+
+- A fork's head **points at** the version it was forked from; the version stays in its own playthrough. So retention and delete treat every
+  playthrough's head as untouchable, and "the base of a delta must be the head of the same playthrough" means the head, not a member
+  ([[Decisions]]).
+- **Archived is frozen**: 409 on push / pull / select / lease / Set as Latest; archiving is refused while a device is on it, it has an open
+  conflict or it is being played.
+- A device's selection row is written the first time it syncs (and by the migration for every device that already did), so a later change of
+  default moves only new devices. An agent that names no playthrough gets its recorded one.
+- **Readers left on the `Game.HeadVersionId` mirror on purpose** (they mean "the default playthrough's latest", per Phase 2's health/console
+  line): the console game list and `GameStateDto.head`, `ContentTransferService` (DLC hand-over reads the head's recorded packages),
+  `PreviewExcludesAsync` (the exclude editor's dry run), `CopyToEmulatorAsync` (copies into the target's default playthrough) and
+  `BackupService` (which now reads every playthrough's head from `Playthroughs` instead). Remove the mirror only when none of these needs it.
+- Merging a game that has playthroughs of its own is refused (its versions would pour into the target's Main).
+- The switch command's `MinAgentVersion` (`0.9.0`) is a placeholder for the release Group 2 ships in.
 
 ## Phase 3 — Server playthrough API + per-device selection
 

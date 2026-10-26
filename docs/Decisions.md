@@ -996,6 +996,26 @@ session can judge an edge case, not to reopen the choice.
   that is cheap and safe (a fixed default folder); one that could be anywhere — Supermodel or Model 2 unpacked on
   Windows — is not hunted for. Applies to Groups C–F too.
 
+- **Playthroughs: a fork points at a version, it does not copy one** (2026-10-26, maintainer, Group 1 of tasks/save-playthroughs).
+  *Current save* forks cost nothing — the new playthrough's `HeadVersionId` is the existing version, which stays in the playthrough it
+  was made in (`SaveVersion.PlaythroughId`). So retention protects **every** playthrough's head, delete refuses any playthrough's head, and
+  a delta's base is "the head of the same playthrough", never "a version of the same playthrough". Copying the archive instead would keep
+  one-playthrough-per-version simple at the price of disk, until the storage-dedup task lands.
+- **Playthroughs: archived means frozen** (2026-10-26, maintainer). Push, pull, select, lease and Set as Latest on an archived playthrough are
+  409s; only reading its versions works. Archiving is refused while a device is on it (switch it away first), while it has an open conflict
+  or while someone is playing it, and never for the default.
+- **Playthroughs: a device's selection is written down the first time it syncs a game, not inferred** (2026-10-26). A device with no row would follow
+  the default wherever it later moved to — a push into a different line than the files on disk. The migration backfills every device that
+  already syncs a game onto Main; `ResolvePlaythroughAsync` writes the row for a machine seen for the first time. An agent that predates
+  playthroughs names none and so always lands on its recorded one.
+- **Playthroughs: the migration's "Main" has the game's id** (2026-10-26). It makes the data migration plain, re-runnable SQL (no id minting) and the
+  id is already in the database's Guid format. Nothing may rely on it: a game created by this build gets a random playthrough id.
+- **Playthroughs: `SwitchPlaythrough` is a command type an older agent cannot parse**, so the server gates it by the agent version the machine's heartbeat
+  reports (`Playthroughs.MinAgentVersion`, a build suffix like `-ci` ignored): refused at queue time, never handed out, and left queued. Bump the
+  constant to the real release that ships Group 2 of the task.
+- **Playthroughs: merging a game that has playthroughs of its own is refused** (2026-10-26) — its versions would all pour into the target's Main,
+  mixing lines. The merged-in versions of an ordinary game become read-only history of the target's default playthrough.
+
 ## Environment facts (user-provided)
 - Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual
   `--dir` fallback is the primary path, not a fallback, on Linux.

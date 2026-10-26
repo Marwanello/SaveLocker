@@ -1065,6 +1065,11 @@ public sealed class CommandPoller : IDisposable
                    (candidates.Count > 8 ? "…" : "");
         }
 
+        // The server only hands this to an agent that reports it can run it (Playthroughs.MinAgentVersion); this build is
+        // the server-side half of tasks/save-playthroughs and cannot switch yet, so it says so rather than "sync" a game.
+        if (cmd.Type == AgentCommandType.SwitchPlaythrough)
+            throw new NotSupportedException("this agent version cannot switch playthroughs yet.");
+
         // pull / push / sync target one game or all of this machine's games.
         var targets = TargetGames(cmd.GameId).ToList();
         if (targets.Count == 0)
