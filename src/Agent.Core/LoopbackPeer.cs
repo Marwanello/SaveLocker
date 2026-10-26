@@ -19,11 +19,16 @@ namespace SaveLocker.Agent;
 /// </summary>
 public static class LoopbackPeer
 {
+    public const string AnyUserVariable = "SAVELOCKER_ALLOW_ANY_LOOPBACK_USER";
+
     /// <param name="clientPort">The connection's remote port, as the server sees it.</param>
     /// <param name="serverPort">The port the server accepted it on.</param>
     public static bool IsSameUser(IPAddress? clientAddress, int clientPort, int serverPort)
     {
         if (clientAddress is null || !IPAddress.IsLoopback(clientAddress)) return false;
+        // Test rigs only: WSL2 forwards Windows' localhost into the distro, so the browser never shows up as a
+        // local socket of this account and every page load would be refused.
+        if (Environment.GetEnvironmentVariable(AnyUserVariable) == "1") return true;
         try
         {
             if (OperatingSystem.IsLinux()) return IsSameUserLinux(clientPort, serverPort);

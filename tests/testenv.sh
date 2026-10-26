@@ -128,7 +128,8 @@ cmd_up() {
   fi
 
   echo "== daemon on :$PORT =="
-  setsid dotnet "$DLL" daemon --port "$PORT" > "$DAEMON_LOG" 2>&1 < /dev/null &
+  # WSL2 forwards Windows' localhost in, so the browser is never "the same account" to LoopbackPeer.
+  SAVELOCKER_ALLOW_ANY_LOOPBACK_USER=1 setsid dotnet "$DLL" daemon --port "$PORT" > "$DAEMON_LOG" 2>&1 < /dev/null &
   disown
 
   # Re-read the token EVERY iteration, not once before the loop: a freshly (re)started daemon can
