@@ -421,8 +421,8 @@ public sealed partial class SyncService
                      .Select(c => c.GameId).FirstOrDefaultAsync() is var conflicted && conflicted != Guid.Empty)
             refusal = $"{(conflicted == fromId ? from.Name : into.Name)} has an open conflict. Resolve it first, so the version that wins is the one kept.";
         else if (await _db.Playthroughs.CountAsync(p => p.GameId == fromId) > 1)
-            refusal = $"{from.Name} has playthroughs of its own, and a merge would pour them all into {into.Name}'s Main. " +
-                      "Archiving them does not help; keep the one you want as Main and delete the rest first.";
+            refusal = $"{from.Name} has more than one playthrough, and a merge would pour them all into {into.Name}'s default one. " +
+                      "Merging a game with several playthroughs is not supported yet (archiving them does not help).";
 
         var sameFolders = await SameFoldersAsync(from, into);
         var machines = await MergeMachinesAsync(fromId, intoId, sameFolders);
@@ -1124,25 +1124,30 @@ public sealed partial class SyncService
     /// <summary>
     /// One game's state. <paramref name="machinesByGame"/>/<paramref name="sourcesByGame"/> are the
     /// overview's bulk-loaded facets; omitted (a single-game route), each is queried for this game alone.
+    /// <paramref name="playthrough"/>: head, lease and conflict of that playthrough instead of the game's (the default's head,
+    /// any lease, any conflict) — what an agent asking about the line it syncs needs.
     /// </summary>
     public async Task<GameStateDto?> GetGameStateAsync(Guid gameId, long? precomputedStorage = null,
         IEnumerable<GameSavePath>? precomputedExtras = null,
         Dictionary<Guid, HashSet<Guid>>? machinesByGame = null,
         Dictionary<Guid, List<GameSourceDto>>? sourcesByGame = null,
-        int? playthroughCount = null)
+        int? playthroughCount = null,
+        Playthrough? playthrough = null)
     {
         var game = await _db.Games.FindAsync(gameId);
         if (game is null) return null;
         if (game.TitleId is not null) await _db.Entry(game).Reference(g => g.Title).LoadAsync();
 
-        var head = game.HeadVersionId is null
+        var headId = playthrough is null ? game.HeadVersionId : playthrough.HeadVersionId;
+        var head = headId is null
             ? null
             : await _db.SaveVersions.Include(v => v.Machine)
-                .FirstOrDefaultAsync(v => v.Id == game.HeadVersionId);
+                .FirstOrDefaultAsync(v => v.Id == headId);
 
-        var lease = await ActiveLeaseAsync(gameId);
+        var lease = await ActiveLeaseAsync(gameId, playthrough?.Id);
         var hasConflict = await _db.Conflicts
-            .AnyAsync(c => c.GameId == gameId && c.Status == ConflictStatus.Open);
+            .AnyAsync(c => c.GameId == gameId && c.Status == ConflictStatus.Open &&
+                           (playthrough == null || c.PlaythroughId == playthrough.Id));
 
         var totalStorage = precomputedStorage
             ?? await _db.SaveVersions.Where(v => v.GameId == gameId).SumAsync(v => v.Size);
