@@ -19,7 +19,7 @@ design history.
 | 2 — Console list: one row per title | ✅ Shipped 2026-10-21 — `titles.ts`; organize fixtures +8 |
 | 3 — Console game page: emulator tabs | ✅ Shipped 2026-10-21 — `#game=<id>` keeps the tab (not `#emulator=`: it also names the game, so a refresh reopens it) |
 | 4 — Group and split by hand | ✅ Shipped 2026-10-21 — a lone game can also join a titled one (*Other emulators* card) |
-| 5 — Help, testenv check, docs | 🚧 In progress — help article, Decisions and docs done; the testenv check is the maintainer's (steps in the PR) |
+| 5 — Help, testenv check, docs | ✅ Shipped 2026-10-26 — help article, Decisions and docs; maintainer marked the testenv check done (#85) |
 | 6 — Agent UI, and copying a save to another emulator | ✅ Shipped 2026-10-21 — as [`phase6-mockup.html`](phase6-mockup.html); copy runs on the server, offered in the agent and the console (Decisions) |
 
 ## Why the saves stay apart

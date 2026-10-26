@@ -9,7 +9,6 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 ## High priority
 
 - [Registry-based saves](tasks/registry-saves/summary.md)
-- [One console entry per game, one save tree per emulator](tasks/multi-emulator-games/plan.md)
 - [Playthroughs: named save forks to switch between](tasks/save-playthroughs/summary.md)
 - [File-level saves](tasks/file-level-saves/summary.md)
 - [Native Linux save support](tasks/native-linux-saves/summary.md)
