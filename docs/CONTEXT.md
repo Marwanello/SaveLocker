@@ -28,6 +28,10 @@ client that names no playthrough lands on the one its device follows, so nobody'
 a fork **points at** a version (nothing copied), and an archived playthrough is **frozen** (409) — both in [[Decisions]]. Verified by the new
 `tests/run-playthrough-tests.ps1` (96, including a previous-schema database seeded and migrated) plus the existing server suites (all unchanged,
 see [[Build and Run]] → Suite baseline). **Not verified:** a migration of a *real* database (none on this box), the testenv fleet, anything Docker.
+**Reviewed 2026-10-26 (PR #94), two findings fixed:** the agent state route (`savelocker status`, save-vs-cloud, the DLC check) described the
+*default* playthrough, so a device left on Main after the default moved compared itself with another line's save — it now answers for the
+calling machine's playthrough (or `?playthrough=`); and the merge refusal no longer tells the admin to delete playthroughs (not possible yet).
+`run-playthrough-tests` 96 → 99.
 **Next action:** the maintainer's testenv pass of the steps in the PR, then merge; Group 2 (agent switch, local copy store, agent UI + CLI) is next.
 
 **Full-repo security review: two findings fixed (2026-10-25, branch `security-review-fixes`, PR open, not merged).**
