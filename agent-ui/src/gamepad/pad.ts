@@ -111,7 +111,8 @@ function onKeyDown(ev: KeyboardEvent) {
   const editable = t instanceof HTMLInputElement
     ? !['checkbox', 'radio', 'range', 'color', 'file', 'submit', 'button', 'reset', 'image'].includes(t.type)
     : tag === 'TEXTAREA' || t?.isContentEditable === true
-  const inAppField = !!t && !!t.closest?.('.sl-app') && editable
+  // A dialog is portalled to <body>, outside .sl-app, but its text fields are the app's too (Backspace must edit, not go back).
+  const inAppField = !!t && !!t.closest?.('.sl-app, [role="dialog"]') && editable
 
   if (ev.key === 'Escape') { consume(ev); fire('b'); return }
   if (inAppField) {
