@@ -64,9 +64,10 @@ export function HintBar() {
   }
   if (hasKeepBothOption()) hints.push({ key: 'lt', glyphs: ['lt'], label: 'Keep backup' })
   if (hasResolveButton()) hints.push({ key: 'rt', glyphs: ['rt'], label: 'Resolve' })
+  if (nav.section === 'Settings') hints.push({ key: 'lt', glyphs: ['lt', 'rt'], label: 'Sections' })
   hints.push(
     { key: 'y', glyphs: ['y'], label: 'Sync all' },
-    { key: 'lb', glyphs: ['lb', 'rb'], label: 'Sections' },
+    { key: 'lb', glyphs: ['lb', 'rb'], label: 'Pages' },
   )
 
   return (

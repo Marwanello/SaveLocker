@@ -87,7 +87,7 @@ function TrustChip({ trust }: { trust: string | undefined }) {
   return <Chip tone="warn">Not pinned (plain HTTP)</Chip>
 }
 
-/** The page's sections, most used first. The bar under the title jumps between them; the one in view is pressed, and LB/RB step along it. */
+/** The page's sections, most used first. The bar under the title jumps between them; the one in view is pressed, and LT/RT step along it on a controller. */
 const SECTIONS = [
   { id: 'sync', label: 'Sync' },
   { id: 'games', label: 'Games' },

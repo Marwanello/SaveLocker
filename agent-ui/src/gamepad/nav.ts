@@ -575,6 +575,7 @@ function pressY() {
 
 /** LT: keep-both on a conflict card; Push now on a game page; Clear the selection in Add Games. */
 function pressLT() {
+  if (settingsStep(-1)) return
   const backup = findBackupInput()
   if (backup) { backup.click(); return }
   if (isGamePage()) { clickAction('push-now', /^Push now$/i); return }
@@ -583,6 +584,7 @@ function pressLT() {
 
 /** RT: Resolve (confirm-mode conflict card); Pull latest on a game page; Add games in Add Games. */
 function pressRT() {
+  if (settingsStep(1)) return
   if (clickButton(/^Resolve\b/i)) return
   if (isGamePage()) { clickAction('pull-latest', /^Pull latest$/i); return }
   if (currentSection() === 'Add Games') {
@@ -621,21 +623,18 @@ function pressR3() {
   }
 }
 
-/** On Settings, LB/RB walk the page's own sections (the bar under the title) before they leave for the next rail entry:
- *  true when the press stayed on the page. */
+/** On Settings, LT/RT walk the page's own sections (the bar under the title); LB/RB stay on the rail's pages. */
 function settingsStep(delta: number): boolean {
   if (currentSection() !== 'Settings') return false
   const jumps = [...document.querySelectorAll<HTMLButtonElement>('.sl-content .sl-jump button')]
   if (jumps.length === 0) return false
   const at = jumps.findIndex(b => b.getAttribute('aria-pressed') === 'true')
-  const next = at + delta
-  if (next < 0 || next >= jumps.length) return false
+  const next = Math.min(jumps.length - 1, Math.max(0, at + delta))
   jumps[next].click()
   return true
 }
 
 function sectionStep(delta: number) {
-  if (settingsStep(delta)) return
   const navs = [...document.querySelectorAll<HTMLButtonElement>('.sl-nav')]
   if (navs.length === 0) return
   const index = navs.findIndex(n => n.getAttribute('aria-current') === 'page')
