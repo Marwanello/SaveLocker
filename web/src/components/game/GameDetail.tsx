@@ -54,6 +54,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   const trees = title && title.trees.length > 1 ? title.trees : null;
   const treeName = trees ? treeLabel(summary, trees) : null;
   const [versions, setVersions] = useState<Version[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(true);
   const [paths, setPaths] = useState<MachineSavePath[]>([]);
   const [candidates, setCandidates] = useState<MachineScanCandidate[]>([]);
   const [sources, setSources] = useState<MachineGameSource[]>([]);
@@ -67,7 +68,9 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   const [copying, setCopying] = useState<Version | null>(null);
 
   useEffect(() => {
-    api.versions(game.id).then(setVersions).catch(e => toastError('Could not load versions: ' + errorText(e)));
+    setLoadingVersions(true);
+    api.versions(game.id).then(setVersions).catch(e => toastError('Could not load versions: ' + errorText(e)))
+      .finally(() => setLoadingVersions(false));
     api.getGamePaths(game.id).then(setPaths).catch(() => {}).finally(() => setPathsLoaded(true));
     api.getGamePathCandidates(game.id).then(setCandidates).catch(() => {});
     setSources([]);
@@ -230,6 +233,9 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
               game={game}
               machines={machines}
               health={health}
+              versions={versions}
+              loadingVersions={loadingVersions}
+              reloadVersions={reloadVersions}
               conflicts={gameConflicts}
               onRefresh={onRefresh}
               onCopy={trees ? setCopying : undefined}

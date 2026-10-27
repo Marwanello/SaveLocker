@@ -4784,7 +4784,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;

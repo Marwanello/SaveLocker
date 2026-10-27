@@ -389,6 +389,16 @@ try {
     Check "Main's versions were not spent on Side's" ((Pt $g2 "Main").versionCount -eq 3)
     $delHead = Call "DELETE" "/api/games/$g2/versions/$($ids[1])"
     Check "deleting a version that is another playthrough's head is refused" ($delHead.Status -ge 400)
+    # The console's Saves card prunes from one playthrough's tab: naming it must leave the other lines alone.
+    Admin-Post "/api/games/$g2/retain?value=10" | Out-Null
+    foreach ($t in 5..6) { $s = (Push $pm.apiKey $g2 "s$t" $sprev $side.id).Json.version; $sprev = $s.id }
+    Admin-Post "/api/games/$g2/retain?value=1" | Out-Null
+    $mainBefore = (Pt $g2 "Main").versionCount
+    $pr = Admin-Post "/api/games/$g2/prune?playthrough=$($side.id)"
+    Check "Prune naming Side cuts Side to its newest version" ($pr.Status -eq 200 -and (Pt $g2 "Side").versionCount -eq 1)
+    Check "... and leaves Main as it was" ((Pt $g2 "Main").versionCount -eq $mainBefore)
+    Admin-Post "/api/games/$g2/prune" | Out-Null
+    Check "Prune naming no playthrough still prunes Main (keeping Keep's head)" ((Pt $g2 "Main").versionCount -eq 2)
 
     Write-Host ""
     Write-Host "==== 8. Archive freezes; the default cannot be archived; a device keeps its playthrough ===="
