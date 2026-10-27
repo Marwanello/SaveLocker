@@ -47,6 +47,7 @@ export function SavesCard({ game, machines, health, versions, loadingVersions, r
   const [showArchived, setShowArchived] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
+  const [dir, setDir] = useState<'left' | 'right'>('right');
 
   // `select` (a playthrough just created) wins over the open tab; a tab that no longer exists falls back to the default.
   const reloadPlaythroughs = useCallback(async (select?: string) => {
@@ -68,6 +69,16 @@ export function SavesCard({ game, machines, health, versions, loadingVersions, r
   const heads = new Set(playthroughs.flatMap(p => p.head ? [p.head.id] : []));
   const nameOf = (id: string | null | undefined) => playthroughs.find(p => p.id === id)?.name ?? 'another playthrough';
 
+  // Direction follows the tab bar's left-to-right order, not click history: picking a tab to the right
+  // of the open one slides the new pane in from the right, and the other way for one to its left.
+  function switchTo(id: string) {
+    const from = shown.findIndex(p => p.id === current?.id);
+    const to = shown.findIndex(p => p.id === id);
+    setDir(to >= from ? 'right' : 'left');
+    setSelected(id);
+    setPanel(null);
+  }
+
   return (
     <Card
       flush
@@ -81,8 +92,7 @@ export function SavesCard({ game, machines, health, versions, loadingVersions, r
     >
       {panel?.kind === 'new' && (
         <NewPlaythroughPanel
-          key={panel.fromVersion?.id ?? 'new'}
-          game={game} playthroughs={playthroughs} current={current} fromVersion={panel.fromVersion}
+          game={game} playthroughs={playthroughs} versions={versions} current={current} fromVersion={panel.fromVersion}
           onClose={() => setPanel(null)}
           onCreated={async id => { await reloadPlaythroughs(id); setPanel(null); onRefresh(); }}
         />
@@ -92,48 +102,48 @@ export function SavesCard({ game, machines, health, versions, loadingVersions, r
         : !current
           ? <p className="px-4 py-5 text-[13px] text-dim">No playthrough yet.</p>
           : <>
-              {many && (
-                <div className="flex gap-1 px-3 pt-2 border-b border-line overflow-x-auto" role="tablist" aria-label="Playthroughs">
-                  {shown.map(p => (
-                    <button key={p.id} type="button" role="tab" aria-selected={p.id === current.id}
-                      onClick={() => { setSelected(p.id); setPanel(null); }}
-                      className={`flex items-center gap-1 px-3.5 pt-2 pb-2.5 -mb-px border-b-2 rounded-t-lg cursor-pointer whitespace-nowrap text-[13px] font-semibold ${p.id === current.id ? 'border-accent text-fg' : 'border-transparent text-dim hover:text-fg hover:bg-hover'}`}>
-                      {p.name}{p.archivedAt && <Chip>Archived</Chip>}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <PlaythroughHead
-                game={game} pt={current} panel={panel} onPanel={setPanel} showName={!many}
-                onChanged={async () => { await reloadPlaythroughs(); onRefresh(); }}
-              />
-              {panel?.kind === 'switch' && !current.archivedAt && (
-                <SwitchDevicePanel
-                  game={game} pt={current} machines={machines} health={health}
-                  onClose={() => setPanel(null)} onRefresh={onRefresh}
+              <div className="flex gap-1 px-3 pt-2 border-b border-line overflow-x-auto" role="tablist" aria-label="Playthroughs">
+                {shown.map(p => (
+                  <button key={p.id} type="button" role="tab" aria-selected={p.id === current.id}
+                    onClick={() => switchTo(p.id)}
+                    className={`flex items-center gap-1 px-3.5 pt-2 pb-2.5 -mb-px border-b-2 rounded-t-lg cursor-pointer whitespace-nowrap text-[13px] font-semibold ${p.id === current.id ? 'border-accent text-fg' : 'border-transparent text-dim hover:text-fg hover:bg-hover'}`}>
+                    {p.name}{p.isDefault && <Chip>Default</Chip>}{p.archivedAt && <Chip>Archived</Chip>}
+                  </button>
+                ))}
+              </div>
+              <div key={current.id} className={dir === 'right' ? 'animate-pane-right' : 'animate-pane-left'}>
+                <PlaythroughHead
+                  game={game} pt={current} panel={panel} onPanel={setPanel}
+                  onChanged={async () => { await reloadPlaythroughs(); onRefresh(); }}
                 />
-              )}
-              {panel?.kind === 'rename' && (
-                <RenamePanel game={game} pt={current}
-                  onClose={() => setPanel(null)}
-                  onRenamed={async () => { await reloadPlaythroughs(); setPanel(null); }}
+                {panel?.kind === 'switch' && !current.archivedAt && (
+                  <SwitchDevicePanel
+                    game={game} pt={current} machines={machines} health={health}
+                    onClose={() => setPanel(null)} onRefresh={onRefresh}
+                  />
+                )}
+                {panel?.kind === 'rename' && (
+                  <RenamePanel game={game} pt={current}
+                    onClose={() => setPanel(null)}
+                    onRenamed={async () => { await reloadPlaythroughs(); setPanel(null); }}
+                  />
+                )}
+                <PlaythroughVersions
+                  game={game} pt={current} versions={versions} loading={loadingVersions} heads={heads}
+                  nameOf={nameOf} conflicts={conflicts} onCopy={onCopy} only={only}
+                  onNewFromVersion={v => setPanel({ kind: 'new', fromVersion: v })}
+                  reload={reloadVersions}
+                  onChanged={() => { void reloadPlaythroughs(); onRefresh(); }}
                 />
-              )}
-              <PlaythroughVersions
-                key={current.id} game={game} pt={current} versions={versions} loading={loadingVersions} heads={heads}
-                nameOf={nameOf} conflicts={conflicts} onCopy={onCopy} only={only}
-                onNewFromVersion={v => setPanel({ kind: 'new', fromVersion: v })}
-                reload={reloadVersions}
-                onChanged={() => { void reloadPlaythroughs(); onRefresh(); }}
-              />
+              </div>
             </>}
     </Card>
   );
 }
 
-/** Name, badges, devices, and this playthrough's own actions. */
-function PlaythroughHead({ game, pt, panel, onPanel, showName, onChanged }: {
-  game: Game; pt: Playthrough; panel: Panel; onPanel: (p: Panel) => void; showName: boolean; onChanged: () => void;
+/** Devices and this playthrough's own actions — its name and Default/Archived badges are the open tab. */
+function PlaythroughHead({ game, pt, panel, onPanel, onChanged }: {
+  game: Game; pt: Playthrough; panel: Panel; onPanel: (p: Panel) => void; onChanged: () => void;
 }) {
   async function setDefault() {
     try { await api.setDefaultPlaythrough(game.id, pt.id); onChanged(); toast(`New devices now start on ${pt.name}.`); }
@@ -146,12 +156,7 @@ function PlaythroughHead({ game, pt, panel, onPanel, showName, onChanged }: {
   return (
     <div className="flex items-start justify-between gap-3 flex-wrap px-4 py-3 border-b border-line">
       <div className="min-w-0 flex flex-col gap-1.5">
-        <div className="text-[15px] font-semibold text-fg flex items-center gap-1.5 flex-wrap">
-          {showName && pt.name}
-          {pt.isDefault && <Chip>Default for new devices</Chip>}
-          {pt.archivedAt && <Chip>Archived</Chip>}
-          {pt.hasOpenConflict && <Chip tone="crit">Conflicting</Chip>}
-        </div>
+        {pt.hasOpenConflict && <div><Chip tone="crit">Conflicting</Chip></div>}
         <span className="flex items-center gap-1.5 flex-wrap text-[11.5px] text-dim">
           Played on {pt.devices.length
             ? <span className="flex gap-1 flex-wrap">{pt.devices.map(d => <Chip key={d.machineId} tone="ok"><Icon name="monitor" size={11} />{d.machineName}</Chip>)}</span>
@@ -240,72 +245,123 @@ function SwitchDevicePanel({ game, pt, machines, health, onClose, onRefresh }: {
   );
 }
 
-/** Name, "Current save" from another playthrough's latest (or a specific version), or "Start fresh" (empty). */
-function NewPlaythroughPanel({ game, playthroughs, current, fromVersion, onClose, onCreated }: {
-  game: Game; playthroughs: Playthrough[]; current: Playthrough | null; fromVersion?: Version;
+/**
+ * Name, then the playthrough and version to start from (preset when opened via Fork, otherwise the open
+ * tab), shared by both "Current save" and "Start fresh" below them. mockup-features/features/playthroughs.tsx
+ * (this task's mockup): a popup, not an inline panel — the one deliberate exception to plan.md's "No modals".
+ */
+function NewPlaythroughPanel({ game, playthroughs, versions, current, fromVersion, onClose, onCreated }: {
+  game: Game; playthroughs: Playthrough[]; versions: Version[]; current: Playthrough | null; fromVersion?: Version;
   onClose: () => void; onCreated: (id: string) => void;
 }) {
-  const [name, setName] = useState('');
   const live = playthroughs.filter(p => !p.archivedAt);
+  // Fork's own playthrough when it's live; else the open tab, then the default, then whatever's first.
+  const fallback = (live.find(p => p.id === current?.id) ?? live.find(p => p.isDefault) ?? live[0])?.id ?? '';
+  const initialFrom = fromVersion ? (live.find(p => p.id === fromVersion.playthroughId)?.id ?? fallback) : fallback;
+  const initialFromPt = playthroughs.find(p => p.id === initialFrom) ?? null;
+  // "Latest" when Fork's version is already that playthrough's head, else its own id.
+  const initialVersionId = fromVersion && initialFromPt?.head?.id !== fromVersion.id ? fromVersion.id : 'latest';
+
+  const [name, setName] = useState('');
   const [how, setHow] = useState<'current' | 'fresh'>('current');
-  // The open tab when it is one the list offers; an archived one is not, and would leave the select blank.
-  const [from, setFrom] = useState((live.find(p => p.id === current?.id) ?? live.find(p => p.isDefault) ?? live[0])?.id ?? '');
+  const [from, setFrom] = useState(initialFrom);
+  const [fromVersionId, setFromVersionId] = useState(initialVersionId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, onClose]);
+
+  const fromPt = playthroughs.find(p => p.id === from) ?? null;
+  const headId = fromPt?.head?.id ?? null;
+  const older = versions.filter(v => v.playthroughId === from && v.id !== headId)
+    .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
+  const picked = fromVersionId === 'latest' ? null : older.find(v => v.id === fromVersionId) ?? null;
+
   async function submit() {
-    if (!name.trim()) return;
+    if (!name.trim() || !from) return;
     setBusy(true);
     setError('');
     try {
       const created = await api.createPlaythrough(game.id, {
         name: name.trim(),
-        fromVersionId: fromVersion && how === 'current' ? fromVersion.id : null,
-        fromPlaythroughId: !fromVersion && how === 'current' ? from : null,
+        fromVersionId: how === 'current' && picked ? picked.id : null,
+        fromPlaythroughId: how === 'current' && !picked ? from : null,
       });
       onCreated(created.id);
       toast(how === 'fresh'
         ? `Created ${created.name}: an empty save. Switch a device to it to start playing it.`
-        : `Created ${created.name} from ${fromVersion ? `version ${shortId(fromVersion.id)}` : `${playthroughs.find(p => p.id === from)?.name}'s`} latest save.`);
+        : picked ? `Created ${created.name} from ${fromPt?.name}'s save ${shortId(picked.id)}.`
+        : `Created ${created.name} from ${fromPt?.name}'s latest save.`);
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-3.5 border-b border-line bg-raise">
-      <div className="flex items-center justify-between gap-3">
-        <h4 className="text-[13px] font-semibold text-fg">New playthrough</h4>
-        <button type="button" onClick={onClose} aria-label="Close" className="text-dim hover:text-fg cursor-pointer"><Icon name="x" size={14} /></button>
-      </div>
-      <p className="text-[11.5px] text-dim">A separate line of saves. The others stay as they are; no device switches until you switch it.</p>
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[10px] tracking-[0.13em] uppercase text-faint">Name</span>
-        <input autoFocus maxLength={60} placeholder="e.g. Hard mode" value={name} onChange={e => setName(e.target.value)}
-          className="w-full px-3 py-2 bg-panel text-fg border border-line rounded-md text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
-      </label>
-      {!fromVersion && (
-        <div className="flex flex-col gap-2" role="radiogroup" aria-label="Start from">
-          <label className="flex items-center gap-2 cursor-pointer text-[12.5px] text-fg">
-            <input type="radio" name="pt-start" checked={how === 'current'} onChange={() => setHow('current')} />Current save
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
+      onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="new-pt-title"
+        className="w-full max-w-[520px] bg-panel border border-line rounded-xl p-5 flex flex-col gap-4 animate-rise">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 id="new-pt-title" className="text-lg font-bold text-fg">New playthrough</h2>
+            <p className="text-[13px] text-dim mt-1">A separate line of saves. The others stay as they are; no device switches until you switch it.</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={busy} aria-label="Close"
+            className="text-dim hover:text-fg text-lg leading-none px-1 cursor-pointer bg-transparent border-0"><Icon name="x" size={16} /></button>
+        </div>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[10px] tracking-[0.13em] uppercase text-faint">Name</span>
+          <input autoFocus maxLength={60} placeholder="e.g. Hard mode" value={name} onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && name.trim() && from) void submit(); }}
+            className="w-full px-3 py-2 bg-panel text-fg border border-line rounded-md text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
+        </label>
+
+        <div className="flex gap-3">
+          <label className="flex flex-col gap-1.5 flex-1 min-w-0">
+            <span className="text-[10px] tracking-[0.13em] uppercase text-faint">Playthrough</span>
+            <Select value={from} onChange={v => { setFrom(v); setFromVersionId('latest'); }} label="Playthrough" variant="field"
+              options={live.map(p => ({ value: p.id, label: p.name, sub: p.head ? `${ago(p.head.createdAt)} on ${p.head.machineName}` : 'No save yet' }))} />
           </label>
-          {how === 'current' && (
-            <div className="pl-6">
-              <Select value={from} onChange={setFrom} label="Start from" variant="field"
-                options={live.map(p => ({ value: p.id, label: p.name, sub: p.head ? `${ago(p.head.createdAt)} on ${p.head.machineName}` : 'No save yet' }))} />
-            </div>
-          )}
-          <label className="flex items-center gap-2 cursor-pointer text-[12.5px] text-fg">
-            <input type="radio" name="pt-start" checked={how === 'fresh'} onChange={() => setHow('fresh')} />Start fresh (an empty save)
+          <label className="flex flex-col gap-1.5 flex-1 min-w-0">
+            <span className="text-[10px] tracking-[0.13em] uppercase text-faint">Version</span>
+            <Select value={fromVersionId} onChange={setFromVersionId} label="Version" variant="field"
+              options={[
+                { value: 'latest', label: fromPt?.head ? `Latest · ${shortId(fromPt.head.id)}` : 'Latest', sub: fromPt?.head ? `${ago(fromPt.head.createdAt)} on ${fromPt.head.machineName}` : 'No save yet' },
+                ...older.map(v => ({ value: v.id, label: shortId(v.id), sub: `${ago(v.createdAt)} on ${v.machineName}` })),
+              ]} />
           </label>
         </div>
-      )}
-      {fromVersion && <p className="text-[12.5px] text-fg">From version {shortId(fromVersion.id)}, {ago(fromVersion.createdAt)} on {fromVersion.machineName}.</p>}
-      {error && <p role="alert" className="text-[11.5px] text-accent-ink">{error}</p>}
-      <div className="flex items-center gap-2.5">
-        <Button size="sm" variant="primary" disabled={busy || !name.trim() || (how === 'current' && !fromVersion && !from)} onClick={() => void submit()}>
-          {busy ? 'Creating…' : 'Create'}
-        </Button>
-        <Button size="sm" variant="quiet" onClick={onClose}>Cancel</Button>
+
+        <div className="flex flex-col gap-2" role="radiogroup" aria-label="How to start">
+          <label className="flex items-center gap-2 cursor-pointer text-[12.5px] text-fg">
+            <input type="radio" name="pt-start" checked={how === 'current'} onChange={() => setHow('current')} />
+            Current save — a copy of {fromPt?.name ?? 'the picked playthrough'}'s {picked ? 'picked save, as it was' : 'latest save'}
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-[12.5px] text-fg">
+            <input type="radio" name="pt-start" checked={how === 'fresh'} onChange={() => setHow('fresh')} />
+            Start fresh — an empty save folder, so the game starts a new game
+          </label>
+          {how === 'fresh' && (
+            <p className="pl-6 text-[11.5px] text-dim">
+              The server can't see what's in a device's save folder, so a fresh playthrough always starts
+              completely empty — the playthrough and version above aren't used. To keep some files instead
+              of starting empty, use that device's own tray or CLI to start fresh there.
+            </p>
+          )}
+        </div>
+
+        {error && <p role="alert" className="text-[11.5px] text-accent-ink">{error}</p>}
+        <div className="flex items-center gap-2.5">
+          <Button size="sm" variant="primary" disabled={busy || !name.trim() || (how === 'current' && !from)} onClick={() => void submit()}>
+            {busy ? 'Creating…' : 'Create'}
+          </Button>
+          <Button size="sm" variant="quiet" onClick={onClose} disabled={busy}>Cancel</Button>
+        </div>
       </div>
     </div>
   );
@@ -495,9 +551,11 @@ function PlaythroughVersions({ game, pt, versions: all, loading, heads, nameOf, 
                         confirmLabel={`Make ${shortId(v.id)} Latest`} onConfirm={() => setLatest(v)}
                       />
                     )}
-                    <Button size="sm" variant="quiet" onClick={() => void download(v)} title="Download this version's archive">Download</Button>
+                    <Button size="sm" variant="quiet" aria-label="Download" title="Download this version's archive"
+                      onClick={() => void download(v)}><Icon name="download" size={13} /></Button>
                     {!v.mergedFrom && (
-                      <Button size="sm" variant="quiet" onClick={() => onNewFromVersion(v)} title="Start a new playthrough from this save">New playthrough from this</Button>
+                      <Button size="sm" variant="quiet" aria-label="Fork this save into a new playthrough" title="Fork into a new playthrough"
+                        onClick={() => onNewFromVersion(v)}><Icon name="git-fork" size={13} /></Button>
                     )}
                     {onCopy && !v.mergedFrom && (
                       <Button size="sm" variant="quiet" onClick={() => onCopy(v)} title="Copy this save to another emulator's tree of this game">Copy to…</Button>
