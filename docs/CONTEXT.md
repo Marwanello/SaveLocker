@@ -24,7 +24,7 @@ in place of Versions ([[tasks/save-playthroughs/plan]] Phase 7, chosen mockup va
 `web/mockup-features/features/playthroughs.tsx`): a tab per playthrough (just Main on every game until a second
 exists), each tab's own head (devices, Switch a device to this…, Rename, Make default, Archive/Unarchive) and its
 own versions table underneath, scoped with the existing `?playthrough=` query the server already answered
-(`SyncService.ListVersionsAsync`) — nothing new on the server. **New playthrough** offers *Current save* (fork
+(`SyncService.ListVersionsAsync`) — nothing new on the server (until the review: Prune gained `?playthrough=`). **New playthrough** offers *Current save* (fork
 another playthrough's or a specific version's latest — "New playthrough from this version" sits in the versions
 table's row actions) or *Start fresh* (an empty playthrough; there is no local save folder on the console to offer
 a file-keep list from, so that part of the agent/Playnite flow does not apply here — a deliberate scope decision,
@@ -42,6 +42,7 @@ and a multi-emulator game's playthrough tabs under its emulator tabs (Phase 6/7'
 had a second emulator tree or a live agent handy. **Next action:** Decky (Phase 8) and Playnite (Phase 9) each need
 their own repo/worktree/PR per `implementation-grouping.md`; Phase 10 (delete to trash) still waits on
 version-history Group 1.
+**Reviewed 2026-10-27 (PR #97), fixed:** CI's `build-web` failed on a same-string ternary (the appearance check's flattened-state rule); a fork's History read "No versions yet" under a header naming its latest (its head lives in the playthrough it was forked from — now listed with a *From Main* chip); **Prune** on one tab pruned every playthrough (the one server change: `POST /api/games/{id}/prune?playthrough=`, and the count now skips every playthrough's head); a new playthrough was created but its tab not opened; archiving the open tab left it showing with no tab; *New playthrough from this* after picking *Start fresh* made an empty playthrough; versions pushed while the page was open never appeared (the card now takes GameDetail's live list); Switch, Prune and *New playthrough from this* were offered where the server refuses them (archived playthrough, merged version); the New playthrough panel opened below the whole versions table. `run-playthrough-tests` 99 → 102.
 
 **Playthroughs Group 2 — one device — built (2026-10-26, branch `playthroughs-group-2`, stacked on `playthroughs-group-1`, PR open, not merged).** Phases 4–6 of
 [[tasks/save-playthroughs/plan]]: an agent now **follows one playthrough per game** and can **switch**. `SyncEngine.SwitchPlaythroughAsync` refuses while the game
