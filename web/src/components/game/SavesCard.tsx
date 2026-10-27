@@ -248,7 +248,7 @@ function NewPlaythroughPanel({ game, playthroughs, current, fromVersion, onClose
   onClose: () => void; onCreated: (id: string) => void;
 }) {
   const [name, setName] = useState('');
-  const [how, setHow] = useState<'current' | 'fresh'>(fromVersion ? 'current' : 'current');
+  const [how, setHow] = useState<'current' | 'fresh'>('current');
   const [from, setFrom] = useState(current?.id ?? playthroughs[0]?.id ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
