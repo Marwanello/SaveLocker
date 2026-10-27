@@ -9,6 +9,7 @@ import { ControllerCard } from './ControllerCard'
 import { SwitchUserCard } from './SwitchUserCard'
 import { Xbox360SettingsCard } from './Xbox360SettingsCard'
 import { JoinCard } from './JoinCard'
+import { PlaythroughCopiesCard } from './PlaythroughCopiesCard'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { Chip } from './ui/Chip'
@@ -86,6 +87,16 @@ function TrustChip({ trust }: { trust: string | undefined }) {
   return <Chip tone="warn">Not pinned (plain HTTP)</Chip>
 }
 
+/** The page's sections, most used first. The bar under the title jumps between them; the one in view is pressed, and LT/RT step along it on a controller. */
+const SECTIONS = [
+  { id: 'sync', label: 'Sync' },
+  { id: 'games', label: 'Games' },
+  { id: 'server', label: 'Server' },
+  { id: 'updates', label: 'Updates' },
+  { id: 'look', label: 'Look & controls' },
+  { id: 'emulators', label: 'Emulators' },
+] as const
+
 export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, onOpenGame, pendingJoin, onJoinHandled }: Props) {
   const [serverUrl, setServerUrl] = useState('')
   const [machineName, setMachineName] = useState('')
@@ -101,6 +112,26 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, 
   const [test, setTest] = useState<TestConnection | null>(null)
   const [status, setStatus] = useState('')
   const dirtyFields = useRef<Set<string>>(new Set())
+  const pageRef = useRef<HTMLDivElement>(null)
+  const [active, setActive] = useState<string>(SECTIONS[0].id)
+
+  // The section in view: the last one whose top has scrolled to (or past) the bar under the title.
+  const onScroll = useCallback(() => {
+    const page = pageRef.current
+    if (!page) return
+    let current: string = SECTIONS[0].id
+    for (const sec of SECTIONS) {
+      const el = page.querySelector<HTMLElement>(`#settings-${sec.id}`)
+      if (el && el.getBoundingClientRect().top - page.getBoundingClientRect().top <= 96) current = sec.id
+    }
+    if (page.scrollTop + page.clientHeight >= page.scrollHeight - 4) current = SECTIONS[SECTIONS.length - 1].id
+    setActive(current)
+  }, [])
+
+  const jumpTo = (id: string) => {
+    setActive(id)
+    pageRef.current?.querySelector<HTMLElement>(`#settings-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   useEffect(() => {
     if (state) {
@@ -222,9 +253,128 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, 
   const busy = saving || registering
 
   return (
-    <div className="sl-page">
+    <div className="sl-page" ref={pageRef} onScroll={onScroll}>
       <PageHead title="Settings" sub={`${state?.machineName ?? '…'} · ${state?.serverUrl ? state.serverUrl.replace(/^https?:\/\//, '') : 'no server'}`} />
 
+      <nav className="sl-jump" aria-label="Settings sections">
+        {SECTIONS.map(sec => (
+          <button key={sec.id} type="button" aria-pressed={active === sec.id} data-pad-label={`${sec.label} settings`}
+            onClick={() => jumpTo(sec.id)}>{sec.label}</button>
+        ))}
+      </nav>
+
+      <section id="settings-sync" className="sl-section" aria-label="Sync">
+      <Card title="Sync safety">
+        <div className="sl-stack">
+          <div className="sl-field">
+            <label htmlFor="settle">Wait for saves to settle (seconds)</label>
+            <div className="sl-inline">
+              <input
+                id="settle" className="sl-input" style={{ width: 90 }} type="number" min={0} max={300}
+                value={settleQuietSeconds}
+                onChange={e => { dirtyFields.current.add('settleQuietSeconds'); setSettleQuietSeconds(e.target.value) }}
+              />
+              <Button variant="primary" onClick={() => void save()} disabled={busy}>Save</Button>
+            </div>
+            <small>
+              After a game closes, SaveLocker waits until its save folder stops changing for this long before
+              backing it up — so a game that keeps writing for a few seconds after exit can't be captured
+              half-finished. Raise it if a game is slow to flush its save. 0 backs up immediately. Manual syncs
+              are never delayed.
+            </small>
+          </div>
+
+          <div className="sl-setting">
+            <div className="sl-setting__label">
+              {startupLabel}
+              <small>{isLinux ? 'Launch the agent when you sign in.' : 'Launch the agent at login.'}</small>
+            </div>
+            <button
+              type="button" className="sl-switch" role="switch" aria-checked={startWithWindows}
+              aria-label={startupLabel} onClick={() => void toggleStartup(!startWithWindows)}
+            />
+          </div>
+
+          {isLinux && (
+            <div className="sl-setting">
+              <div className="sl-setting__label">
+                Install agent updates automatically
+                <small>The agent downloads and verifies a newer version and installs it at the next start. Off, it only tells you one is waiting.</small>
+              </div>
+              <button
+                type="button" className="sl-switch" role="switch" aria-checked={state?.autoUpdate ?? true}
+                aria-label="Install agent updates automatically"
+                onClick={() => void toggleAutoUpdate(!(state?.autoUpdate ?? true))}
+              />
+            </div>
+          )}
+        </div>
+      </Card>
+
+        <PlaythroughCopiesCard />
+      </section>
+
+      <section id="settings-games" className="sl-section" aria-label="Games">
+      <Card
+        title="Tracked games"
+        flush
+        headerRight={selectedGames.size > 0 && (
+          confirmingRemove ? (
+            <div className="sl-confirm">
+              <span>Stop syncing {selectedGames.size} here? Their saves stay on the server.</span>
+              <Button size="sm" variant="primary" onClick={() => void removeSelected()}>Stop tracking {selectedGames.size}</Button>
+              <Button size="sm" variant="quiet" onClick={() => setConfirmingRemove(false)}>Keep</Button>
+            </div>
+          ) : (
+            <Button size="sm" onClick={() => setConfirmingRemove(true)}>Remove {selectedGames.size} selected…</Button>
+          )
+        )}
+      >
+        {games.length === 0 ? (
+          <div className="sl-empty">No games tracked yet. Go to Add Games to enroll.</div>
+        ) : (
+          <div className="sl-table-wrap">
+            <table className="sl-table">
+              <tbody>
+                {games.map(g => (
+                  <tr key={g.id}>
+                    <td style={{ width: 28 }}>
+                      <input
+                        type="checkbox" aria-label={`Select ${g.name}`}
+                        checked={selectedGames.has(g.id)} onChange={() => toggleGame(g.id)}
+                      />
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{g.name}</div>
+                      <div className="sl-path">{g.path || 'No save folder set'}</div>
+                    </td>
+                    <td>
+                      {!g.path && <Chip tone="warn">No save folder</Chip>}
+                      {!isLinux && g.processNames.length === 0 && <> <Chip tone="warn">Launch/exit sync off</Chip></>}
+                    </td>
+                    <td className="sl-num"><Button size="sm" onClick={() => onOpenGame(g.id)}>Manage</Button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Moved here from the Overview when it was trimmed to quick info (checkpoint-ui plan.md,
+          Phase 5) — this is where the prototype puts them. The launch-options card is still the
+          supported manual step, so it comes first; the plugin cards are the optional things that can
+          remove it. Each renders nothing where it does not apply (Windows, no Playnite), so there is
+          deliberately no section header here to be left orphaned. */}
+      <div className="sl-collapse-empty" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <LaunchSetupCard />
+        <DeckyPluginCard />
+        <PlaynitePluginCard />
+      </div>
+
+      </section>
+
+      <section id="settings-server" className="sl-section" aria-label="Server">
       <JoinCard state={state} pendingJoin={pendingJoin}
         onJoined={() => { onJoinHandled(); onSaved() }} />
 
@@ -277,117 +427,22 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, 
         </div>
       </Card>
 
-      <AppearanceCard appearance={appearance} onChanged={onAppearanceChanged} />
+      </section>
 
-      <ControllerCard />
-      <Xbox360SettingsCard />
-      <SwitchUserCard />
-
-      <Card title="Sync safety">
-        <div className="sl-stack">
-          <div className="sl-field">
-            <label htmlFor="settle">Wait for saves to settle (seconds)</label>
-            <div className="sl-inline">
-              <input
-                id="settle" className="sl-input" style={{ width: 90 }} type="number" min={0} max={300}
-                value={settleQuietSeconds}
-                onChange={e => { dirtyFields.current.add('settleQuietSeconds'); setSettleQuietSeconds(e.target.value) }}
-              />
-              <Button variant="primary" onClick={() => void save()} disabled={busy}>Save</Button>
-            </div>
-            <small>
-              After a game closes, SaveLocker waits until its save folder stops changing for this long before
-              backing it up — so a game that keeps writing for a few seconds after exit can't be captured
-              half-finished. Raise it if a game is slow to flush its save. 0 backs up immediately. Manual syncs
-              are never delayed.
-            </small>
-          </div>
-
-          <div className="sl-setting">
-            <div className="sl-setting__label">
-              {startupLabel}
-              <small>{isLinux ? 'Launch the agent when you sign in.' : 'Launch the agent at login.'}</small>
-            </div>
-            <button
-              type="button" className="sl-switch" role="switch" aria-checked={startWithWindows}
-              aria-label={startupLabel} onClick={() => void toggleStartup(!startWithWindows)}
-            />
-          </div>
-
-          {isLinux && (
-            <div className="sl-setting">
-              <div className="sl-setting__label">
-                Install agent updates automatically
-                <small>The agent downloads and verifies a newer version and installs it at the next start. Off, it only tells you one is waiting.</small>
-              </div>
-              <button
-                type="button" className="sl-switch" role="switch" aria-checked={state?.autoUpdate ?? true}
-                aria-label="Install agent updates automatically"
-                onClick={() => void toggleAutoUpdate(!(state?.autoUpdate ?? true))}
-              />
-            </div>
-          )}
-        </div>
-      </Card>
-
+      <section id="settings-updates" className="sl-section" aria-label="Updates">
       <Card title="Updates"><UpdateStatus platform={state?.platform} /></Card>
 
-      {/* Moved here from the Overview when it was trimmed to quick info (checkpoint-ui plan.md,
-          Phase 5) — this is where the prototype puts them. The launch-options card is still the
-          supported manual step, so it comes first; the plugin cards are the optional things that can
-          remove it. Each renders nothing where it does not apply (Windows, no Playnite), so there is
-          deliberately no section header here to be left orphaned. */}
-      <div className="sl-collapse-empty" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <LaunchSetupCard />
-        <DeckyPluginCard />
-        <PlaynitePluginCard />
-      </div>
+      </section>
 
-      <Card
-        title="Tracked games"
-        flush
-        headerRight={selectedGames.size > 0 && (
-          confirmingRemove ? (
-            <div className="sl-confirm">
-              <span>Stop syncing {selectedGames.size} here? Their saves stay on the server.</span>
-              <Button size="sm" variant="primary" onClick={() => void removeSelected()}>Stop tracking {selectedGames.size}</Button>
-              <Button size="sm" variant="quiet" onClick={() => setConfirmingRemove(false)}>Keep</Button>
-            </div>
-          ) : (
-            <Button size="sm" onClick={() => setConfirmingRemove(true)}>Remove {selectedGames.size} selected…</Button>
-          )
-        )}
-      >
-        {games.length === 0 ? (
-          <div className="sl-empty">No games tracked yet. Go to Add Games to enroll.</div>
-        ) : (
-          <div className="sl-table-wrap">
-            <table className="sl-table">
-              <tbody>
-                {games.map(g => (
-                  <tr key={g.id}>
-                    <td style={{ width: 28 }}>
-                      <input
-                        type="checkbox" aria-label={`Select ${g.name}`}
-                        checked={selectedGames.has(g.id)} onChange={() => toggleGame(g.id)}
-                      />
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{g.name}</div>
-                      <div className="sl-path">{g.path || 'No save folder set'}</div>
-                    </td>
-                    <td>
-                      {!g.path && <Chip tone="warn">No save folder</Chip>}
-                      {!isLinux && g.processNames.length === 0 && <> <Chip tone="warn">Launch/exit sync off</Chip></>}
-                    </td>
-                    <td className="sl-num"><Button size="sm" onClick={() => onOpenGame(g.id)}>Manage</Button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      <section id="settings-look" className="sl-section" aria-label="Look and controls">
+      <AppearanceCard appearance={appearance} onChanged={onAppearanceChanged} />
+      <ControllerCard />
+      </section>
+
+      <section id="settings-emulators" className="sl-section" aria-label="Emulators">
+      <Xbox360SettingsCard />
+      <SwitchUserCard />
+      </section>
     </div>
   )
 }

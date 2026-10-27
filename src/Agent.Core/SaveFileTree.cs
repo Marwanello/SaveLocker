@@ -40,7 +40,7 @@ public static class SaveFileTree
         // A 404 is a server older than this route (or one that no longer has the game): nothing to compare
         // with, which is not the same as an empty head — that would call every file here a push.
         HeadFilesDto? head = null;
-        try { head = await api.GetHeadFilesAsync(game.GameId, ct); }
+        try { head = await api.GetHeadFilesAsync(game.GameId, ct, game.PlaythroughId); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested) { }
 
         return Compare(game, real, manifest, contentHash, onDisk, unsynced, head);

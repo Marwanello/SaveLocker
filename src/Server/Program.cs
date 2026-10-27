@@ -894,6 +894,21 @@ agent.MapPost("/agent/games/{id:guid}/playthroughs/{playthroughId:guid}/select",
     PlaythroughResult(await sync.SelectPlaythroughAsync(http.CurrentMachine().Id, id, playthroughId)))
     .Produces<PlaythroughDto>().Produces(StatusCodes.Status404NotFound).Produces<string>(StatusCodes.Status409Conflict);
 
+// An agent's own page can rename and archive too (its playthrough tab's menu), under the machine's name in the audit log.
+agent.MapPost("/agent/games/{id:guid}/playthroughs/{playthroughId:guid}/rename", async (Guid id, Guid playthroughId, RenamePlaythroughRequest req, HttpContext http, SyncService sync) =>
+    PlaythroughResult(await sync.RenamePlaythroughAsync(id, playthroughId, req.Name, http.CurrentMachine().Name)))
+    .Produces<PlaythroughDto>().Produces<string>(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound).Produces<string>(StatusCodes.Status409Conflict);
+
+agent.MapPost("/agent/games/{id:guid}/playthroughs/{playthroughId:guid}/archive", async (Guid id, Guid playthroughId, HttpContext http, SyncService sync) =>
+    PlaythroughResult(await sync.SetPlaythroughArchivedAsync(id, playthroughId, true, http.CurrentMachine().Name)))
+    .Produces<PlaythroughDto>().Produces<string>(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound).Produces<string>(StatusCodes.Status409Conflict);
+
+agent.MapPost("/agent/games/{id:guid}/playthroughs/{playthroughId:guid}/unarchive", async (Guid id, Guid playthroughId, HttpContext http, SyncService sync) =>
+    PlaythroughResult(await sync.SetPlaythroughArchivedAsync(id, playthroughId, false, http.CurrentMachine().Name)))
+    .Produces<PlaythroughDto>().Produces(StatusCodes.Status404NotFound);
+
 agent.MapGet("/agent/conflicts/{id:guid}", async (Guid id, SyncService sync) =>
     await sync.GetConflictAsync(id) is { } c ? Results.Ok(c) : Results.NotFound())
     .Produces<ConflictDto>();

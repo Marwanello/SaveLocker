@@ -331,11 +331,13 @@ public sealed class ApiClient
         return (await resp.Content.ReadFromJsonAsync<GameDto>())!;
     }
 
-    public async Task<GameStateDto?> GetStateAsync(Guid gameId, CancellationToken ct = default)
+    /// <param name="playthrough">Whose head, lease and conflict the state describes; null = the one the server has this machine
+    /// on. Named whenever the device knows its own, which can be ahead of the server's record (a switch made offline).</param>
+    public async Task<GameStateDto?> GetStateAsync(Guid gameId, CancellationToken ct = default, Guid? playthrough = null)
     {
         // The /api/agent/ one: the bare /api/games/{id}/state is admin-filtered, so this 401'd for
         // every agent the moment the server had an admin password set.
-        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/state", ct);
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/state{PlaythroughQuery(playthrough)}", ct);
         if (resp.StatusCode == HttpStatusCode.NotFound) return null;
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadFromJsonAsync<GameStateDto>(ct);
@@ -343,9 +345,9 @@ public sealed class ApiClient
 
     /// <summary>The head version's files with their SHA-256 (tasks/save-file-trees); null for a game the
     /// server does not know.</summary>
-    public async Task<HeadFilesDto?> GetHeadFilesAsync(Guid gameId, CancellationToken ct = default)
+    public async Task<HeadFilesDto?> GetHeadFilesAsync(Guid gameId, CancellationToken ct = default, Guid? playthrough = null)
     {
-        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/head/files", ct);
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/head/files{PlaythroughQuery(playthrough)}", ct);
         if (resp.StatusCode == HttpStatusCode.NotFound) return null;
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadFromJsonAsync<HeadFilesDto>(ct);
@@ -395,9 +397,14 @@ public sealed class ApiClient
         return bytes is null ? null : (bytes, type);
     }
 
-    public async Task<LeaseAcquireResponse> AcquireLeaseAsync(Guid gameId)
+    /// <summary>The <c>?playthrough=</c> suffix tasks/save-playthroughs adds to a route. Empty for none: the server then uses the
+    /// playthrough this machine follows, which is also what an agent that predates playthroughs gets.</summary>
+    internal static string PlaythroughQuery(Guid? playthrough, string joiner = "?") =>
+        playthrough is { } id ? $"{joiner}playthrough={id:D}" : "";
+
+    public async Task<LeaseAcquireResponse> AcquireLeaseAsync(Guid gameId, Guid? playthrough = null)
     {
-        var resp = await _http.PostAsync($"/api/games/{gameId}/lease", null);
+        var resp = await _http.PostAsync($"/api/games/{gameId}/lease{PlaythroughQuery(playthrough)}", null);
         resp.EnsureSuccessStatusCode();
         return (await resp.Content.ReadFromJsonAsync<LeaseAcquireResponse>())!;
     }
@@ -446,11 +453,11 @@ public sealed class ApiClient
     /// </param>
     public async Task<UploadResult> UploadAsync(
         Guid gameId, string contentHash, Guid? parent, bool force, string archivePath,
-        Action<long, long>? onProgress = null, CancellationToken ct = default)
+        Action<long, long>? onProgress = null, CancellationToken ct = default, Guid? playthrough = null)
     {
-        var begin = await BeginUploadAsync(gameId, contentHash, parent, force, files: null, ct);
+        var begin = await BeginUploadAsync(gameId, contentHash, parent, force, files: null, ct, playthrough);
         if (begin is null)
-            return await UploadSingleShotAsync(gameId, contentHash, parent, force, archivePath, onProgress, ct);
+            return await UploadSingleShotAsync(gameId, contentHash, parent, force, archivePath, onProgress, ct, playthrough);
         if (begin.NoChange is { } noChange) return noChange;
 
         return await UploadSessionPayloadAsync(gameId, begin.SessionId!.Value, archivePath, onProgress, ct);
@@ -468,11 +475,11 @@ public sealed class ApiClient
     /// </summary>
     public async Task<BeginUploadResponse?> BeginUploadAsync(
         Guid gameId, string contentHash, Guid? parent, bool force, FileManifestEntry[]? files,
-        CancellationToken ct = default)
+        CancellationToken ct = default, Guid? playthrough = null)
     {
         var resp = await _http.PostAsJsonAsync(
             $"/api/games/{gameId}/upload/begin",
-            new BeginUploadRequest(contentHash, parent, force, files), ct);
+            new BeginUploadRequest(contentHash, parent, force, files, playthrough), ct);
         if (resp.StatusCode == HttpStatusCode.NotFound) return null;
         resp.EnsureSuccessStatusCode();
         return (await resp.Content.ReadFromJsonAsync<BeginUploadResponse>(cancellationToken: ct))!;
@@ -519,9 +526,9 @@ public sealed class ApiClient
     /// server too old to have the chunked routes — see the fallback in <see cref="UploadAsync"/>.</summary>
     private async Task<UploadResult> UploadSingleShotAsync(
         Guid gameId, string contentHash, Guid? parent, bool force, string archivePath,
-        Action<long, long>? onProgress, CancellationToken ct)
+        Action<long, long>? onProgress, CancellationToken ct, Guid? playthrough = null)
     {
-        var url = $"/api/games/{gameId}/upload?hash={Uri.EscapeDataString(contentHash)}";
+        var url = $"/api/games/{gameId}/upload?hash={Uri.EscapeDataString(contentHash)}{PlaythroughQuery(playthrough, "&")}";
         if (parent is { } p) url += $"&parent={p}";
         if (force) url += "&force=true";
 
@@ -613,9 +620,9 @@ public sealed class ApiClient
     /// Returns the (versionId, contentHash) from response headers, or null if no head exists.
     /// </summary>
     public async Task<(Guid versionId, string contentHash)?> DownloadHeadAsync(
-        Guid gameId, string destinationPath, CancellationToken ct = default)
+        Guid gameId, string destinationPath, CancellationToken ct = default, Guid? playthrough = null)
     {
-        var resp = await _http.GetAsync($"/api/games/{gameId}/download",
+        var resp = await _http.GetAsync($"/api/games/{gameId}/download{PlaythroughQuery(playthrough)}",
             HttpCompletionOption.ResponseHeadersRead, ct);
         if (resp.StatusCode == HttpStatusCode.NotFound) return null;
         resp.EnsureSuccessStatusCode();
@@ -667,12 +674,63 @@ public sealed class ApiClient
 
     /// <summary>Every version the server keeps of one game, newest first; empty for a server too old
     /// to have the route, so the game page degrades to "no version list" instead of an error.</summary>
-    public async Task<List<SaveVersionDto>> GetGameVersionsAsync(Guid gameId, CancellationToken ct = default)
+    public async Task<List<SaveVersionDto>> GetGameVersionsAsync(Guid gameId, CancellationToken ct = default, Guid? playthrough = null)
     {
-        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/versions", ct);
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/versions{PlaythroughQuery(playthrough)}", ct);
         if (resp.StatusCode is HttpStatusCode.NotFound) return new();
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadFromJsonAsync<List<SaveVersionDto>>(cancellationToken: ct) ?? new();
+    }
+
+    // ---- Playthroughs (tasks/save-playthroughs) ----
+
+    /// <summary>The game's playthroughs, the default first; null for a server that predates playthroughs (404), so every caller
+    /// degrades to "this game has one line of saves" rather than failing.</summary>
+    public async Task<List<PlaythroughDto>?> ListPlaythroughsAsync(Guid gameId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/playthroughs", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<List<PlaythroughDto>>(cancellationToken: ct) ?? new();
+    }
+
+    /// <summary>The latest save of the playthrough a device follows (null = the one the server has it on). Everything that
+    /// compares this device's save with "the cloud" asks this: the state route's head is that playthrough's, not the default's.</summary>
+    public async Task<SaveVersionDto?> GetPlaythroughHeadAsync(Guid gameId, Guid? playthroughId, CancellationToken ct = default) =>
+        (await GetStateAsync(gameId, ct, playthroughId))?.Head;
+
+    /// <summary>Makes a playthrough from a version, another playthrough's latest, or nothing; the server's reason on a refusal.</summary>
+    public async Task<(PlaythroughDto? Playthrough, string? Error)> CreatePlaythroughAsync(
+        Guid gameId, CreatePlaythroughRequest req, CancellationToken ct = default)
+    {
+        var resp = await _http.PostAsJsonAsync($"/api/agent/games/{gameId}/playthroughs", req, ct);
+        if (resp.IsSuccessStatusCode)
+            return (await resp.Content.ReadFromJsonAsync<PlaythroughDto>(cancellationToken: ct), null);
+        if ((int)resp.StatusCode >= 500) resp.EnsureSuccessStatusCode();
+        return (null, (await resp.Content.ReadAsStringAsync(ct)).Trim('"'));
+    }
+
+    /// <summary>Tells the server which playthrough this machine now follows. False with the reason when it refuses (archived).</summary>
+    public async Task<(bool Ok, string? Error)> SelectPlaythroughAsync(Guid gameId, Guid playthroughId, CancellationToken ct = default)
+    {
+        var resp = await _http.PostAsync($"/api/agent/games/{gameId}/playthroughs/{playthroughId}/select", null, ct);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        if ((int)resp.StatusCode >= 500) resp.EnsureSuccessStatusCode();
+        return (false, (await resp.Content.ReadAsStringAsync(ct)).Trim('"'));
+    }
+
+    /// <summary>Renames a playthrough, or archives/unarchives it (<paramref name="action"/>: "rename", "archive", "unarchive").</summary>
+    public async Task<(PlaythroughDto? Playthrough, string? Error)> ChangePlaythroughAsync(
+        Guid gameId, Guid playthroughId, string action, string? newName = null, CancellationToken ct = default)
+    {
+        var url = $"/api/agent/games/{gameId}/playthroughs/{playthroughId}/{action}";
+        var resp = action == "rename"
+            ? await _http.PostAsJsonAsync(url, new RenamePlaythroughRequest(newName ?? ""), ct)
+            : await _http.PostAsync(url, null, ct);
+        if (resp.IsSuccessStatusCode)
+            return (await resp.Content.ReadFromJsonAsync<PlaythroughDto>(cancellationToken: ct), null);
+        if ((int)resp.StatusCode >= 500) resp.EnsureSuccessStatusCode();
+        return (null, (await resp.Content.ReadAsStringAsync(ct)).Trim('"'));
     }
 
     /// <summary>Where a version can be copied — another emulator's tree of its title (tasks/multi-emulator-games Phase 6);

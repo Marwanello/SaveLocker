@@ -156,6 +156,7 @@ internal sealed class TrayContext : ApplicationContext
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             releaseLease: (game, _) => _engine.ReleaseLaunchLeaseAsync(game),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
+            engine: () => _engine,
             mapFolder: (game, key, dir, keep) => _engine.MapSavePathAsync(game, key, dir, keep),
             forgetFolder: (game, key) => _engine.ForgetSavePathAsync(game, key),
             withGameLock: (game, work) => _engine.WithGameLockAsync(game, work, TimeSpan.FromSeconds(2)),

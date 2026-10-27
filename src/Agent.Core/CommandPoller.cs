@@ -1065,10 +1065,17 @@ public sealed class CommandPoller : IDisposable
                    (candidates.Count > 8 ? "…" : "");
         }
 
-        // The server only hands this to an agent that reports it can run it (Playthroughs.MinAgentVersion); this build is
-        // the server-side half of tasks/save-playthroughs and cannot switch yet, so it says so rather than "sync" a game.
+        // The console's "switch this device": run with the agent's own guards, and a refusal (the game is running, a conflict is
+        // open, the server is away and no copy is kept) is thrown so the command row reads Failed with that reason.
         if (cmd.Type == AgentCommandType.SwitchPlaythrough)
-            throw new NotSupportedException("this agent version cannot switch playthroughs yet.");
+        {
+            if (cmd.GameId is not { } switchGame || cmd.PlaythroughId is not { } switchTo)
+                throw new InvalidOperationException("the switch named no game or playthrough.");
+            var local = _config.Games.FirstOrDefault(g => g.GameId == switchGame && g.IsEnrolledHere)
+                ?? throw new InvalidOperationException("this machine has no save folder for that game.");
+            var switched = await _engine().SwitchPlaythroughAsync(local, switchTo);
+            return switched.Ok ? switched.Message : throw new InvalidOperationException(switched.Message);
+        }
 
         // pull / push / sync target one game or all of this machine's games.
         var targets = TargetGames(cmd.GameId).ToList();

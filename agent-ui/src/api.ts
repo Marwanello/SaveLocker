@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, EmptiedHold, SaveVsCloud, SwitchCopy, SwitchUserAction, SwitchUserSharing, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, CopyTarget, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, GamePlaythroughs, NewPlaythroughBody, PlaythroughAction, PlaythroughCopies, PlaythroughCopyMode, StartFile, SwitchPlaythroughResult, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, EmptiedHold, SaveVsCloud, SwitchCopy, SwitchUserAction, SwitchUserSharing, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, CopyTarget, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -155,7 +155,24 @@ export const api = {
   // How many games the LAST scan suggested; null before any scan. Never scans by itself.
   cachedCandidates: () => req<{ suggested: number | null }>('/api/candidates/cached'),
   // Every version the server keeps of one game, newest first.
-  gameVersions: (id: string) => req<SaveVersion[]>(`/api/games/${id}/versions`),
+  gameVersions: (id: string, playthrough?: string) =>
+    req<SaveVersion[]>(`/api/games/${id}/versions${playthrough ? `?playthrough=${playthrough}` : ''}`),
+  // Playthroughs (tasks/save-playthroughs): the tabs under a game, switching this device to one, making one, and the
+  // tab menu's rename/archive. A switch answers once the save here follows it, with one sentence saying what became of it.
+  playthroughs: (id: string) => req<GamePlaythroughs>(`/api/games/${id}/playthroughs`),
+  switchPlaythrough: (id: string, playthroughId: string) =>
+    post<SwitchPlaythroughResult>(`/api/games/${id}/playthroughs/${playthroughId}/switch`),
+  newPlaythrough: (id: string, body: NewPlaythroughBody) => post<SwitchPlaythroughResult>(`/api/games/${id}/playthroughs`, body),
+  startFiles: (id: string) => req<StartFile[]>(`/api/games/${id}/playthroughs/start-files`),
+  renamePlaythrough: (id: string, playthroughId: string, name: string) =>
+    post<PlaythroughAction>(`/api/games/${id}/playthroughs/${playthroughId}/rename`, { name }),
+  archivePlaythrough: (id: string, playthroughId: string) =>
+    post<PlaythroughAction>(`/api/games/${id}/playthroughs/${playthroughId}/archive`),
+  unarchivePlaythrough: (id: string, playthroughId: string) =>
+    post<PlaythroughAction>(`/api/games/${id}/playthroughs/${playthroughId}/unarchive`),
+  playthroughCopies: () => req<PlaythroughCopies>('/api/settings/playthrough-copies'),
+  setPlaythroughCopies: (mode: PlaythroughCopyMode) => post<PlaythroughCopies>('/api/settings/playthrough-copies', { mode }),
+  clearPlaythroughCopies: () => post<PlaythroughCopies>('/api/settings/playthrough-copies/clear'),
   resolvedConflicts: () => req<Conflict[]>('/api/conflicts/resolved'),
   // Copy a save to another emulator's tree of the same game (tasks/multi-emulator-games Phase 6): where it can go and
   // what each file becomes, then the copy itself — a new version of the target, its old Latest kept.

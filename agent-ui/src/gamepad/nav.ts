@@ -158,19 +158,21 @@ function pageRoot(): HTMLElement | null {
 /** One game's page and Settings, split into their big blocks (cards, action rows). */
 function tilesOf(root: HTMLElement): HTMLElement[] {
   const out: HTMLElement[] = []
-  for (const child of Array.from(root.children) as HTMLElement[]) {
-    if (child.classList.contains('sl-back') || child.classList.contains('sl-toast')) continue
-    if (child.hidden) continue
-    if (child.classList.contains('sl-collapse-empty')) {
-      out.push(...(Array.from(child.children) as HTMLElement[]))
-      continue
+  const add = (child: HTMLElement) => {
+    if (child.classList.contains('sl-back') || child.classList.contains('sl-toast')) return
+    if (child.hidden) return
+    // A wrapper that only groups tiles (Settings' sections, the plugin cards' collapse-when-empty box) is not a tile itself.
+    if (child.classList.contains('sl-collapse-empty') || child.classList.contains('sl-section')) {
+      for (const c of Array.from(child.children) as HTMLElement[]) add(c)
+      return
     }
     if (TILE_GRIDS.some(c => child.classList.contains(c))) {
       out.push(...(Array.from(child.children) as HTMLElement[]))
-      continue
+      return
     }
     out.push(child)
   }
+  for (const child of Array.from(root.children) as HTMLElement[]) add(child)
   return out
 }
 
@@ -573,6 +575,7 @@ function pressY() {
 
 /** LT: keep-both on a conflict card; Push now on a game page; Clear the selection in Add Games. */
 function pressLT() {
+  if (settingsStep(-1)) return
   const backup = findBackupInput()
   if (backup) { backup.click(); return }
   if (isGamePage()) { clickAction('push-now', /^Push now$/i); return }
@@ -581,6 +584,7 @@ function pressLT() {
 
 /** RT: Resolve (confirm-mode conflict card); Pull latest on a game page; Add games in Add Games. */
 function pressRT() {
+  if (settingsStep(1)) return
   if (clickButton(/^Resolve\b/i)) return
   if (isGamePage()) { clickAction('pull-latest', /^Pull latest$/i); return }
   if (currentSection() === 'Add Games') {
@@ -617,6 +621,17 @@ function pressR3() {
     else cycleIndex = (cycleIndex + 1) % actions.length
     actions[cycleIndex]?.click()
   }
+}
+
+/** On Settings, LT/RT walk the page's own sections (the bar under the title); LB/RB stay on the rail's pages. */
+function settingsStep(delta: number): boolean {
+  if (currentSection() !== 'Settings') return false
+  const jumps = [...document.querySelectorAll<HTMLButtonElement>('.sl-content .sl-jump button')]
+  if (jumps.length === 0) return false
+  const at = jumps.findIndex(b => b.getAttribute('aria-pressed') === 'true')
+  const next = Math.min(jumps.length - 1, Math.max(0, at + delta))
+  jumps[next].click()
+  return true
 }
 
 function sectionStep(delta: number) {

@@ -16,6 +16,10 @@ interface Props {
   title?: string
   /** Inside a title: copy a version to another emulator's tree (tasks/multi-emulator-games Phase 6). */
   onCopy?: (versionId: string) => void
+  /** A playthrough other than this device's own (tasks/save-playthroughs); the list is that one's. */
+  playthrough?: string
+  /** "New playthrough from this version". */
+  onFork?: (versionId: string) => void
 }
 
 /**
@@ -23,18 +27,18 @@ interface Props {
  * versions route. Read-only — this page is the agent's; pruning and Set-as-Latest are the console's.
  * The newest ten are shown; the count above is always the real total.
  */
-export function VersionsCard({ gameId, headId, refreshKey, onLoaded, title = 'Versions on the server', onCopy }: Props) {
+export function VersionsCard({ gameId, headId, refreshKey, onLoaded, title = 'Versions on the server', onCopy, playthrough, onFork }: Props) {
   const [versions, setVersions] = useState<SaveVersion[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let live = true
-    api.gameVersions(gameId)
+    api.gameVersions(gameId, playthrough)
       .then(v => { if (live) { setVersions(v); setError(null); onLoaded(v) } })
       .catch(err => { if (live) setError(err instanceof Error ? err.message : 'Could not reach the server.') })
     return () => { live = false }
     // `onLoaded` is the page's own state setter; listing it would only re-fetch on identity churn.
-  }, [gameId, refreshKey])
+  }, [gameId, refreshKey, playthrough])
 
   const shown = versions?.slice(0, 10) ?? []
 
@@ -49,7 +53,11 @@ export function VersionsCard({ gameId, headId, refreshKey, onLoaded, title = 'Ve
       ) : versions === null ? (
         <div className="sl-empty">Loading…</div>
       ) : versions.length === 0 ? (
-        <div className="sl-empty">Nothing has been uploaded for this game yet.</div>
+        <div className="sl-empty">
+          {playthrough
+            ? 'Nothing has been pushed to this playthrough yet. It starts from the save it was made from, which stays in the playthrough that made it.'
+            : 'Nothing has been uploaded for this game yet.'}
+        </div>
       ) : (
         <div className="sl-table-wrap">
           <table className="sl-table">
@@ -68,6 +76,11 @@ export function VersionsCard({ gameId, headId, refreshKey, onLoaded, title = 'Ve
                   <td>
                     {v.id === headId && <Chip tone="ok">Latest</Chip>}
                     {v.protected && v.id !== headId && <Chip>Protected</Chip>}
+                    {onFork && !v.mergedFrom && (
+                      <Button size="sm" variant="quiet" data-pad-label="New playthrough from this version" onClick={() => onFork(v.id)}>
+                        New playthrough…
+                      </Button>
+                    )}
                     {onCopy && !v.mergedFrom && (
                       <Button size="sm" variant="quiet" data-pad-label="Copy this version to another emulator" onClick={() => onCopy(v.id)}>
                         Copy to…

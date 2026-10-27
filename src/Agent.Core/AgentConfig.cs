@@ -103,6 +103,8 @@ public sealed class AgentConfig
     public ProfileAtLaunch? XeniaProfileAtLaunch { get; set; }
     /// <summary>What to do when another machine asks this one for DLC (tasks/emulator-saves Phase 5c). Null means Auto.</summary>
     public DlcSendPolicy? DlcSend { get; set; }
+    /// <summary>Which playthrough copies this device keeps (tasks/save-playthroughs Phase 5, <see cref="PlaythroughStore"/>).</summary>
+    public PlaythroughCopyMode PlaythroughCopies { get; set; } = PlaythroughCopyMode.UntilUploaded;
     /// <summary>The Switch user every device's Yuzu-based emulators use, as the server last said on a heartbeat
     /// (<see cref="SwitchUserSharing"/>); null when none is chosen.</summary>
     public SwitchUserDto? SwitchSharedUser { get; set; }
@@ -271,6 +273,7 @@ public sealed class AgentConfig
                 game.ConsecutiveConflicts = stored.ConsecutiveConflicts;
                 game.LastPushBytes = stored.LastPushBytes;
                 game.LastPushAt = stored.LastPushAt;
+                game.TakePlaythroughFrom(stored);
                 game.KeepMappedFolders(stored);
                 // Set once and never cleared, so another process's is never stale against "none".
                 game.Source ??= stored.Source;
@@ -295,6 +298,7 @@ public sealed class AgentConfig
             ManifestRefreshHandledAt = onDisk.ManifestRefreshHandledAt;
             XeniaProfileAtLaunch = onDisk.XeniaProfileAtLaunch;
             DlcSend = onDisk.DlcSend;
+            PlaythroughCopies = onDisk.PlaythroughCopies;
             SwitchSharedUser = onDisk.SwitchSharedUser;
             SwitchSharedUserDeclined = onDisk.SwitchSharedUserDeclined;
             // And for the pin, which another process re-pins (`trust --accept`, a renewal): the daemon
@@ -476,6 +480,7 @@ public sealed class AgentConfig
         FollowConsoleAppearance = fresh.FollowConsoleAppearance;
         XeniaProfileAtLaunch = fresh.XeniaProfileAtLaunch;
         DlcSend = fresh.DlcSend;
+        PlaythroughCopies = fresh.PlaythroughCopies;
         SwitchSharedUser = fresh.SwitchSharedUser;
         SwitchSharedUserDeclined = fresh.SwitchSharedUserDeclined;
         ConsoleAppearance = fresh.ConsoleAppearance;
@@ -757,6 +762,7 @@ public sealed class AgentConfig
         game.ConsecutiveConflicts = stored.ConsecutiveConflicts;
         game.LastPushBytes = stored.LastPushBytes;
         game.LastPushAt = stored.LastPushAt;
+        game.TakePlaythroughFrom(stored);
         game.KeepMappedFolders(stored);
     }
 
@@ -811,6 +817,7 @@ public sealed class AgentConfig
             target.RemovedPathKeys = game.RemovedPathKeys.ToList();
             target.LastPushBytes = game.LastPushBytes;
             target.LastPushAt = game.LastPushAt;
+            target.TakePlaythroughFrom(game);
         }
 
         if (countPush) onDisk.TotalSavesPushed++;
@@ -1111,6 +1118,25 @@ public sealed class TrackedGame
     /// the scanner did; without it they silently resolve fewer paths than discovery already had.
     /// </summary>
     public string? InstallDir { get; set; }
+    /// <summary>The playthrough this machine follows for the game (tasks/save-playthroughs); every push, pull, lease and
+    /// conflict call names it. Null: never switched, so the server's answer is the one it recorded for this machine, which
+    /// is the game's default (Main).</summary>
+    public Guid? PlaythroughId { get; set; }
+    /// <summary>Its name, kept so a screen can say it with no server (and so the activity log can).</summary>
+    public string? PlaythroughName { get; set; }
+    /// <summary>How many playthroughs the game had when the agent last asked; the name is only shown above one.</summary>
+    public int PlaythroughCount { get; set; } = 1;
+    /// <summary>A switch made while the server could not be told: the selection is sent when it is back.</summary>
+    public bool PlaythroughSelectPending { get; set; }
+    /// <summary>Copies the playthrough fields — they travel together, and every sync-state writer has to carry them
+    /// (a switch can run in the launch wrapper or the daemon, and a stale host must not undo the other's).</summary>
+    public void TakePlaythroughFrom(TrackedGame other)
+    {
+        PlaythroughId = other.PlaythroughId;
+        PlaythroughName = other.PlaythroughName;
+        PlaythroughCount = other.PlaythroughCount;
+        PlaythroughSelectPending = other.PlaythroughSelectPending;
+    }
     /// <summary>The server version this machine last pulled or pushed (its parent for the next push).</summary>
     public Guid? LastKnownVersionId { get; set; }
     /// <summary>Content hash of the local save at last sync, to detect real changes.</summary>
