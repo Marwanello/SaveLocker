@@ -97,15 +97,14 @@ export function SavesCard({ game, machines, health, versions, loadingVersions, r
                   {shown.map(p => (
                     <button key={p.id} type="button" role="tab" aria-selected={p.id === current.id}
                       onClick={() => { setSelected(p.id); setPanel(null); }}
-                      className={`flex flex-col items-start gap-0.5 px-3.5 pt-2 pb-2.5 -mb-px border-b-2 rounded-t-lg cursor-pointer whitespace-nowrap ${p.id === current.id ? 'border-accent text-fg' : 'border-transparent text-dim hover:text-fg hover:bg-hover'}`}>
-                      <span className="text-[13px] font-semibold flex items-center gap-1">{p.name}{p.archivedAt && <Chip>Archived</Chip>}</span>
-                      <span className="text-[11px] text-faint">{p.devices.map(d => d.machineName).join(' · ') || 'No device'}</span>
+                      className={`flex items-center gap-1 px-3.5 pt-2 pb-2.5 -mb-px border-b-2 rounded-t-lg cursor-pointer whitespace-nowrap text-[13px] font-semibold ${p.id === current.id ? 'border-accent text-fg' : 'border-transparent text-dim hover:text-fg hover:bg-hover'}`}>
+                      {p.name}{p.archivedAt && <Chip>Archived</Chip>}
                     </button>
                   ))}
                 </div>
               )}
               <PlaythroughHead
-                game={game} pt={current} panel={panel} onPanel={setPanel}
+                game={game} pt={current} panel={panel} onPanel={setPanel} showName={!many}
                 onChanged={async () => { await reloadPlaythroughs(); onRefresh(); }}
               />
               {panel?.kind === 'switch' && !current.archivedAt && (
@@ -133,8 +132,8 @@ export function SavesCard({ game, machines, health, versions, loadingVersions, r
 }
 
 /** Name, badges, devices, and this playthrough's own actions. */
-function PlaythroughHead({ game, pt, panel, onPanel, onChanged }: {
-  game: Game; pt: Playthrough; panel: Panel; onPanel: (p: Panel) => void; onChanged: () => void;
+function PlaythroughHead({ game, pt, panel, onPanel, showName, onChanged }: {
+  game: Game; pt: Playthrough; panel: Panel; onPanel: (p: Panel) => void; showName: boolean; onChanged: () => void;
 }) {
   async function setDefault() {
     try { await api.setDefaultPlaythrough(game.id, pt.id); onChanged(); toast(`New devices now start on ${pt.name}.`); }
@@ -148,14 +147,10 @@ function PlaythroughHead({ game, pt, panel, onPanel, onChanged }: {
     <div className="flex items-start justify-between gap-3 flex-wrap px-4 py-3 border-b border-line">
       <div className="min-w-0 flex flex-col gap-1.5">
         <div className="text-[15px] font-semibold text-fg flex items-center gap-1.5 flex-wrap">
-          {pt.name}
+          {showName && pt.name}
           {pt.isDefault && <Chip>Default for new devices</Chip>}
           {pt.archivedAt && <Chip>Archived</Chip>}
           {pt.hasOpenConflict && <Chip tone="crit">Conflicting</Chip>}
-        </div>
-        <div className="text-xs text-dim">
-          {plural(pt.versionCount, 'version')} · {fmtSize(pt.totalSize)}
-          {pt.head && <> · latest {ago(pt.head.createdAt)} on {pt.head.machineName}</>}
         </div>
         <span className="flex items-center gap-1.5 flex-wrap text-[11.5px] text-dim">
           Played on {pt.devices.length
