@@ -321,26 +321,10 @@ function NewPlaythroughPanel({ game, playthroughs, versions, current, fromVersio
             className="w-full px-3 py-2 bg-panel text-fg border border-line rounded-md text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
         </label>
 
-        <div className="flex gap-3">
-          <label className="flex flex-col gap-1.5 flex-1 min-w-0">
-            <span className="text-[10px] tracking-[0.13em] uppercase text-faint">Playthrough</span>
-            <Select value={from} onChange={v => { setFrom(v); setFromVersionId('latest'); }} label="Playthrough" variant="field"
-              options={live.map(p => ({ value: p.id, label: p.name, sub: p.head ? `${ago(p.head.createdAt)} on ${p.head.machineName}` : 'No save yet' }))} />
-          </label>
-          <label className="flex flex-col gap-1.5 flex-1 min-w-0">
-            <span className="text-[10px] tracking-[0.13em] uppercase text-faint">Version</span>
-            <Select value={fromVersionId} onChange={setFromVersionId} label="Version" variant="field"
-              options={[
-                { value: 'latest', label: fromPt?.head ? `Latest · ${shortId(fromPt.head.id)}` : 'Latest', sub: fromPt?.head ? `${ago(fromPt.head.createdAt)} on ${fromPt.head.machineName}` : 'No save yet' },
-                ...older.map(v => ({ value: v.id, label: shortId(v.id), sub: `${ago(v.createdAt)} on ${v.machineName}` })),
-              ]} />
-          </label>
-        </div>
-
         <div className="flex flex-col gap-2" role="radiogroup" aria-label="How to start">
           <label className="flex items-center gap-2 cursor-pointer text-[12.5px] text-fg">
             <input type="radio" name="pt-start" checked={how === 'current'} onChange={() => setHow('current')} />
-            Current save — a copy of {fromPt?.name ?? 'the picked playthrough'}'s {picked ? 'picked save, as it was' : 'latest save'}
+            Current save — a copy of an existing playthrough's save
           </label>
           <label className="flex items-center gap-2 cursor-pointer text-[12.5px] text-fg">
             <input type="radio" name="pt-start" checked={how === 'fresh'} onChange={() => setHow('fresh')} />
@@ -348,12 +332,29 @@ function NewPlaythroughPanel({ game, playthroughs, versions, current, fromVersio
           </label>
           {how === 'fresh' && (
             <p className="pl-6 text-[11.5px] text-dim">
-              The server can't see what's in a device's save folder, so a fresh playthrough always starts
-              completely empty — the playthrough and version above aren't used. To keep some files instead
-              of starting empty, use that device's own tray or CLI to start fresh there.
+              The server can't see what's in a device's save folder, so this always starts completely
+              empty. To keep some files instead, use that device's own tray or CLI to start fresh there.
             </p>
           )}
         </div>
+
+        {how === 'current' && (
+          <div className="flex gap-3">
+            <label className="flex flex-col gap-1.5 flex-1 min-w-0">
+              <span className="text-[10px] tracking-[0.13em] uppercase text-faint">Playthrough</span>
+              <Select value={from} onChange={v => { setFrom(v); setFromVersionId('latest'); }} label="Playthrough" variant="field"
+                options={live.map(p => ({ value: p.id, label: p.name, sub: p.head ? `${ago(p.head.createdAt)} on ${p.head.machineName}` : 'No save yet' }))} />
+            </label>
+            <label className="flex flex-col gap-1.5 flex-1 min-w-0">
+              <span className="text-[10px] tracking-[0.13em] uppercase text-faint">Version</span>
+              <Select value={fromVersionId} onChange={setFromVersionId} label="Version" variant="field"
+                options={[
+                  { value: 'latest', label: fromPt?.head ? `Latest · ${shortId(fromPt.head.id)}` : 'Latest', sub: fromPt?.head ? `${ago(fromPt.head.createdAt)} on ${fromPt.head.machineName}` : 'No save yet' },
+                  ...older.map(v => ({ value: v.id, label: shortId(v.id), sub: `${ago(v.createdAt)} on ${v.machineName}` })),
+                ]} />
+            </label>
+          </div>
+        )}
 
         {error && <p role="alert" className="text-[11.5px] text-accent-ink">{error}</p>}
         <div className="flex items-center gap-2.5">

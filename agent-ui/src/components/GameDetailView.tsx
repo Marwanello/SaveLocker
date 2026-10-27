@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import type { Conflict, DlcCheck, EmptiedHold, GamePlaythroughs, GameState, GameSyncMode, SaveVersion, SyncStatus, TrackedGame, View } from '../types'
 import { api } from '../api'
-import { formatAgo, formatBytes, formatDateTime } from '../format'
+import { formatAgo, formatBytes, formatDateTime, shortId } from '../format'
 import { refreshActivity, useActivityBusy, useFilesChangedAt } from '../useActivity'
 import { PadGlyph } from '../gamepad/PadGlyph'
 import { GameArt } from './GameArt'
@@ -282,7 +282,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       </Card>
       <VersionsCard key={otherPt.id} gameId={game.id} headId={otherPt.head?.id ?? null} refreshKey={syncCount}
         onLoaded={() => {}} playthrough={otherPt.id} title={`Versions on the server · ${otherPt.name}`}
-        onFork={v => setCreating({ fromVersion: { id: v.id, label: `${otherPt.name} · ${v.id.slice(0, 8)}` } })} />
+        onFork={v => setCreating({ fromVersion: { id: v.id, label: `${otherPt.name} · ${shortId(v.id)}` } })} />
     </>
   )
 
@@ -541,7 +541,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
             : undefined}
           onCopy={titled ? setCopyFrom : undefined}
           playthrough={selectedPt && several ? selectedPt.id : undefined}
-          onFork={v => setCreating({ fromVersion: { id: v.id, label: `${selectedPt?.name ?? 'this playthrough'} · ${v.id.slice(0, 8)}` } })} />}
+          onFork={v => setCreating({ fromVersion: { id: v.id, label: `${selectedPt?.name ?? 'this playthrough'} · ${shortId(v.id)}` } })} />}
         <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
       </div>
 

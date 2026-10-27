@@ -861,7 +861,13 @@ agent.MapGet("/agent/conflicts", async (SyncService sync, DateTime? resolvedSinc
 agent.MapGet("/agent/games/{id:guid}/versions", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync) =>
 {
     var on = await sync.ResolvePlaythroughAsync(id, http.CurrentMachine().Id, playthrough);
-    return Results.Ok((await sync.ListVersionsAsync(id, on.Id)).Select(v => v.ToDto()));
+    var list = (await sync.ListVersionsAsync(id, on.Id)).Select(v => v.ToDto()).ToList();
+    // A fork's head starts as the version it was forked from, which belongs to the source playthrough
+    // (SaveVersion.PlaythroughId) and so isn't in `list` until this playthrough gets its own push — the
+    // console includes it the same way (web's SavesCard.tsx, PlaythroughVersions).
+    if (on.HeadVersionId is { } headId && list.All(v => v.Id != headId) && await sync.GetVersionAsync(headId) is { } head)
+        list.Insert(0, head);
+    return Results.Ok(list);
 }).Produces<List<SaveVersionDto>>();
 
 // Copy a save to another emulator's tree of the same title, from an agent's own UI (tasks/multi-emulator-games Phase 6).

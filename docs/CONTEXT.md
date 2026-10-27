@@ -46,6 +46,22 @@ version-history Group 1.
 
 **Follow-up 2026-10-27, mockup-driven (`web/mockup-features/features/playthroughs.tsx`, `?focus=1` to view just this feature):** tabs now always show, even a single-playthrough game's lone "Main" (renameable there too, unlike before); **Default** and **Archived** moved from the head into a chip on the tab itself; switching tabs slides+fades from the side the new tab sits on (`.animate-pane-right`/`-left`, `src/index.css`). **New playthrough** is now a popup (`AddGameDialog`'s modal pattern) instead of an inline panel — the plan's "No modals" rule's one deliberate exception — with Name, then a shared **Playthrough + Version** picker (horizontal, labeled) both *Current save* and *Start fresh* sit under; *Start fresh* still always starts empty (the server can't see a device's files, so the picker there is informational, not functional — a real per-file keep list already exists on the agent, which does have the folder). Each version row's actions are icon-only now (Download, and **Fork** — `git-fork`/`download` added to `ui/Icon.tsx`, geometry from lucide-static 0.511.0, not hand-drawn); Fork opens the same New-playthrough popup pre-filled with that playthrough and version (normalizing to "Latest" when the forked version is already that playthrough's head), and the picker shows each version's real hash, not a placeholder. Agent-ui's equivalent trigger (`VersionsCard.tsx`'s `onFork`) renamed "New playthrough from this version" → **Fork…**, and it now passes the whole version so its label shows the hash too. Verified live on testenv (`console` + `WinTest` + `LinuxTest`): forked Chrono Trigger's Main (`062cf4ec`) into "Hard mode", confirmed the *From Main* tag and the real hash preselect, confirmed Default/Archived read correctly off a live fleet. `tsc -b`, `oxlint`, and `run-appearance-consistency-tests` (50/50) all clean.
 
+**Follow-up 2 2026-10-27, bug reports against the shipped UI:** *Start fresh*'s Playthrough+Version picker is now hidden
+rather than shown-but-inert (`SavesCard.tsx`'s `NewPlaythroughPanel`) — it did nothing there, and showing it with an
+explanatory note was more confusing than just not showing it. Agent-ui's "Versions on the server" (`VersionsCard.tsx`)
+now matches the console's `PlaythroughVersions`: a History/Backups `Seg` split (walked from `headId` by
+`parentVersionId`, same rule as the console), matching columns (Version · When · Machine · Size · State), and an
+icon-only Fork anchored to the row's end (`lucide-react`'s `GitFork`, agent-ui needs no hand-copied `Icon.tsx` since it
+uses the real package). Root cause of "Hard mode has no version in the agent though the console shows one": the
+agent-only route (`GET /api/agent/games/{id}/versions`) filtered strictly by `SaveVersion.PlaythroughId`, so a fresh
+fork's head — which belongs to the *source* playthrough until its own first push — was never in the list; the console
+never had this bug because it fetches every playthrough's versions unfiltered and injects the head client-side. Fixed
+server-side in `Program.cs`'s agent route instead (inserts the playthrough's head via `GetVersionAsync` when missing),
+since it's the one caller that narrows by playthrough. Verified live on testenv: Chrono Trigger's "Hard mode" (empty,
+forked from Main) now shows History 1 in the agent, matching the console; Kingdom Hearts II's Main now reads History 1
+/ Backups 1 in the agent (previously a flat "2 versions", which read as a mismatch against the console's own 1+1).
+`tsc -b` and `oxlint` clean on both `web` and `agent-ui`; server `dotnet build` clean.
+
 **Playthroughs Group 2 — one device — built (2026-10-26, branch `playthroughs-group-2`, stacked on `playthroughs-group-1`, PR open, not merged).** Phases 4–6 of
 [[tasks/save-playthroughs/plan]]: an agent now **follows one playthrough per game** and can **switch**. `SyncEngine.SwitchPlaythroughAsync` refuses while the game
 runs, a session is open here or a conflict is open, pushes the outgoing save to **its own** playthrough, restores the target's latest (or empties the folder for
