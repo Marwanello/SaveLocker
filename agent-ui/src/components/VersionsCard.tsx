@@ -18,8 +18,8 @@ interface Props {
   onCopy?: (versionId: string) => void
   /** A playthrough other than this device's own (tasks/save-playthroughs); the list is that one's. */
   playthrough?: string
-  /** "New playthrough from this version". */
-  onFork?: (versionId: string) => void
+  /** "Fork…": a new playthrough starting from this version. */
+  onFork?: (v: SaveVersion) => void
 }
 
 /**
@@ -77,8 +77,8 @@ export function VersionsCard({ gameId, headId, refreshKey, onLoaded, title = 'Ve
                     {v.id === headId && <Chip tone="ok">Latest</Chip>}
                     {v.protected && v.id !== headId && <Chip>Protected</Chip>}
                     {onFork && !v.mergedFrom && (
-                      <Button size="sm" variant="quiet" data-pad-label="New playthrough from this version" onClick={() => onFork(v.id)}>
-                        New playthrough…
+                      <Button size="sm" variant="quiet" data-pad-label="Fork this version into a new playthrough" onClick={() => onFork(v)}>
+                        Fork…
                       </Button>
                     )}
                     {onCopy && !v.mergedFrom && (

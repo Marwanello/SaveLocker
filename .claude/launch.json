@@ -15,6 +15,14 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "agent-ui",
       "port": 5177
+    },
+    {
+      "name": "web-mockups",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "mockups"],
+      "cwd": "web",
+      "port": 5174,
+      "autoPort": true
     }
   ]
 }

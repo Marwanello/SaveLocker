@@ -282,7 +282,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       </Card>
       <VersionsCard key={otherPt.id} gameId={game.id} headId={otherPt.head?.id ?? null} refreshKey={syncCount}
         onLoaded={() => {}} playthrough={otherPt.id} title={`Versions on the server · ${otherPt.name}`}
-        onFork={v => setCreating({ fromVersion: { id: v, label: `a version of ${otherPt.name}` } })} />
+        onFork={v => setCreating({ fromVersion: { id: v.id, label: `${otherPt.name} · ${v.id.slice(0, 8)}` } })} />
     </>
   )
 
@@ -541,7 +541,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
             : undefined}
           onCopy={titled ? setCopyFrom : undefined}
           playthrough={selectedPt && several ? selectedPt.id : undefined}
-          onFork={v => setCreating({ fromVersion: { id: v, label: `a version of ${selectedPt?.name ?? 'this playthrough'}` } })} />}
+          onFork={v => setCreating({ fromVersion: { id: v.id, label: `${selectedPt?.name ?? 'this playthrough'} · ${v.id.slice(0, 8)}` } })} />}
         <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
       </div>
 

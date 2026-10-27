@@ -186,15 +186,21 @@ function fresh(feature: string, variant: Variant, navSeq: number): MockState {
   }
 }
 
+/** `?focus=1`: just the one feature under review, chosen variant only, chrome hidden — for sending a link
+ *  that isn't buried in every other exploration. Independent of the `#game=...` hash the app itself drives. */
+export const FOCUS = new URLSearchParams(location.search).has('focus')
+
 let state: MockState = (() => {
   let feature = FEATURES[0].id
   try { feature = localStorage.getItem('slc:feature') ?? feature } catch { /* storage off */ }
   const hash = location.hash.slice(1)
   if (FEATURES.some(f => f.id === hash)) feature = hash
   if (!FEATURES.some(f => f.id === feature)) feature = FEATURES[0].id
+  if (FOCUS) feature = 'pt-console'
   let combined = hash === 'combined'
   try { combined ||= !FEATURES.some(f => f.id === hash) && localStorage.getItem('slc:combined') === '1' } catch { /* storage off */ }
-  return { ...fresh(feature, 'A', 1), combined, sim: combined ? 'ok' : fresh(feature, 'A', 1).sim }
+  const variant = FOCUS ? 'E' : 'A'
+  return { ...fresh(feature, variant, 1), combined: FOCUS ? false : combined, sim: combined ? 'ok' : fresh(feature, variant, 1).sim }
 })()
 const subs = new Set<() => void>()
 let timer: number | undefined
