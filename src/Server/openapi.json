@@ -4244,6 +4244,14 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "playthrough",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {

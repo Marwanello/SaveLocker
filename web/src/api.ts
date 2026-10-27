@@ -177,8 +177,7 @@ export const api = {
   machines: () => request<Machine[]>('/machines'),
   commands: () => request<Command[]>('/commands'),
   settings: () => request<Settings>('/settings'),
-  versions: (gameId: string, playthroughId?: string) =>
-    request<Version[]>(`/games/${gameId}/versions${playthroughId ? `?playthrough=${playthroughId}` : ''}`),
+  versions: (gameId: string) => request<Version[]>(`/games/${gameId}/versions`),
   /** File count / newest-mtime for one version, read from its archive on demand. Used to help tell
    * apart the two sides of an open conflict — deliberately not part of the versions list above, so
    * listing versions never has to open a zip for ones nobody is looking at. */
@@ -261,8 +260,9 @@ export const api = {
     request<void>(`/games/${gameId}/versions/${versionId}/protected?value=${value}`, { method: 'POST' }),
 
   /** Apply the game's retention limit now, rather than waiting for the next upload to trigger it. */
-  pruneNow: (gameId: string) =>
-    request<{ removed: number }>(`/games/${gameId}/prune`, { method: 'POST' }),
+  /** `playthroughId`: prune just that playthrough; without it, every one of the game's. */
+  pruneNow: (gameId: string, playthroughId?: string) =>
+    request<{ removed: number }>(`/games/${gameId}/prune${playthroughId ? `?playthrough=${playthroughId}` : ''}`, { method: 'POST' }),
 
   /**
    * Download one version's archive.

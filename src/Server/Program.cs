@@ -1479,9 +1479,9 @@ admin.MapGet("/games/{id:guid}/versions/changes", async (Guid id, SyncService sy
     await sync.ListVersionChangesAsync(id) is { } changes ? Results.Ok(changes) : Results.NotFound())
     .Produces<VersionChangesDto[]>();
 
-// Apply retention immediately, instead of only as a side effect of the next upload.
-admin.MapPost("/games/{id:guid}/prune", async (Guid id, SyncService sync) =>
-    Results.Ok(new PruneResult(await sync.PruneNowAsync(id))));
+// Apply retention immediately, instead of only as a side effect of the next upload. `playthrough`: just that one.
+admin.MapPost("/games/{id:guid}/prune", async (Guid id, Guid? playthrough, SyncService sync) =>
+    Results.Ok(new PruneResult(await sync.PruneNowAsync(id, playthrough))));
 
 // ---- Admin actions ----
 admin.MapGet("/conflicts", async (SyncService sync) =>

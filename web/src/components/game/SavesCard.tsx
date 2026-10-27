@@ -19,6 +19,10 @@ interface Props {
   game: Game;
   machines: Machine[];
   health: AgentHealth[];
+  /** Every playthrough's versions (GameDetail keeps them current as pushes land); each tab shows its own. */
+  versions: Version[];
+  loadingVersions: boolean;
+  reloadVersions: () => Promise<void>;
   /** This game's open conflicts — their two sides read "Conflicting" and are never pruned. */
   conflicts: Conflict[];
   onRefresh: () => void;
@@ -34,7 +38,7 @@ type View = 'main' | 'backups';
  * Versions card grown into "Saves" — a tab per playthrough, the devices that play it, and its own
  * versions underneath with the Versions card's row actions. Every game has at least Main.
  */
-export function SavesCard({ game, machines, health, conflicts, onRefresh, onCopy }: Props) {
+export function SavesCard({ game, machines, health, versions, loadingVersions, reloadVersions, conflicts, onRefresh, onCopy }: Props) {
   const tw = useTreeWord();
   const only = tw ? ` Only the${tw} save changes; the other emulators’ are not touched.` : '';
 
@@ -44,28 +48,25 @@ export function SavesCard({ game, machines, health, conflicts, onRefresh, onCopy
   const [selected, setSelected] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
 
-  async function reloadPlaythroughs(keep = selected) {
-    const list = await api.playthroughs(game.id);
-    setPlaythroughs(list);
-    setSelected(cur =>
-      cur && list.some(p => p.id === cur) ? cur
-      : keep && list.some(p => p.id === keep) ? keep
-      : list.find(p => p.isDefault)?.id ?? list[0]?.id ?? null);
-    return list;
-  }
-
-  useEffect(() => {
-    setLoadingPts(true);
-    setSelected(null);
-    api.playthroughs(game.id)
-      .then(list => { setPlaythroughs(list); setSelected(list.find(p => p.isDefault)?.id ?? list[0]?.id ?? null); })
-      .catch(e => toastError('Could not load playthroughs: ' + errorText(e)))
-      .finally(() => setLoadingPts(false));
+  // `select` (a playthrough just created) wins over the open tab; a tab that no longer exists falls back to the default.
+  const reloadPlaythroughs = useCallback(async (select?: string) => {
+    try {
+      const list = await api.playthroughs(game.id);
+      setPlaythroughs(list);
+      setSelected(cur => [select, cur].find(id => id && list.some(p => p.id === id)) ?? null);
+    } catch (e) { toastError('Could not load playthroughs: ' + errorText(e)); }
   }, [game.id]);
+
+  // Re-read whenever a version arrives or goes: each playthrough's head, counts and devices move with them.
+  const versionsKey = versions.map(v => v.id).join(',');
+  useEffect(() => { void reloadPlaythroughs().finally(() => setLoadingPts(false)); }, [reloadPlaythroughs, versionsKey]);
 
   const many = playthroughs.length > 1;
   const shown = playthroughs.filter(p => showArchived || !p.archivedAt);
-  const current = playthroughs.find(p => p.id === selected) ?? shown[0] ?? null;
+  // Not `playthroughs.find`: archiving the open tab with "Show archived" off must not leave it showing without its tab.
+  const current = shown.find(p => p.id === selected) ?? shown.find(p => p.isDefault) ?? shown[0] ?? null;
+  const heads = new Set(playthroughs.flatMap(p => p.head ? [p.head.id] : []));
+  const nameOf = (id: string | null | undefined) => playthroughs.find(p => p.id === id)?.name ?? 'another playthrough';
 
   return (
     <Card
@@ -78,6 +79,14 @@ export function SavesCard({ game, machines, health, conflicts, onRefresh, onCopy
         <Button size="sm" onClick={() => setPanel({ kind: 'new' })}><Icon name="plus" size={13} />New playthrough</Button>
       </>}
     >
+      {panel?.kind === 'new' && (
+        <NewPlaythroughPanel
+          key={panel.fromVersion?.id ?? 'new'}
+          game={game} playthroughs={playthroughs} current={current} fromVersion={panel.fromVersion}
+          onClose={() => setPanel(null)}
+          onCreated={async id => { await reloadPlaythroughs(id); setPanel(null); onRefresh(); }}
+        />
+      )}
       {loadingPts
         ? <p className="px-4 py-5 text-[13px] text-dim">Loading…</p>
         : !current
@@ -99,7 +108,7 @@ export function SavesCard({ game, machines, health, conflicts, onRefresh, onCopy
                 game={game} pt={current} panel={panel} onPanel={setPanel}
                 onChanged={async () => { await reloadPlaythroughs(); onRefresh(); }}
               />
-              {panel?.kind === 'switch' && (
+              {panel?.kind === 'switch' && !current.archivedAt && (
                 <SwitchDevicePanel
                   game={game} pt={current} machines={machines} health={health}
                   onClose={() => setPanel(null)} onRefresh={onRefresh}
@@ -112,19 +121,13 @@ export function SavesCard({ game, machines, health, conflicts, onRefresh, onCopy
                 />
               )}
               <PlaythroughVersions
-                key={current.id} game={game} pt={current} conflicts={conflicts} onCopy={onCopy}
-                only={only}
+                key={current.id} game={game} pt={current} versions={versions} loading={loadingVersions} heads={heads}
+                nameOf={nameOf} conflicts={conflicts} onCopy={onCopy} only={only}
                 onNewFromVersion={v => setPanel({ kind: 'new', fromVersion: v })}
+                reload={reloadVersions}
                 onChanged={() => { void reloadPlaythroughs(); onRefresh(); }}
               />
             </>}
-      {panel?.kind === 'new' && (
-        <NewPlaythroughPanel
-          game={game} playthroughs={playthroughs} current={current} fromVersion={panel.fromVersion}
-          onClose={() => setPanel(null)}
-          onCreated={async id => { await reloadPlaythroughs(id); setPanel(null); onRefresh(); }}
-        />
-      )}
     </Card>
   );
 }
@@ -161,7 +164,7 @@ function PlaythroughHead({ game, pt, panel, onPanel, onChanged }: {
         </span>
       </div>
       <span className="flex gap-1.5 flex-wrap items-center">
-        <Button size="sm" variant="primary" onClick={() => onPanel(panel?.kind === 'switch' ? null : { kind: 'switch' })}>Switch a device to this…</Button>
+        {!pt.archivedAt && <Button size="sm" variant="primary" onClick={() => onPanel(panel?.kind === 'switch' ? null : { kind: 'switch' })}>Switch a device to this…</Button>}
         <Button size="sm" variant="quiet" onClick={() => onPanel(panel?.kind === 'rename' ? null : { kind: 'rename' })}>Rename</Button>
         {!pt.isDefault && !pt.archivedAt && <Button size="sm" variant="quiet" onClick={() => void setDefault()}>Make default</Button>}
         {!pt.isDefault && (
@@ -248,11 +251,12 @@ function NewPlaythroughPanel({ game, playthroughs, current, fromVersion, onClose
   onClose: () => void; onCreated: (id: string) => void;
 }) {
   const [name, setName] = useState('');
-  const [how, setHow] = useState<'current' | 'fresh'>(fromVersion ? 'current' : 'current');
-  const [from, setFrom] = useState(current?.id ?? playthroughs[0]?.id ?? '');
+  const live = playthroughs.filter(p => !p.archivedAt);
+  const [how, setHow] = useState<'current' | 'fresh'>('current');
+  // The open tab when it is one the list offers; an archived one is not, and would leave the select blank.
+  const [from, setFrom] = useState((live.find(p => p.id === current?.id) ?? live.find(p => p.isDefault) ?? live[0])?.id ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const live = playthroughs.filter(p => !p.archivedAt);
 
   async function submit() {
     if (!name.trim()) return;
@@ -313,27 +317,26 @@ function NewPlaythroughPanel({ game, playthroughs, current, fromVersion, onClose
 }
 
 /**
- * This playthrough's own versions, scoped with `?playthrough=` (`SyncService.ListVersionsAsync`):
+ * This playthrough's own versions, picked by `playthroughId` out of GameDetail's list (which re-reads as pushes land):
  * the old Versions card's table, unchanged in its row actions, plus "New playthrough from this version".
  */
-function PlaythroughVersions({ game, pt, conflicts, onCopy, only, onNewFromVersion, onChanged }: {
-  game: Game; pt: Playthrough; conflicts: Conflict[]; onCopy?: (v: Version) => void; only: string;
-  onNewFromVersion: (v: Version) => void; onChanged: () => void;
+function PlaythroughVersions({ game, pt, versions: all, loading, heads, nameOf, conflicts, onCopy, only, onNewFromVersion, reload, onChanged }: {
+  game: Game; pt: Playthrough; versions: Version[]; loading: boolean; heads: Set<string>;
+  nameOf: (playthroughId: string | null | undefined) => string; conflicts: Conflict[]; onCopy?: (v: Version) => void; only: string;
+  onNewFromVersion: (v: Version) => void; reload: () => Promise<void>; onChanged: () => void;
 }) {
-  const [versions, setVersions] = useState<Version[]>([]);
-  const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>('main');
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [changes, setChanges] = useState<Map<string, VersionChanges>>(new Map());
   const [answered, setAnswered] = useState<{ listKey: string; failed: boolean } | null>(null);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try { setVersions(await api.versions(game.id, pt.id)); }
-    catch (e) { toastError('Could not load versions: ' + errorText(e)); }
-    finally { setLoading(false); }
-  }, [game.id, pt.id]);
-  useEffect(() => { void reload(); }, [reload]);
+  const headId = pt.head?.id ?? null;
+  // A fork's head is the version it started from, which stays in the playthrough it was made in (nothing is
+  // copied): listed here too, or a new fork's History reads "No versions yet" under a header naming its latest.
+  const own = all.filter(v => v.playthroughId === pt.id);
+  const versions = pt.head && !own.some(v => v.id === headId)
+    ? [all.find(v => v.id === headId) ?? pt.head, ...own]
+    : own;
 
   const listKey = versions.map(v => v.id).join(',');
   const changesStatus: ChangesStatus = answered?.listKey !== listKey ? 'loading' : answered.failed ? 'failed' : 'loaded';
@@ -350,7 +353,6 @@ function PlaythroughVersions({ game, pt, conflicts, onCopy, only, onNewFromVersi
     setOpen(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
 
-  const headId = pt.head?.id ?? null;
   const mainIds = new Set<string>();
   {
     const byId = new Map(versions.map(v => [v.id, v]));
@@ -360,21 +362,19 @@ function PlaythroughVersions({ game, pt, conflicts, onCopy, only, onNewFromVersi
   const main = versions.filter(v => mainIds.has(v.id));
   const backups = versions.filter(v => !mainIds.has(v.id));
   const shown = view === 'main' ? main : backups;
-  // A conflict carries no playthroughId of its own; its two versions are already scoped to this
-  // playthrough's own list, so intersecting with it is what tells the two apart.
-  const versionIds = new Set(versions.map(v => v.id));
-  const conflicting = new Set(
-    conflicts.flatMap(c => [c.versionAId, c.versionBId]).filter(id => versionIds.has(id)));
+  const conflicting = new Set(conflicts.filter(c => c.playthroughId === pt.id).flatMap(c => [c.versionAId, c.versionBId]));
 
+  // The server's rule (SyncService.PruneVersionsAsync) for this playthrough alone: its own versions, newest first, past
+  // the limit, never one that is any playthrough's head (a fork's starts as one of these), a conflict side or protected.
   const limit = game.retainVersions;
   const prunable = limit != null && limit > 0
-    ? [...versions].sort((x, y) => toMs(y.createdAt) - toMs(x.createdAt)).slice(limit)
-        .filter(v => !v.protected && v.id !== headId && !conflicting.has(v.id)).length
+    ? [...own].sort((x, y) => toMs(y.createdAt) - toMs(x.createdAt)).slice(limit)
+        .filter(v => !v.protected && !heads.has(v.id) && !conflicting.has(v.id)).length
     : null;
 
   async function prune() {
     try {
-      const r = await api.pruneNow(game.id);
+      const r = await api.pruneNow(game.id, pt.id);
       await reload();
       onChanged();
       toast(r.removed > 0 ? `Removed ${plural(r.removed, 'version')}.` : 'Nothing to remove — already within the limit.');
@@ -406,6 +406,11 @@ function PlaythroughVersions({ game, pt, conflicts, onCopy, only, onNewFromVersi
     } catch (e) { toastError('Could not set Latest: ' + errorText(e)); }
   }
 
+  function forked(v: Version) {
+    if (v.playthroughId === pt.id) return null;
+    return <span title={`${pt.name} started from this save. It belongs to ${nameOf(v.playthroughId)} and stays there.`}><Chip>From {nameOf(v.playthroughId)}</Chip></span>;
+  }
+
   function copied(v: Version) {
     if (!v.copiedFrom) return null;
     return <span title={`Copied from ${v.copiedFrom}'s save of this game.`}><Chip>From {v.copiedFrom}</Chip></span>;
@@ -430,9 +435,9 @@ function PlaythroughVersions({ game, pt, conflicts, onCopy, only, onNewFromVersi
             </button>
           ))}
         </div>
-        <Chip>{versions.length} kept</Chip>
+        <Chip>{own.length} kept</Chip>
         <Button size="sm" variant="quiet" disabled={open.size === 0} onClick={() => setOpen(new Set())}>Collapse all</Button>
-        {prunable === null
+        {pt.archivedAt ? null : prunable === null
           ? <InlineConfirm
               label="Apply retention" title="Apply the server's default retention to this playthrough now"
               consequence="Keeps the server's default number of newest versions and permanently deletes the older ones. The Latest, both sides of an open conflict and protected versions are never deleted."
@@ -482,7 +487,7 @@ function PlaythroughVersions({ game, pt, conflicts, onCopy, only, onNewFromVersi
               { head: 'Size', kind: 'n', cell: v => fmtSize(v.size) },
               {
                 head: 'State', kind: 'wrap',
-                cell: v => <span className="flex gap-1 items-center flex-wrap min-w-[10.5rem]">{state(v)}{copied(v)}<ChangeChips changes={changes.get(v.id)} /></span>,
+                cell: v => <span className="flex gap-1 items-center flex-wrap min-w-[10.5rem]">{state(v)}{forked(v)}{copied(v)}<ChangeChips changes={changes.get(v.id)} /></span>,
               },
               {
                 head: '', label: 'Actions', end: true,
@@ -496,7 +501,9 @@ function PlaythroughVersions({ game, pt, conflicts, onCopy, only, onNewFromVersi
                       />
                     )}
                     <Button size="sm" variant="quiet" onClick={() => void download(v)} title="Download this version's archive">Download</Button>
-                    <Button size="sm" variant="quiet" onClick={() => onNewFromVersion(v)} title="Start a new playthrough from this save">New playthrough from this</Button>
+                    {!v.mergedFrom && (
+                      <Button size="sm" variant="quiet" onClick={() => onNewFromVersion(v)} title="Start a new playthrough from this save">New playthrough from this</Button>
+                    )}
                     {onCopy && !v.mergedFrom && (
                       <Button size="sm" variant="quiet" onClick={() => onCopy(v)} title="Copy this save to another emulator's tree of this game">Copy to…</Button>
                     )}
