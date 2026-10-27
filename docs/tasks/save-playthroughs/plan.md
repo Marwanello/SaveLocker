@@ -19,9 +19,9 @@ implementation-grouping.md]] says which phases share a session and in what order
 | 4 — Agent core: follow a playthrough, switch safely | ✅ Shipped 2026-10-26 (Group 2, branch `playthroughs-group-2`) — `run-playthrough-agent-tests.ps1` drives it end to end; the console's switch command (`AgentCommand`) runs the same method |
 | 5 — Agent local copy store (deduplicated, three modes) | ✅ Shipped 2026-10-26 — `PlaythroughStoreTests` (dedup, verify-on-restore, sweep grace, clear keeps the only copy) + the offline sections of the agent suite |
 | 6 — Agent UI (playthrough tabs, Settings in sections) + CLI | ✅ Shipped 2026-10-26 — tabs, New playthrough, switch dialog, Settings in six sections with LT/RT; checked in the browser pane against the testenv console and tray; **not** on a controller or a Deck |
-| 7 — Console: Saves card, fork, switch a device | ⏳ Not started |
-| 8 — Decky: dropdown on the Games row and in the QAM, icons, List / Grid | ⏳ Not started |
-| 9 — Playnite: Playthrough submenu | ⏳ Not started |
+| 7 — Console: Saves card, fork, switch a device | ✅ Shipped 2026-10-27 (branch `playthroughs-group-3`) — Saves card (tabs, variant E), New playthrough (current save / start fresh), rename, archive/unarchive, default for new devices, "New playthrough from this version", and queuing `SwitchPlaythrough` on a device; delete deferred to Phase 10 |
+| 8 — Decky: dropdown on the Games row and in the QAM, icons, List / Grid | ⏳ Not started — its own repo/PR per implementation-grouping.md |
+| 9 — Playnite: Playthrough submenu | ⏳ Not started — its own repo/PR per implementation-grouping.md |
 | 10 — Delete to trash | ⏳ Not started — needs version-history Phase 1 (trash) |
 | testenv pass | ⏳ Not run |
 

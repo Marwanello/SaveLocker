@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, ArtSource, SgdbGame, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, ManifestRefreshSettings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MergePreview, TitleCandidate, CopyTarget, MachineGameSource, GameContent, ContentTransfer, HandoverOverview, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
+import type { ArtKind, ArtOptionsPage, ArtSource, SgdbGame, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, ManifestRefreshSettings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MergePreview, TitleCandidate, CopyTarget, MachineGameSource, GameContent, ContentTransfer, HandoverOverview, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket, Playthrough, CreatePlaythroughRequest } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -177,7 +177,8 @@ export const api = {
   machines: () => request<Machine[]>('/machines'),
   commands: () => request<Command[]>('/commands'),
   settings: () => request<Settings>('/settings'),
-  versions: (gameId: string) => request<Version[]>(`/games/${gameId}/versions`),
+  versions: (gameId: string, playthroughId?: string) =>
+    request<Version[]>(`/games/${gameId}/versions${playthroughId ? `?playthrough=${playthroughId}` : ''}`),
   /** File count / newest-mtime for one version, read from its archive on demand. Used to help tell
    * apart the two sides of an open conflict — deliberately not part of the versions list above, so
    * listing versions never has to open a zip for ones nobody is looking at. */
@@ -290,6 +291,26 @@ export const api = {
 
   queueCommand: (machineId: string, gameId: string, type: string, force: boolean) =>
     request<void>('/commands', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ machineId, gameId, type, force }) }),
+
+  /** tasks/save-playthroughs Phase 7: the game's playthroughs, the default first, with their devices. */
+  playthroughs: (gameId: string) => request<Playthrough[]>(`/games/${gameId}/playthroughs`),
+  /** A new playthrough: from a version (`fromVersionId`), from another playthrough's latest
+   * (`fromPlaythroughId`), or empty when neither is given ("Start fresh"). */
+  createPlaythrough: (gameId: string, body: CreatePlaythroughRequest) =>
+    request<Playthrough>(`/games/${gameId}/playthroughs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  renamePlaythrough: (gameId: string, playthroughId: string, name: string) =>
+    request<Playthrough>(`/games/${gameId}/playthroughs/${playthroughId}/rename`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
+  setPlaythroughArchived: (gameId: string, playthroughId: string, archived: boolean) =>
+    request<Playthrough>(`/games/${gameId}/playthroughs/${playthroughId}/${archived ? 'archive' : 'unarchive'}`, { method: 'POST' }),
+  setDefaultPlaythrough: (gameId: string, playthroughId: string) =>
+    request<Playthrough>(`/games/${gameId}/playthroughs/${playthroughId}/default`, { method: 'POST' }),
+  /** Queues `SwitchPlaythrough` on `machineId`: the device runs the switch itself (push, local copy,
+   * pull the target) and refuses while the game is running. */
+  switchDevicePlaythrough: (machineId: string, gameId: string, playthroughId: string) =>
+    request<void>('/commands', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ machineId, gameId, type: 'SwitchPlaythrough', force: false, playthroughId }),
+    }),
 
   /**
    * Console "Sync all": one call, one command per machine. `gameId: null` on each — the agent's

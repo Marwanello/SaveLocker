@@ -18,6 +18,31 @@ and 1 — both resolve to the same rollout: the console and fleet are now curren
 which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
 fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
+**Playthroughs Group 3, Phase 7 — the console's Saves card — built (2026-10-27, branch `playthroughs-group-3`,
+stacked on `main` with Groups 1 and 2 merged, PR open, not merged).** The console's game page gets a **Saves** card
+in place of Versions ([[tasks/save-playthroughs/plan]] Phase 7, chosen mockup variant E,
+`web/mockup-features/features/playthroughs.tsx`): a tab per playthrough (just Main on every game until a second
+exists), each tab's own head (devices, Switch a device to this…, Rename, Make default, Archive/Unarchive) and its
+own versions table underneath, scoped with the existing `?playthrough=` query the server already answered
+(`SyncService.ListVersionsAsync`) — nothing new on the server. **New playthrough** offers *Current save* (fork
+another playthrough's or a specific version's latest — "New playthrough from this version" sits in the versions
+table's row actions) or *Start fresh* (an empty playthrough; there is no local save folder on the console to offer
+a file-keep list from, so that part of the agent/Playnite flow does not apply here — a deliberate scope decision,
+not an oversight). **Switch a device to this…** only queues `AgentCommandType.SwitchPlaythrough`
+(`api.switchDevicePlaythrough`, matching the existing Push/Pull/Sync "queue and toast" idiom); the device runs the
+switch itself (Group 2) and the result shows up in the game page's existing Remote commands table — no new
+progress UI was built for this, since one already exists. `VersionsCard.tsx` is gone, folded into the new
+`SavesCard.tsx`; `GameDetail.tsx` updated, `web/src/api.ts`/`types.ts` gained the playthrough calls (admin routes
+from Group 1, unchanged). **Verified live** against a throwaway dev server + the dashboard dev server: created a
+game, a second and third playthrough (one from "Current save" — correctly refused by the server with "has no save
+yet to start from" until a real push exists, one "Start fresh"), renamed, archived and unarchived, and confirmed
+"Switch a device to this…" degrades correctly with zero machines enrolled (the button stays disabled, no request
+fires). `tsc -b`, `vite build` and `oxlint` all clean. **Not verified:** an actual switch against a running agent,
+and a multi-emulator game's playthrough tabs under its emulator tabs (Phase 6/7's interaction) — neither this repo
+had a second emulator tree or a live agent handy. **Next action:** Decky (Phase 8) and Playnite (Phase 9) each need
+their own repo/worktree/PR per `implementation-grouping.md`; Phase 10 (delete to trash) still waits on
+version-history Group 1.
+
 **Playthroughs Group 2 — one device — built (2026-10-26, branch `playthroughs-group-2`, stacked on `playthroughs-group-1`, PR open, not merged).** Phases 4–6 of
 [[tasks/save-playthroughs/plan]]: an agent now **follows one playthrough per game** and can **switch**. `SyncEngine.SwitchPlaythroughAsync` refuses while the game
 runs, a session is open here or a conflict is open, pushes the outgoing save to **its own** playthrough, restores the target's latest (or empties the folder for
