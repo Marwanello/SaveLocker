@@ -62,6 +62,21 @@ forked from Main) now shows History 1 in the agent, matching the console; Kingdo
 / Backups 1 in the agent (previously a flat "2 versions", which read as a mismatch against the console's own 1+1).
 `tsc -b` and `oxlint` clean on both `web` and `agent-ui`; server `dotnet build` clean.
 
+**Follow-up 3 2026-10-28, agent-ui page layout and freshness:** the game page's "Versions on the server" is now the
+first card (full width, no longer paired with `GameManagement` in `sl-grid2`) — it was the thing being asked for most
+and used to be buried below Sync buttons, stats and two other cards. `PlaythroughTabs.tsx`'s subtitle no longer says
+"also on <device>" — that device list is one scroll away on the page itself, and the tab was the wrong place for it.
+A new playthrough made on the console used to need a back-then-forward to show up here: there's no push channel from
+the server for this (the agent's own `/api/activity` poll is local-only — a file change or a sync this agent ran, not
+a hint the server's *metadata* moved), so `GameDetailView` now re-asks `/api/playthroughs` every 5s while the page is
+open, plus once immediately on tab-focus regain. Separately, `GamesView` used to flash "No games are on this machine
+or the server yet" / **Add games** for every cold open, including the common case of the first `/api/games` request
+still in flight — `games` starts at `[]` in `App.tsx` with no "have we asked yet" of its own. Added `gamesLoaded`
+(true once that first request settles, success or fail) and a loading state in `GamesView` so the empty state only
+ever shows once there's a real answer. Verified live on testenv: created "Heartbeat test" on the console and watched
+it appear in the open agent tab (`WinTest`) within the 5s poll, no navigation; confirmed the Versions card's new
+position and the tab subtitles. `tsc -b`, `oxlint` clean; `run-appearance-consistency-tests` 50/50.
+
 **Playthroughs Group 2 — one device — built (2026-10-26, branch `playthroughs-group-2`, stacked on `playthroughs-group-1`, PR open, not merged).** Phases 4–6 of
 [[tasks/save-playthroughs/plan]]: an agent now **follows one playthrough per game** and can **switch**. `SyncEngine.SwitchPlaythroughAsync` refuses while the game
 runs, a session is open here or a conflict is open, pushes the outgoing save to **its own** playthrough, restores the target's latest (or empties the folder for

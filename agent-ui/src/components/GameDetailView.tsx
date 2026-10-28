@@ -121,6 +121,18 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
     api.playthroughs(game.id).then(setPts).catch(() => setPts(null))
   }, [game.id, game.path])
 
+  // The server has no push channel for this (no heartbeat/event from it, unlike the agent's own
+  // /api/activity poll above): a playthrough made from the console only shows up here on the next
+  // ask. Poll gently while this page is open, and catch up at once when the tab regains focus —
+  // same idea as useActivity's visibilitychange handling, just not worth sharing its machinery for
+  // one route's data.
+  useEffect(() => {
+    const tick = () => { if (!document.hidden) loadPlaythroughs() }
+    const timer = window.setInterval(tick, 5000)
+    document.addEventListener('visibilitychange', tick)
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', tick) }
+  }, [loadPlaythroughs])
+
   // The agent's word that this game's files here changed, or that a push, pull or hold ran for it from anywhere (the
   // folder watcher, Sync all, the launch gate, another surface): everything a sync from this page refreshes follows.
   const changedAt = useFilesChangedAt(game.id)
@@ -235,6 +247,9 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   // Looking at a playthrough this device is not on: read-only, with the one way to change that.
   const otherPanel = otherPt && (
     <>
+      <VersionsCard key={otherPt.id} gameId={game.id} headId={otherPt.head?.id ?? null} refreshKey={syncCount}
+        onLoaded={() => {}} playthrough={otherPt.id} title={`Versions on the server · ${otherPt.name}`}
+        onFork={v => setCreating({ fromVersion: { id: v.id, label: `${otherPt.name} · ${shortId(v.id)}` } })} />
       <Card title={`${otherPt.name}${otherPt.isDefault ? ' · default' : ''}${otherPt.archivedAt ? ' · archived' : ''}`}
         headerRight={otherPt.hasOpenConflict ? <Chip tone="crit">Conflict</Chip> : undefined}>
         <div className="sl-stack" style={{ gap: 12 }}>
@@ -280,9 +295,6 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
           </div>
         </div>
       </Card>
-      <VersionsCard key={otherPt.id} gameId={game.id} headId={otherPt.head?.id ?? null} refreshKey={syncCount}
-        onLoaded={() => {}} playthrough={otherPt.id} title={`Versions on the server · ${otherPt.name}`}
-        onFork={v => setCreating({ fromVersion: { id: v.id, label: `${otherPt.name} · ${shortId(v.id)}` } })} />
     </>
   )
 
@@ -334,7 +346,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
 
       {enrolled && pts && (pts.playthroughs.length > 0 || pts.selectedId) && (
         <PlaythroughTabs
-          data={pts} viewing={viewing} disabled={locked} machineName={machineName}
+          data={pts} viewing={viewing} disabled={locked}
           onView={id => { setViewing(id === pts.selectedId ? null : id); setRenaming(null); setConfirmArchive(false) }}
           onNew={() => setCreating({ fromVersion: null })}
         />
@@ -403,6 +415,14 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
       )}
 
       {offlinePanel ?? (otherPt ? otherPanel : <>
+      {!offline && <VersionsCard gameId={game.id} headId={head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions}
+        title={[titled ? treeName : null, several ? selectedPt?.name : null].some(Boolean)
+          ? `Versions on the server · ${[titled ? treeName : null, several ? selectedPt?.name : null].filter(Boolean).join(' · ')}`
+          : undefined}
+        onCopy={titled ? setCopyFrom : undefined}
+        playthrough={selectedPt && several ? selectedPt.id : undefined}
+        onFork={v => setCreating({ fromVersion: { id: v.id, label: `${selectedPt?.name ?? 'this playthrough'} · ${shortId(v.id)}` } })} />}
+
       {enrolled ? (
         <div className="sl-actions">
           <Button variant="primary" data-pad-action="sync-this-game" disabled={locked} onClick={() => void run('sync')}>
@@ -534,16 +554,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
         </Card>
       </div>
 
-      <div className="sl-grid2">
-        {!offline && <VersionsCard gameId={game.id} headId={head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions}
-          title={[titled ? treeName : null, several ? selectedPt?.name : null].some(Boolean)
-            ? `Versions on the server · ${[titled ? treeName : null, several ? selectedPt?.name : null].filter(Boolean).join(' · ')}`
-            : undefined}
-          onCopy={titled ? setCopyFrom : undefined}
-          playthrough={selectedPt && several ? selectedPt.id : undefined}
-          onFork={v => setCreating({ fromVersion: { id: v.id, label: `${selectedPt?.name ?? 'this playthrough'} · ${shortId(v.id)}` } })} />}
-        <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
-      </div>
+      <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
 
       {enrolled && <SaveFilesCard gameId={game.id} refreshKey={syncCount} />}
       </>)}

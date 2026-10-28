@@ -1,6 +1,7 @@
 import { PlatformIcon } from './ui/PlatformIcon'
 import { consoleIcon } from '../platformIcon'
 import { useMemo, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 import type { Conflict, TrackedGame, View } from '../types'
 import { regionLabel } from '../format'
 import { PadGlyph } from '../gamepad/PadGlyph'
@@ -16,6 +17,9 @@ import type { GameTitle } from '../titles'
 
 interface Props {
   games: TrackedGame[]
+  /** False until the first `/api/games` request has settled — `games` is empty either way until then,
+   *  so without this "Add games" would flash on open even when games are on their way in. */
+  loaded: boolean
   conflicts: Conflict[]
   onOpen: (id: string) => void
   onNavigate: (v: View) => void
@@ -119,7 +123,7 @@ function Group({ title, note, games, mode, conflicted, onOpen }: GroupProps) {
  * config, so it costs nothing. `sync-status` hashes a save folder and is never asked for here: it is
  * for the one game a person has opened, on an explicit "Check now".
  */
-export function GamesView({ games, conflicts, onOpen, onNavigate }: Props) {
+export function GamesView({ games, loaded, conflicts, onOpen, onNavigate }: Props) {
   const [mode, setMode] = useState<Mode>(readMode)
   const [query, setQuery] = useState('')
 
@@ -143,6 +147,19 @@ export function GamesView({ games, conflicts, onOpen, onNavigate }: Props) {
   function pick(next: Mode) {
     setMode(next)
     try { localStorage.setItem(MODE_KEY, next) } catch { /* private window: the choice just lasts this visit */ }
+  }
+
+  if (!loaded) {
+    return (
+      <div className="sl-page">
+        <Card>
+          <div className="sl-empty">
+            <RefreshCw size={18} strokeWidth={1.9} className="sl-spin" aria-hidden="true" />
+            <p style={{ marginTop: 10 }}>Loading…</p>
+          </div>
+        </Card>
+      </div>
+    )
   }
 
   if (games.length === 0) {
