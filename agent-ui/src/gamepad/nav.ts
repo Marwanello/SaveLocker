@@ -529,6 +529,9 @@ function pressX() {
   const section = currentSection()
   if (section === 'Games') {
     if (isGamePage()) {
+      // Looking at a playthrough this device isn't on, X plays it here instead of syncing — there's
+      // nothing to sync for a line this device doesn't follow, and `play-here` only exists then.
+      if (clickAction('play-here', /^Play this one here$/i)) return
       clickAction('sync-this-game', /^Sync this game$/i)
       return
     }
@@ -573,20 +576,38 @@ function pressY() {
   document.querySelector<HTMLButtonElement>('.sl-hero button.sl-btn--primary')?.click()
 }
 
-/** LT: keep-both on a conflict card; Push now on a game page; Clear the selection in Add Games. */
+/** A game page's playthrough tab row, only when there's more than one tab worth stepping between. */
+function ptTabs(): HTMLButtonElement[] {
+  const tabs = [...document.querySelectorAll<HTMLButtonElement>('.sl-content .sl-ptab:not(.sl-ptab--new)')]
+  return tabs.length > 1 ? tabs : []
+}
+
+/** Steps the open tab by `delta`, wrapping around. False (so the caller falls through) when there's
+ *  only one tab — a single-playthrough game keeps Push/Pull on LT/RT undisturbed. */
+function stepPtTab(delta: number): boolean {
+  const tabs = ptTabs()
+  if (tabs.length === 0) return false
+  const at = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true')
+  tabs[(Math.max(at, 0) + delta + tabs.length) % tabs.length]?.click()
+  return true
+}
+
+/** LT: keep-both on a conflict card; the previous playthrough tab, else Push now, on a game page;
+ *  Clear the selection in Add Games. */
 function pressLT() {
   if (settingsStep(-1)) return
   const backup = findBackupInput()
   if (backup) { backup.click(); return }
-  if (isGamePage()) { clickAction('push-now', /^Push now$/i); return }
+  if (isGamePage()) { if (stepPtTab(-1)) return; clickAction('push-now', /^Push now$/i); return }
   if (currentSection() === 'Add Games') clickAction('clear-selection', /^Clear$/i)
 }
 
-/** RT: Resolve (confirm-mode conflict card); Pull latest on a game page; Add games in Add Games. */
+/** RT: Resolve (confirm-mode conflict card); the next playthrough tab, else Pull latest, on a game
+ *  page; Add games in Add Games. */
 function pressRT() {
   if (settingsStep(1)) return
   if (clickButton(/^Resolve\b/i)) return
-  if (isGamePage()) { clickAction('pull-latest', /^Pull latest$/i); return }
+  if (isGamePage()) { if (stepPtTab(1)) return; clickAction('pull-latest', /^Pull latest$/i); return }
   if (currentSection() === 'Add Games') {
     if (clickAction('add-games', /^Add games$|^Add \d+ games?$/i)) return
     document.querySelector<HTMLButtonElement>('.sl-footbar .sl-btn--primary:not([disabled])')?.click()

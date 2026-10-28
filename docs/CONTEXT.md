@@ -77,6 +77,23 @@ ever shows once there's a real answer. Verified live on testenv: created "Heartb
 it appear in the open agent tab (`WinTest`) within the 5s poll, no navigation; confirmed the Versions card's new
 position and the tab subtitles. `tsc -b`, `oxlint` clean; `run-appearance-consistency-tests` 50/50.
 
+**Follow-up 4 2026-10-28, page order correction + an other-playthrough view + controller nav:** corrects Follow-up 3's
+ordering — the game page is now **game info → Sync/Push/Pull bar → playthrough tabs → Versions**, not Versions first;
+the bar was getting lost under a table every time. Looking at a playthrough this device isn't on no longer shows a
+full "Sync this game" bar it can't use: `GameDetailView` now computes one `actionBar` (Sync/Push/Pull for your own
+playthrough, or **Play this one here / Rename… / Archive…** for one you're not on) rendered in that same top slot, so
+the layout stays identical across both — only its buttons change. The Card that used to repeat the other playthrough's
+name below Versions (the tab already says that) is now titled **Info** and carries no buttons — they moved to the
+action bar. Controller: LT/RT step between playthrough tabs when there's more than one (`gamepad/nav.ts`'s new
+`stepPtTab`); with only one tab (most games: just "Main") they fall through to Push now/Pull latest exactly as before,
+so nothing changes for the common case. X plays the open "other" playthrough here when that action bar is showing,
+falling back to Sync this game otherwise. Push now/Pull latest drop their LT/RT `PadGlyph` hint whenever a second
+playthrough exists (so they rejoin the normal focus ring instead of becoming unreachable), and the
+Rename/Archive/Unarchive/Keep buttons that were missing `data-pad-label` now carry one. Verified live on testenv:
+confirmed the new top-to-bottom order, and that opening "Hard mode" (not this device's own) swaps the bar to
+Play-here/Rename/Archive and relabels the card to "Info" with its dl/paragraph but no buttons. `tsc -b`, `oxlint`
+clean; `run-appearance-consistency-tests` 50/50.
+
 **Playthroughs Group 2 — one device — built (2026-10-26, branch `playthroughs-group-2`, stacked on `playthroughs-group-1`, PR open, not merged).** Phases 4–6 of
 [[tasks/save-playthroughs/plan]]: an agent now **follows one playthrough per game** and can **switch**. `SyncEngine.SwitchPlaythroughAsync` refuses while the game
 runs, a session is open here or a conflict is open, pushes the outgoing save to **its own** playthrough, restores the target's latest (or empties the folder for
