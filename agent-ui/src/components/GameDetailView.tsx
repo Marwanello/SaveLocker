@@ -116,9 +116,11 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
 
   useEffect(() => { setState(null); setCheck(null); setEmuTab(null); setPts(null); setViewing(null); load() }, [load])
 
-  const loadPlaythroughs = useCallback(() => {
+  // `keepOnError`: the background poll below keeps the last answer through a failed ask, instead of dropping the tabs
+  // (and the playthrough being looked at, or a rename being typed) every time one request out of many fails.
+  const loadPlaythroughs = useCallback((keepOnError = false) => {
     if (!game.path) { setPts(null); return }
-    api.playthroughs(game.id).then(setPts).catch(() => setPts(null))
+    api.playthroughs(game.id).then(setPts).catch(() => { if (!keepOnError) setPts(null) })
   }, [game.id, game.path])
 
   // The server has no push channel for this (no heartbeat/event from it, unlike the agent's own
@@ -127,7 +129,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   // same idea as useActivity's visibilitychange handling, just not worth sharing its machinery for
   // one route's data.
   useEffect(() => {
-    const tick = () => { if (!document.hidden) loadPlaythroughs() }
+    const tick = () => { if (!document.hidden) loadPlaythroughs(true) }
     const timer = window.setInterval(tick, 5000)
     document.addEventListener('visibilitychange', tick)
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', tick) }
@@ -204,6 +206,7 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
   // The state route's head is the game's DEFAULT playthrough; this device's own is the one on the tab it plays.
   const selectedPt = pts?.playthroughs.find(p => p.id === pts.selectedId) ?? null
   const several = (pts?.playthroughs.length ?? 0) > 1
+  const ptName = (id: string | null | undefined) => pts?.playthroughs.find(p => p.id === id)?.name
   const otherPt = pts && viewing && viewing !== pts.selectedId ? pts.playthroughs.find(p => p.id === viewing) ?? null : null
   // Offline: the server's list is empty, so the other tab is a copy this device keeps. Only the playthroughs route can tell
   // "unreachable" from any other failure; a state error alone (the game gone from the server, say) shows in "On the server".
@@ -477,7 +480,8 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
         <>
           <VersionsCard key={otherPt.id} gameId={game.id} headId={otherPt.head?.id ?? null} refreshKey={syncCount}
             onLoaded={() => {}} playthrough={otherPt.id} title={`Versions on the server · ${otherPt.name}`}
-            onFork={v => setCreating({ fromVersion: { id: v.id, label: `${otherPt.name} · ${shortId(v.id)}` } })} />
+            playthroughs={pts?.playthroughs} listOf={otherPt.id}
+            onFork={v => setCreating({ fromVersion: { id: v.id, label: `${ptName(v.playthroughId) ?? otherPt.name} · ${shortId(v.id)}` } })} />
           {otherInfo}
         </>
       ) : (<>
@@ -487,7 +491,8 @@ export function GameDetailView({ game, conflicts, emptiedHold, machineName, plat
           : undefined}
         onCopy={titled ? setCopyFrom : undefined}
         playthrough={selectedPt && several ? selectedPt.id : undefined}
-        onFork={v => setCreating({ fromVersion: { id: v.id, label: `${selectedPt?.name ?? 'this playthrough'} · ${shortId(v.id)}` } })} />}
+        playthroughs={pts?.playthroughs} listOf={selectedPt?.id}
+        onFork={v => setCreating({ fromVersion: { id: v.id, label: `${ptName(v.playthroughId) ?? selectedPt?.name ?? 'this playthrough'} · ${shortId(v.id)}` } })} />}
 
       {enrolled && <div className="sl-grid4">
         <Stat

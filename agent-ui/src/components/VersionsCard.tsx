@@ -22,6 +22,10 @@ interface Props {
   playthrough?: string
   /** "Fork…": a new playthrough starting from this version. */
   onFork?: (v: SaveVersion) => void
+  /** The playthrough this list is of, and the game's playthroughs by name: a fork's head belongs to the one it was forked
+   *  from (the server lists it here until this one's first push), and its row says so. */
+  listOf?: string
+  playthroughs?: { id: string; name: string }[]
 }
 
 type View = 'main' | 'backups'
@@ -32,7 +36,7 @@ type View = 'main' | 'backups'
  * Backups (everything else: a save that lost a conflict, or was ridden over by a forced push). Read-only
  * — this page is the agent's; pruning and Set-as-Latest are the console's.
  */
-export function VersionsCard({ gameId, headId, refreshKey, onLoaded, title = 'Versions on the server', onCopy, playthrough, onFork }: Props) {
+export function VersionsCard({ gameId, headId, refreshKey, onLoaded, title = 'Versions on the server', onCopy, playthrough, onFork, listOf, playthroughs }: Props) {
   const [versions, setVersions] = useState<SaveVersion[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<View>('main')
@@ -58,6 +62,12 @@ export function VersionsCard({ gameId, headId, refreshKey, onLoaded, title = 'Ve
   const backups = (versions ?? []).filter(v => !mainIds.has(v.id))
   const list = view === 'main' ? main : backups
   const shown = list.slice(0, 10)
+
+  function forked(v: SaveVersion) {
+    if (!listOf || !v.playthroughId || v.playthroughId === listOf) return null
+    const name = playthroughs?.find(p => p.id === v.playthroughId)?.name ?? 'another playthrough'
+    return <span title={`This playthrough started from this save. It belongs to ${name} and stays there.`}><Chip>From {name}</Chip></span>
+  }
 
   function state(v: SaveVersion) {
     if (v.id === headId) return <Chip tone="ok">Latest</Chip>
@@ -108,7 +118,7 @@ export function VersionsCard({ gameId, headId, refreshKey, onLoaded, title = 'Ve
                       </td>
                       <td className="sl-dim">{v.machineName}</td>
                       <td className="sl-num sl-dim">{formatBytes(v.size)}</td>
-                      <td>{state(v)}</td>
+                      <td>{state(v)} {forked(v)}</td>
                       <td className="sl-end">
                         <span style={{ display: 'inline-flex', gap: 6, justifyContent: 'flex-end' }}>
                           {onFork && !v.mergedFrom && (

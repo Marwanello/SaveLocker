@@ -254,9 +254,11 @@ function NewPlaythroughPanel({ game, playthroughs, versions, current, fromVersio
   game: Game; playthroughs: Playthrough[]; versions: Version[]; current: Playthrough | null; fromVersion?: Version;
   onClose: () => void; onCreated: (id: string) => void;
 }) {
-  const live = playthroughs.filter(p => !p.archivedAt);
-  // Fork's own playthrough when it's live; else the open tab, then the default, then whatever's first.
-  const fallback = (live.find(p => p.id === current?.id) ?? live.find(p => p.isDefault) ?? live[0])?.id ?? '';
+  // An archived playthrough is offered only when Fork came from one of its versions: without it there, the
+  // version picker would have nothing to hold that version and Create would quietly fork another line's latest.
+  const live = playthroughs.filter(p => !p.archivedAt || p.id === fromVersion?.playthroughId);
+  // Fork's own playthrough; else the open tab, then the default, then whatever's first.
+  const fallback = (live.find(p => p.id === current?.id && !p.archivedAt) ?? live.find(p => p.isDefault) ?? live[0])?.id ?? '';
   const initialFrom = fromVersion ? (live.find(p => p.id === fromVersion.playthroughId)?.id ?? fallback) : fallback;
   const initialFromPt = playthroughs.find(p => p.id === initialFrom) ?? null;
   // "Latest" when Fork's version is already that playthrough's head, else its own id.
@@ -270,7 +272,8 @@ function NewPlaythroughPanel({ game, playthroughs, versions, current, fromVersio
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
+    // A Select inside closes its own list on Escape (and marks the event handled); only an unhandled one closes this.
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !busy) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [busy, onClose]);

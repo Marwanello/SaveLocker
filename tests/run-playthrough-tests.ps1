@@ -305,6 +305,8 @@ try {
     Check "B is on Hard mode only; A stays on Main" ($mainDevs -contains "PtA" -and $mainDevs -notcontains "PtB")
     $pullHard = Pull $b.apiKey $game
     Check "B, naming nothing, now pulls Hard mode's head" ($pullHard.Content -eq "v2")
+    $forkList = @((Call "GET" "/api/agent/games/$game/versions" $b.apiKey).Json)
+    Check "before its own first push, B's list is the version Hard mode was forked from (Main's)" ($forkList.Count -eq 1 -and $forkList[0].id -eq $v2 -and $forkList[0].playthroughId -eq $main.id -and $forkList[0].machineName)
     $h1r = Push $b.apiKey $game "h1" $v2
     Check "B pushes (naming nothing) and it becomes Hard mode's first version of its own" ($h1r.Json.status -eq "Created" -and $h1r.Json.version.playthroughId -eq $hard.id)
     $h1 = $h1r.Json.version.id
