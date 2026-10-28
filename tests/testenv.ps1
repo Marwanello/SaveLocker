@@ -1118,8 +1118,18 @@ function Build-Deck {
 }
 
 function Start-Deck {
-    $tarball = Join-Path (Join-Path $env:TEMP 'savelocker-testenv-artifacts') "savelocker-$Version-linux-x64.tar.gz"
-    if (-not (Test-Path $tarball)) { throw "not built - run: .\tests\testenv.ps1 build -Only deck" }
+    $artifactDir = Join-Path $env:TEMP 'savelocker-testenv-artifacts'
+    $tarball = Join-Path $artifactDir "savelocker-$Version-linux-x64.tar.gz"
+    if (-not (Test-Path $tarball)) {
+        # $Version defaults to a git-tag-derived guess that can differ from what was actually last
+        # built (e.g. a `build -Version X` override not repeated on `up`) - fall back to whatever
+        # tarball is newest in the artifact dir rather than insisting on an exact name match.
+        $latest = Get-ChildItem -LiteralPath $artifactDir -Filter 'savelocker-*-linux-x64.tar.gz' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if (-not $latest) { throw "not built - run: .\tests\testenv.ps1 build -Only deck" }
+        $tarball = $latest.FullName
+        Write-Host "  using the last deck build ($($latest.BaseName)) - not what -Version resolves to here"
+    }
     if (-not $DeckServerUrl) {
         throw "no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL - the Deck can't reach 'localhost', it needs this PC's LAN IP (e.g. http://192.168.68.58:$ConsolePort)"
     }
