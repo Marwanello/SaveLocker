@@ -102,7 +102,7 @@ OpenSave.
 | 11 | Medium | [[tasks/version-history-upgrades/summary\|Version history upgrades]] | New |
 | 12 | Low | [[tasks/storage-dedup-offsite/summary\|Storage: off-site copies, then deduplication]] | New |
 | 13 | Low | [[tasks/playtime-tracking/summary\|Playtime and "last played"]] | New |
-| 14 | Low | [[tasks/standalone-emulators/summary\|More standalone emulators]] | New |
+| 14 | Low | [[tasks/standalone-emulators/plan\|More standalone emulators]] | New |
 | 15 | Low | [[tasks/macos-agent/summary\|macOS agent]] | New |
 
 Also fixed the same session: `emulator-saves/plan.md` and `implementation-grouping.md` still showed

@@ -96,13 +96,16 @@ confirmed the new top-to-bottom order, and that opening "Hard mode" (not this de
 Play-here/Rename/Archive and relabels the card to "Info" with its dl/paragraph but no buttons. `tsc -b`, `oxlint`
 clean; `run-appearance-consistency-tests` 50/50.
 
+**File-level saves — planned (2026-10-29, branch `file-level-saves-plan`, vault only).** [[tasks/file-level-saves/plan]] + its `implementation-grouping.md`: a `<base>/Save.dat` manifest entry becomes folder `<base>` + include scope `Save.dat` (no archive change). Settled with the maintainer: **hybrid reach** (automatic scopes only for install-folder entries; every other file-shaped template stays whole-folder but gets an opt-in *narrow to these files* offer, which also covers enrolled games), hand-picked files in Add games and on the game page, a narrow `SavePathGuard` exception for a scoped game folder in a Steam library under Program Files, scope changes from console **and** agent (audited). Old agents gated by version.
+**Next action:** Group 1 — Phase 0 (detection harness counts scoped `<base>`), then the resolver, install-folder safety, enrolment.
+
 **Help KB: where emulator saves are looked for — written (2026-10-29, branch `emulator-kb-troubleshooting`, not merged).** New article
 `web/src/help/emulator-save-locations.md` (Troubleshooting, slug `emulator-save-locations`): how EmuDeck's `Emulation` folder is found, then
 per emulator the EmuDeck folder, the standalone/Flatpak/portable folders in the order the readers try them, the setting that moves each and
 what is *not* read, plus a *My emulator game isn't in Add games* checklist. Linked from `troubleshooting.md` and `emulator-backups.md`; the
 latter's states-only sentence was stale (PSP only) and now names RetroArch, PCSX2, DuckStation, Dolphin, PrimeHack, PPSSPP and Azahar. Paths
 come from the code, not the readers' doc comments — they claim a few places the code never reads (a portable Xenia's `portable.txt`, a
-shadPS4 `user/` beside any exe), and the article follows the code. **Keep it in sync** when [[tasks/standalone-emulators/summary]] adds
+shadPS4 `user/` beside any exe), and the article follows the code. **Keep it in sync** when [[tasks/standalone-emulators/plan]] adds
 readers. Verified: `npm run build`; rendered in the console mockup's Help view, dark and light. **Not verified:** the testenv console.
 **Next action:** the maintainer's testenv look at the article, then merge.
 

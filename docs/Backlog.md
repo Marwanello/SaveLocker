@@ -10,7 +10,7 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 
 - [Registry-based saves](tasks/registry-saves/summary.md)
 - [Playthroughs: named save forks to switch between](tasks/save-playthroughs/summary.md)
-- [File-level saves](tasks/file-level-saves/summary.md)
+- [File-level saves](tasks/file-level-saves/plan.md)
 - [Native Linux save support](tasks/native-linux-saves/summary.md)
 - [Interactive setup guide and Unraid template](tasks/interactive-setup-guide/summary.md)
 
@@ -33,5 +33,5 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 - [Other stores' cloud flags](tasks/other-stores-cloud-flags/summary.md)
 - [Storage: off-site copies, then deduplication](tasks/storage-dedup-offsite/summary.md)
 - [Playtime and "last played"](tasks/playtime-tracking/summary.md)
-- [More standalone emulators](tasks/standalone-emulators/summary.md)
+- [More standalone emulators](tasks/standalone-emulators/plan.md)
 - [macOS agent](tasks/macos-agent/summary.md)
