@@ -615,7 +615,7 @@ frontends, `dotnet build --no-incremental` clean for Server + Agent.Linux, and
   and an "escalation ladder" for Linux conflict surfacing — environment detection → native Wayland
   modal → D-Bus desktop notification → local web chooser → CLI → optional webhook → safe terminal state
   (never silently pick a side).
-- `SaveLocker/tasks/conflict-resolution-ui/` created as the single home for all conflict-resolution
+- `SaveLocker/tasks/_done/conflict-resolution-ui/` created as the single home for all conflict-resolution
   planning docs:
   - `plan.md` (moved from `logs/2026-08-28_decky-conflict-resolution.md`)
   - `reference/00-inventory.md` … `07-open-questions.md` (moved from repo-root `docs/design/`)
@@ -740,7 +740,7 @@ the PR's review findings directly (not this session). Four changes:
   `Agent.Linux/ProcessRunner.cs`, with a default infinite-wait overload (matching
   `SystemdAutoStart`'s prior behavior) and a timed overload (matching `DesktopEnvironment`'s 2-second
   D-Bus-hang guard) — so a future deadlock/timeout fix lands once instead of twice.
-- **`CLAUDE.md`** gained a one-paragraph note documenting `tasks/conflict-resolution-ui/` as a
+- **`CLAUDE.md`** gained a one-paragraph note documenting `tasks/_done/conflict-resolution-ui/` as a
   deliberate, disclosed exception to the vault's "flat by design" rule — a standing multi-session design
   doc set read as reference material, not a one-shot `tasks/*.md` file.
 - **`run-linux-tests.sh`**: added the missing `IsInteractiveTty: no` assertion for the baseline "no
@@ -880,7 +880,7 @@ never used in `conflicts.tsx`) caught and fixed before the final build.
 ### Docs updated
 
 `SaveLocker/Backlog.md`, `SaveLocker/CONTEXT.md`, and
-`SaveLocker/tasks/conflict-resolution-ui/plan.md` all updated with the Phase 10 write-up and a
+`SaveLocker/tasks/_done/conflict-resolution-ui/plan.md` all updated with the Phase 10 write-up and a
 five-point manual verification checklist (commit `170cc63`, main repo).
 
 ### Playnite split into its own group
@@ -1058,11 +1058,11 @@ release dates, machine names, version/command/audit tables, Deck UI strings).
 **Five identity options** — `savelocker-redesign.html` (Cold Storage / Checkpoint / Ledger / Shelter /
 Hangar), each with palette, type stack, voice and mockups. Checkpoint was chosen.
 
-**Design spec** — `SaveLocker/tasks/checkpoint-ui/plan.md`. Covers: decisions table, both dark/light
+**Design spec** — `SaveLocker/tasks/_done/checkpoint-ui/plan.md`. Covers: decisions table, both dark/light
 token sets, `color-mix` derivation rule, colour rule (green/amber/accent), type scale, layout rules,
 motion table, voice guidelines, per-surface shell table.
 
-**Implementation plan** — `SaveLocker/tasks/checkpoint-ui/implementation.md`. Opens with "what already
+**Implementation plan** — `SaveLocker/tasks/_done/checkpoint-ui/implementation.md`. Opens with "what already
 exists" (maps every prototype element to its real endpoint/component), then eight phases:
 1. Design system foundation (fix unlayered CSS reset, Checkpoint tokens, Archivo import, motion
    primitives, shared components)
@@ -1075,7 +1075,7 @@ exists" (maps every prototype element to its real endpoint/component), then eigh
 7. OS notifications (Windows toast, Linux freedesktop, firing rules)
 8. Assets (marks and Steam art as real files at all required sizes)
 
-**Brand kit** — `SaveLocker/tasks/checkpoint-ui/brand-kit.html`, also published at
+**Brand kit** — `SaveLocker/tasks/_done/checkpoint-ui/brand-kit.html`, also published at
 https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5. Eight sections: marks (three
 with size ladders, specimens, clearspace, don'ts), colour (live swatches + derivation + status trio +
 five accents), type (Archivo scale, tabular-figures demo, where mono belongs), components
@@ -1127,8 +1127,8 @@ when ready.
 
 ### Implementation grouping
 
-Added `SaveLocker/tasks/checkpoint-ui/implementation-grouping.md` and a folder `README.md`, matching
-the `tasks/conflict-resolution-ui/` precedent for a multi-session design effort. The grouping regroups
+Added `SaveLocker/tasks/_done/checkpoint-ui/implementation-grouping.md` and a folder `README.md`, matching
+the `tasks/_done/conflict-resolution-ui/` precedent for a multi-session design effort. The grouping regroups
 the 8 phases **by surface** rather than by phase number, since several phases edit the same
 components — Sync all and the notifications bell both land in the top bar Phase 2 already rewrites,
 so they ship together or `NavBar.tsx` gets edited twice. Seven groups; Phase 8 (assets) pulled forward
@@ -1166,7 +1166,7 @@ via an unexpectedly large deletion count on the next commit. Restored every prio
 
 ### Mockups committed to the repo
 
-Copied the two remaining artifact-only deliverables into `SaveLocker/tasks/checkpoint-ui/` so nothing
+Copied the two remaining artifact-only deliverables into `SaveLocker/tasks/_done/checkpoint-ui/` so nothing
 depends on the live artifact links: `prototype.html` (the interactive mockup — Console, Agent,
 Deck/Wayland, Notifications, Marks & art, Flows, both themes, five accents, three marks) and
 `identity-options.html` (the five identity pitches Checkpoint was chosen from). `brand-kit.html` was
@@ -1175,7 +1175,7 @@ as the primary reference, keeping the artifact URLs as link-sharing mirrors only
 
 ### Status
 
-`SaveLocker/tasks/checkpoint-ui/` now holds the complete design-phase deliverable set locally: `plan.md`,
+`SaveLocker/tasks/_done/checkpoint-ui/` now holds the complete design-phase deliverable set locally: `plan.md`,
 `implementation.md`, `implementation-grouping.md`, `README.md`, `prototype.html`, `identity-options.html`,
 `brand-kit.html`. All work is on branch `ui-redesign-plan`, local only, not pushed, no PR opened.
 `CONTEXT.md` still not updated with the handoff entry. Next step: either update `CONTEXT.md`, or begin
@@ -1184,7 +1184,7 @@ primitives, export marks, decide how `agent-ui` receives tokens).
 ## 2026-09-01/02 — Conflict resolution Group 3 / Phase 9: Linux desktop notification (save-conflicts-phase-9)
 
 **Branch:** `save-conflicts-phase-9` (6 commits on top of `debf37e`; 618 insertions / 23 deletions
-across 8 files). No PR opened. Group 3 of `tasks/conflict-resolution-ui/implementation-grouping.md`
+across 8 files). No PR opened. Group 3 of `tasks/_done/conflict-resolution-ui/implementation-grouping.md`
 = Phase 9 = rung 3 of the Linux escalation ladder in `reference/03-platform-ux-flows.md`.
 
 ### Request sequence
@@ -1428,7 +1428,7 @@ one notification per restart if the daemon ever crash-loops.
 
 1. Session opened after a usage-limit reset with "continue from where you left off," carrying no
    uncommitted work — the actual task was derived by following `CLAUDE.md`'s mandatory session-start
-   read (`CONTEXT.md`, `REPO_MAP.md`) plus `tasks/conflict-resolution-ui/implementation-grouping.md`:
+   read (`CONTEXT.md`, `REPO_MAP.md`) plus `tasks/_done/conflict-resolution-ui/implementation-grouping.md`:
    **Group 4 / Phase 8**, the native Linux Game Mode conflict screen — "the direct, literal answer to
    'a conflict popup like the Decky one, but in the native Linux/Wayland UI, with no Decky installed.'"
    The grouping doc scoped this as code-only, verification deferred to "a WSLg or real-Deck pass."
@@ -1609,7 +1609,7 @@ B"), Windows tray started last. Confirmed both the automatic-chooser raise-on-sy
   (`Marwanello/SaveLocker`) with upstream tracking set.
 - PR [**#30**](https://github.com/Marwanello/SaveLocker/pull/30) opened, `save-conflicts-phase-7` →
   `main`.
-- Vault: `tasks/conflict-resolution-ui/plan.md` and `implementation-grouping.md` both gained a "Status
+- Vault: `tasks/_done/conflict-resolution-ui/plan.md` and `implementation-grouping.md` both gained a "Status
   (updated 2026-09-03)" table with ✅/⬜ markers for every phase/group (the check-marker request from
   the original ask), plus a "Shipped 2026-09-03" write-up under Phase 7 and an updated Group 5 section.
   `Backlog.md` and `CONTEXT.md` updated with the same narrative.
@@ -2086,8 +2086,8 @@ silently dropped. `CONTEXT.md` session entry added.
 ## 2026-09-14 — Conflict-resolution-ui closed out (Phase 14 dropped); Playnite plugin groups consolidated 11 → 6
 
 **Docs-only session — no application code changed, nothing committed.** Continuation of the same-day
-Playnite-plugin planning session that split Phase 13 out of `tasks/conflict-resolution-ui/` into its
-own standalone `tasks/playnite-plugin/` task (16 phases, own grouping doc). This entry covers the two
+Playnite-plugin planning session that split Phase 13 out of `tasks/_done/conflict-resolution-ui/` into its
+own standalone `tasks/_done/playnite-plugin/` task (16 phases, own grouping doc). This entry covers the two
 follow-up requests made once that split had landed.
 
 ### What was asked
@@ -2098,8 +2098,8 @@ follow-up requests made once that split had landed.
 
 ### Phase 14 dropped, conflict-resolution-ui marked complete
 
-- `tasks/conflict-resolution-ui/plan.md`: Status section rewritten to "task complete" — every phase
-  has now shipped, moved to its own task (Phase 13 → `tasks/playnite-plugin/`), or been dropped
+- `tasks/_done/conflict-resolution-ui/plan.md`: Status section rewritten to "task complete" — every phase
+  has now shipped, moved to its own task (Phase 13 → `tasks/_done/playnite-plugin/`), or been dropped
   (Phase 14). Phase 14's row changed from "not started, deferred" to "❌ Dropped 2026-09-14," with the
   reasoning spelled out: its block-launch half (`Game.BlockLaunchOnConflict`) never had its open design
   conflict against Phase 4's already-shipped *unconditional* block-on-confirmed-conflict behavior
@@ -2109,24 +2109,24 @@ follow-up requests made once that split had landed.
   mishandled without it. Cleaned up every other place Phase 14 was still described as pending: the
   intro paragraph, the Phase 7 and Phase 9 shipped write-ups' cross-references, the ASCII dependency
   diagram, the dedicated Phase 13/14 section body, and the Scope note's rung-6 description.
-- `tasks/conflict-resolution-ui/implementation-grouping.md`: same completion marker added to its own
+- `tasks/_done/conflict-resolution-ui/implementation-grouping.md`: same completion marker added to its own
   Status header; Group 5's Phase 14 mention updated from "deferred" to "later dropped entirely."
 - `Backlog.md`: removed the "Decky conflict resolution" line from the High-priority not-yet-done list
   entirely (nothing remains open on it); the Playnite plugin line's group reference updated for the
   regrouping below.
 - `logs/shipped-2026-09.md`: added one completion row for the whole 14-phase effort, pointing at
-  `tasks/conflict-resolution-ui/plan.md` for full detail rather than trying to re-summarize 14 phases
+  `tasks/_done/conflict-resolution-ui/plan.md` for full detail rather than trying to re-summarize 14 phases
   of shipped work into the log table's own cells.
 
-**Deliberately not done:** did not relocate `tasks/conflict-resolution-ui/` into `docs/logs/` despite
-the project's own session-handoff convention for completed task folders — `tasks/playnite-plugin/
+**Deliberately not done:** did not relocate `tasks/_done/conflict-resolution-ui/` into `docs/logs/` despite
+the project's own session-handoff convention for completed task folders — `tasks/_done/playnite-plugin/
 plan.md`'s header and phase-dependency notes reference this folder's path directly, and moving it
 would break those links for no benefit the request asked for. Flagged to the user rather than done
 silently.
 
 ### Playnite plugin implementation groups consolidated: 11 → 6
 
-`tasks/playnite-plugin/implementation-grouping.md` rewritten to bundle the same 16 phases into 6
+`tasks/_done/playnite-plugin/implementation-grouping.md` rewritten to bundle the same 16 phases into 6
 groups instead of 11, at the same total session-cost estimates — `plan.md`'s own "Size estimate"
 section (~7–9 sessions agent-side, ~11–15 plugin-side, ~18–24 total) was left untouched, since only
 the bucketing changed, not the underlying per-phase numbers:
@@ -2162,7 +2162,7 @@ claim `plan.md` already made before this session touched it).
 
 ### Not done
 
-- `tasks/conflict-resolution-ui/` folder not relocated to `docs/logs/` (see above).
+- `tasks/_done/conflict-resolution-ui/` folder not relocated to `docs/logs/` (see above).
 - No commit made — vault edits are uncommitted on the current worktree branch
   (`phase-13-playnite-plugin`).
 - The "future user-experience review" now named in conflict-resolution-ui's Status section is
@@ -2537,7 +2537,7 @@ Lucide's own rendering style.
   post-exit push, agent-down fail-open — steps 1, 3, 5, 6) is being re-run from a clean rebuild; not
   complete as of this write-up.
 - `docs/CONTEXT.md` (SaveLocker-Playnite repo) and the Group 3 status row in the main repo's
-  `docs/tasks/playnite-plugin/implementation-grouping.md` are still stale (both still say "not yet
+  `docs/tasks/_done/playnite-plugin/implementation-grouping.md` are still stale (both still say "not yet
   hardware-verified") — correctly deferred until the re-verification above actually completes.
 - `testenv.ps1 clean`'s inconsistent Windows-state wipe (401-after-clean bug, above) — not fixed in
   code, only worked around manually each time it recurred.
@@ -2836,7 +2836,7 @@ Docs updated in both repos to match: `SaveLocker-Playnite/docs/REPO_MAP.md` (doc
 `GameStatusControl.cs`, `LinkAction.cs`, `LinkedTag.cs`, `SyncNowAction.cs`, `ConflictResolver.cs`, the
 new `tests/` dir, `.github/workflows/release.yml`), `docs/Build and Run.md` (new "Automated tests
 (Phase 15)" section), `docs/CONTEXT.md` (new top section documenting Group 5's status, deviations, and
-a "whoever picks this up next" handoff list); `SaveLocker`'s own `docs/tasks/playnite-plugin/plan.md`
+a "whoever picks this up next" handoff list); `SaveLocker`'s own `docs/tasks/_done/playnite-plugin/plan.md`
 and `implementation-grouping.md` Status tables updated from "⏳ Not started" to "✅ Built 2026-09-16"
 for Phases 13/14/15/17, with honest caveats (not hardware-verified; status chip confirmed dead code
 under every existing theme — see below).
@@ -2986,7 +2986,7 @@ Portable Playnite installs keep their `library`/`Extensions` beside their own ex
 
 ### Request sequence
 
-1. "Implement group 3 in the ui redesign task please." Read `tasks/checkpoint-ui/` (`implementation-grouping.md` Group 3, `implementation.md` Phases 1/3/5, `plan.md`, the prototype's agent screens) and the Groups 1–2 handoff before writing anything.
+1. "Implement group 3 in the ui redesign task please." Read `tasks/_done/checkpoint-ui/` (`implementation-grouping.md` Group 3, `implementation.md` Phases 1/3/5, `plan.md`, the prototype's agent screens) and the Groups 1–2 handoff before writing anything.
 
 ### What was done
 
@@ -3072,7 +3072,7 @@ Portable Playnite installs keep their `library`/`Extensions` beside their own ex
 `testenv.ps1` builds whatever is checked out. The art work lived on `steamgriddb-art-picker`, branched from `main`, and the worktree had been left on the sync-fix branch, so neither the Docker console nor the WSL clone (at `f4d2aad`) contained `ArtPicker.tsx` or `ArtThumbnails.cs`. Not a bug in either — a branch that was never checked out. Merging fixed it.
 
 ### Group 4 — how big, and where to do it
-**Scope** (`tasks/checkpoint-ui/implementation-grouping.md`): the agent Games tab — list and grid with cover art, a per-game page with Sync this game / Push now / Pull latest, the art proxy (`GET /api/games/{id}/art`), search in Add games — plus Phase 3 item 5, which moved here because the agent's local API has no per-game sync route.
+**Scope** (`tasks/_done/checkpoint-ui/implementation-grouping.md`): the agent Games tab — list and grid with cover art, a per-game page with Sync this game / Push now / Pull latest, the art proxy (`GET /api/games/{id}/art`), search in Add games — plus Phase 3 item 5, which moved here because the agent's local API has no per-game sync route.
 
 **Size — an estimate, not a measurement.** Group 3 was 21 files and +917 / −416 lines, `agent-ui` only. Group 4 is larger and wider: roughly 20–25 files and 1,400–1,900 changed lines, of which four to six are C# (`AgentApiServer` routes, a per-game entry on `SyncEngine`, the art proxy) and the rest is `agent-ui` (new Games list/grid, game page, `Row` and `Seg` ports, Sidebar entry, search in the 417-line `AddGamesView`). It also regenerates `agent-ui/src/api-types.ts` from the Linux daemon. The plan itself calls it "the single largest *new* UI in the plan".
 
@@ -3194,7 +3194,7 @@ six smaller things; all fixed. Full account: CONTEXT.md → *Review fixes for PR
 ## 2026-09-28 — Checkpoint UI Group 8: console page kit, top bar, Games page
 
 Full write-up: [[session_summary]]. Branch `group-8-ui-redesign` (renamed from `claude/group-8-ui-redesign-d49b05`), PR #52, commits
-`e6514ce` (8a), `1566de8` (8b), `24074a0` (8c), `c10ef4d` (Docs). Live checklist: `tasks/checkpoint-ui/group-8-verification.md`.
+`e6514ce` (8a), `1566de8` (8b), `24074a0` (8c), `c10ef4d` (Docs). Live checklist: `tasks/_done/checkpoint-ui/group-8-verification.md`.
 
 | Part | Commit | What | Size |
 |---|---|---|---|
@@ -3958,7 +3958,7 @@ A machine on an older agent can't report this, so it's in neither list. The prot
 
 ### Files
 
-`src/Shared/Contracts.cs`, `src/Server/Data/Entities.cs`, `src/Server/Services/HealthService.cs`, `src/Server/Migrations/*AddAgentFollowsConsoleAppearance*`, `src/Server/openapi.json`, `src/Agent.Core/HealthReporter.cs`, `web/src/components/{AppearanceCard,ConfigView}.tsx`, `web/src/api-types.ts`, `tests/run-health-tests.ps1`, `docs/{Backlog,CONTEXT,API Reference,Build and Run}.md`, `docs/logs/shipped-2026-10.md`, `docs/tasks/_done/appearance-follow-ups/` (moved from `docs/tasks/`), `docs/tasks/checkpoint-ui/{plan,implementation,implementation-grouping}.md` (links), this entry, `session_summary.md`.
+`src/Shared/Contracts.cs`, `src/Server/Data/Entities.cs`, `src/Server/Services/HealthService.cs`, `src/Server/Migrations/*AddAgentFollowsConsoleAppearance*`, `src/Server/openapi.json`, `src/Agent.Core/HealthReporter.cs`, `web/src/components/{AppearanceCard,ConfigView}.tsx`, `web/src/api-types.ts`, `tests/run-health-tests.ps1`, `docs/{Backlog,CONTEXT,API Reference,Build and Run}.md`, `docs/logs/shipped-2026-10.md`, `docs/tasks/_done/appearance-follow-ups/` (moved from `docs/tasks/`), `docs/tasks/_done/checkpoint-ui/{plan,implementation,implementation-grouping}.md` (links), this entry, `session_summary.md`.
 
 ---
 

@@ -1,6 +1,6 @@
 # Playnite plugin: launching a game another machine has open
 
-Not started. Split out of `tasks/playnite-plugin/plan.md` on 2026-10-01, when the plugin task was closed as done. The
+Not started. Split out of `tasks/_done/playnite-plugin/plan.md` on 2026-10-01, when the plugin task was closed as done. The
 other unchecked surfaces listed then (the Fullscreen-mode resolve window, the link nudge, alias backfill) were confirmed
 on hardware by the maintainer on 2026-10-01.
 

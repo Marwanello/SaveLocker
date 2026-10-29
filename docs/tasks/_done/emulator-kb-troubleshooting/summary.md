@@ -1,7 +1,7 @@
 # Help KB: where emulator saves are looked for, and "my game isn't listed" — summary
 
 Seeded 2026-10-25 from upstream issue [SkorcherX/SaveLocker#50](https://github.com/SkorcherX/SaveLocker/issues/50).
-No plan file yet. **Priority: Low.**
+**Done 2026-10-29** — `web/src/help/emulator-save-locations.md` (slug `emulator-save-locations`). Priority was Low.
 
 ---
 

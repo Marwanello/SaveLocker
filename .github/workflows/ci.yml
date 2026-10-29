@@ -223,7 +223,7 @@ jobs:
         working-directory: web
       # Source-only, about a second: the look (theme/accent/mark) and the palette tokens live in several
       # packages that cannot import from one another, and no #hex may be left in a view
-      # (docs/tasks/checkpoint-ui, Group 5). It needs no build and no server.
+      # (docs/tasks/_done/checkpoint-ui, Group 5). It needs no build and no server.
       - name: Appearance consistency
         run: pwsh tests/run-appearance-consistency-tests.ps1
       # The Games tab's arrange logic is pure; compiling it with the web toolchain and running

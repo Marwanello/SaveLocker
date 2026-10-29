@@ -7,7 +7,7 @@ had the answer — a Linux desktop/headless escalation ladder and a Windows in-a
 had been left as reference material below, not folded into execution). From [[Backlog]] → High
 priority. Supersedes the conflict-resolution-relevant parts of the earlier, fork-blind 8-document
 pass at `reference/00-inventory.md` through `07-open-questions.md` (kept as reference, both now
-alongside this file in this same `tasks/conflict-resolution-ui/` folder) for
+alongside this file in this same `tasks/_done/conflict-resolution-ui/` folder) for
 everything **except** the Windows/Linux-headless UI material, which Phases 5–9 below now fold in
 directly (Phase 14 was later dropped — see Status and the Scope note). The conflict data model's
 causal, non-clock-based detection and the Resolution API's layering are still unaffected and not
@@ -41,7 +41,7 @@ just a possible future pass over how it actually feels to use once it's seen mor
 | 10 — Decky: conflict display + resolve UI | ✅ Shipped 2026-09-07, **hardware-verified 2026-09-07** — chip and Pull/Push/Sync buttons confirmed working on a real Deck after the `gameId`/`saveDirectory` wire-field fix (see this section's own note below) |
 | 11 — Decky: launch-gate wiring | ✅ Shipped 2026-09-07, hardware-verified 2026-09-07/08 |
 | 12 — sync-status endpoint consumer | ✅ Shipped 2026-09-07 (not hardware-verified — see below) — a "Check sync status" button on each game's row in the Decky full-screen page (`fullPage.tsx`), on demand only |
-| 13 — Playnite plugin | ➡️ Moved to its own task — `tasks/playnite-plugin/plan.md` |
+| 13 — Playnite plugin | ➡️ Moved to its own task — `tasks/_done/playnite-plugin/plan.md` |
 | 14 — Webhook notify + per-game block-launch setting | ❌ Dropped 2026-09-14 — see the note below |
 
 **Phase 14 was dropped outright, not deferred.** Its block-launch half (`Game.BlockLaunchOnConflict`)
@@ -768,8 +768,8 @@ independent of every Decky phase and of Phase 3 — that dependency picture turn
 but the actual build-out grew well past a single sub-phase of this task once planned in depth (a
 five-tier enrollment/matching flow, a status-and-actions surface in Playnite's own UI, per-game sync
 toggles, and an agent-driven self-updater, on top of the original pre-launch-gate scope). It now has
-its own phase numbering and its own grouping document: `tasks/playnite-plugin/plan.md` and
-`tasks/playnite-plugin/implementation-grouping.md`. Nothing else in this plan depends on it, so
+its own phase numbering and its own grouping document: `tasks/_done/playnite-plugin/plan.md` and
+`tasks/_done/playnite-plugin/implementation-grouping.md`. Nothing else in this plan depends on it, so
 nothing here needs to change — nothing here waits on it.
 
 **Phase 14 — dropped 2026-09-14.** Originally scoped as an optional out-of-band notification (rung 6
@@ -812,7 +812,7 @@ Phase 0/1 (server + agent core — shipped)
 Phase 3 (dashboard Backups tab) — shipped; no dependencies, was buildable/shippable any time.
 Phase 12 (sync-status consumer) — endpoint already shipped in Phase 0/1; low-priority, foldable
     into Phase 6 or Phase 10 when either is built.
-Phase 13 (Playnite) — moved out to its own task, tasks/playnite-plugin/plan.md, 2026-09-14. Its
+Phase 13 (Playnite) — moved out to its own task, tasks/_done/playnite-plugin/plan.md, 2026-09-14. Its
     dependency on this task's Phase 0/1 local API is unchanged; everything else about its scope is
     tracked there now, not here.
 Phase 14 (optional: webhook + block-launch setting) — dropped 2026-09-14, see Status section; never

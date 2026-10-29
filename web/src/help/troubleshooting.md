@@ -15,6 +15,10 @@
 - Make sure the game is launched through Steam so the agent's process watcher can detect the exit event.
 - Check the agent log for "push" entries to confirm a push was attempted. If you see `still writing after 120s`, something in the save folder is being written continuously — add an [exclude pattern](#help/glob-patterns) for it.
 
+## An emulator game isn't in Add games
+
+Add games only finds emulator saves in the folders it knows, and only once the game has saved. [Where emulator saves are looked for](#help/emulator-save-locations) lists every folder per emulator, on Windows and on Linux / Steam Deck, and has a step-by-step checklist: rescan, save in the game once, check where the emulator saves, shared memory cards, the other emulator, and mapping the folder by hand.
+
 ## Upload rejected: "archive exceeds 500 MB"
 
 The save archive is larger than the 500 MB limit. Common causes:

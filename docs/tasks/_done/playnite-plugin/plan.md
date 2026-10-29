@@ -1,7 +1,7 @@
 # Task: Playnite plugin
 
 Planned 2026-09-10, moved out to its own standalone task 2026-09-14 (asked directly — it had grown
-well past a single sub-phase of another task). Originally scoped as `tasks/conflict-resolution-ui/
+well past a single sub-phase of another task). Originally scoped as `tasks/_done/conflict-resolution-ui/
 plan.md`'s Phase 13 and `implementation-grouping.md`'s Group 7, which locked down the *behavior*
 (`IPlayniteAPI.StartGame`-buildable, depends only on that task's Phase 0/1 local API) but were never
 the build-out. Both of those files now just point here — this task has **its own phase numbering,

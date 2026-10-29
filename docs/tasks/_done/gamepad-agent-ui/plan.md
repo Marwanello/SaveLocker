@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | **Built** — the controller layer is in the real `agent-ui` (Phases 1–5) and Game Mode opens it via `savelocker open`, with the Steam entry added/repaired automatically (Phase 6). Phase 7 (the hardware checklist) is in progress on a real Deck; Phase 8 (retiring the SDL UI) waits on it. Status board in §6 |
 | **Branch** | `gamepad-agent-ui` (worktree `.claude/worktrees/gamepad-agent-ui`) |
-| **Mockup** | `docs/tasks/gamepad-agent-ui/mockup.html` — the **real agent-ui** (real components, real CSS, real data shapes) with a fetch mock, plus the working controller layer. Open it in a browser; a real gamepad works via the Gamepad API, the keyboard drives the same path (arrows move, Enter = A, Backspace = B, X/Y, Q/E = LB/RB). Rebuild: `cd agent-ui && npm run mockup` |
+| **Mockup** | `docs/tasks/_done/gamepad-agent-ui/mockup.html` — the **real agent-ui** (real components, real CSS, real data shapes) with a fetch mock, plus the working controller layer. Open it in a browser; a real gamepad works via the Gamepad API, the keyboard drives the same path (arrows move, Enter = A, Backspace = B, X/Y, Q/E = LB/RB). Rebuild: `cd agent-ui && npm run mockup` |
 | **Asked** | 2026-10-13 — "I don't like the Deck wayland UI. It doesn't match the style of the agent and has to be developed for every feature. Can we add support for controller in the normal agent showing the glyphs of the Xbox or PlayStation controller and use it instead of the Wayland UI? We already have a shortcut for the app on the Steam Deck. Create a full detailed clickable mockup with a plan of how to implement this and what needs to be put into consideration." |
 | **Supersedes** | [[Decisions]] → *Linux UI* / *Desktop Mode window*: "Game Mode has no browser, so `savelocker ui` ... covers Status/Add game/Set folder/Launch setup" and "the launcher stays out of Steam, Game Mode keeps `savelocker ui`". Both were true premises when written; this plan changes them. |
 
@@ -353,9 +353,9 @@ Regression protection for the existing surfaces: no server/API/Agent.Core change
 
 ## 12. References
 
-- Mockup: `docs/tasks/gamepad-agent-ui/mockup.html` (self-contained; Gamepad API + keyboard).
+- Mockup: `docs/tasks/_done/gamepad-agent-ui/mockup.html` (self-contained; Gamepad API + keyboard).
 - SDL UI inventory source of record: `src/Agent.Linux/Ui/` (UiApp/UiApp.Games/UiApp.Folders, Widgets, Theme, SettingsScreen, Sound).
 - Launch machinery: `src/Agent.Linux/AppWindow.cs`, `AppWindowPlan.cs`, `DesktopEnvironment.cs`, `DevSteamShortcut.cs`, `packaging/linux/install.sh`.
 - agent-ui design system: `agent-ui/src/tokens.css`, `ui.css`, `components/ui/`, `StatusHeader.tsx`; routes `route.ts`; activity store `useActivity.ts`.
-- Related history: [[Decisions]] → *Linux UI*, *Desktop Mode window*; `tasks/checkpoint-ui/implementation-grouping.md` → Group 6, Group 10d; [[Gotchas]] → *ImGui / Deck UI*, *`savelocker ui` needs an explicit RID*.
+- Related history: [[Decisions]] → *Linux UI*, *Desktop Mode window*; `tasks/_done/checkpoint-ui/implementation-grouping.md` → Group 6, Group 10d; [[Gotchas]] → *ImGui / Deck UI*, *`savelocker ui` needs an explicit RID*.
 
