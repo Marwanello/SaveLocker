@@ -9262,6 +9262,13 @@
                 "$ref": "#/components/schemas/ConflictDto"
               }
             ]
+          },
+          "playthroughCount": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           }
         }
       },
