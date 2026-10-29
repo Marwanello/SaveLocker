@@ -31,7 +31,7 @@ public sealed class SettingsService
     public const string AgentUpdateScheduleDayOfMonth = "AgentUpdate:Schedule:DayOfMonth";
     public const string AgentUpdateScheduleTimeOfDay = "AgentUpdate:Schedule:TimeOfDay";
 
-    /// <summary>The console's look (docs/tasks/checkpoint-ui/plan.md). Ids, never colours — see
+    /// <summary>The console's look (docs/tasks/_done/checkpoint-ui/plan.md). Ids, never colours — see
     /// <see cref="Appearances"/>. Absent means the default, so a deployment that never opens the
     /// Appearance card sees nothing change; they are also settable from config/env
     /// (<c>Ui__Accent=coolant</c>), which is how an unRAID template can pick one up front.</summary>

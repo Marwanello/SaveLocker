@@ -78,7 +78,7 @@ refusal from a genuinely different account (needs a second login on Windows and 
 **Next action:** the maintainer tries the agent UI from the tray, `savelocker open` and a browser tab, then merge.
 
 **One console entry per game, one save tree per emulator (2026-10-21, branch `multi-emulator-games`, PR #85 merged;
-maintainer marked it done 2026-10-26, ships in v0.8.1).** All six phases of [[tasks/multi-emulator-games/plan]] are built: a console-side `GameTitle` groups the
+maintainer marked it done 2026-10-26, ships in v0.8.1).** All six phases of [[tasks/_done/multi-emulator-games/plan]] are built: a console-side `GameTitle` groups the
 server games one title is saved as (melonDS + RetroArch's Hunters, Dolphin + PrimeHack's Trilogy); the console and
 the agent UI list it once with a tab per emulator; Group with / Split out by hand; and **Copy this save to another
 emulator** (server-side, melonDS ⇄ RetroArch and Dolphin ⇄ PrimeHack only — see [[Decisions]]). Sync is unchanged:
@@ -462,7 +462,7 @@ Full write-up: `progress.md` and `session_summary.md`.
 ---
 
 **Decky conflict-resolution Phase 0/1 shipped (2026-08-29, this branch, no task file — full design in
-`tasks/conflict-resolution-ui/plan.md`).** Server + Agent.Core only; no UI, no Decky/Playnite
+`tasks/_done/conflict-resolution-ui/plan.md`).** Server + Agent.Core only; no UI, no Decky/Playnite
 work — those are later phases. The server no longer decides a conflict: `SyncService.IngestAsync`'s
 `NewestWins`/`PreferMachine` auto-win branch is gone, so every divergence unconditionally records a
 `ConflictFlag`. `SyncEngine.TryPolicyResolveAsync` is the new agent-side decision point — it fires
@@ -499,7 +499,7 @@ first) or Phase 5/6 (Decky UI) land. Phases 2 (Force-push bookkeeping fix), 4 (L
 ---
 
 **Decky conflict-resolution Phase 2 shipped (2026-08-30, this branch, no task file — design already
-settled in `tasks/conflict-resolution-ui/plan.md`).** The Force push/pull bookkeeping fix,
+settled in `tasks/_done/conflict-resolution-ui/plan.md`).** The Force push/pull bookkeeping fix,
 server-side only. Before this, `PrepareUploadAsync` skipping divergence detection outright on
 `force:true` meant a forced push could land while the game already had an open `ConflictFlag` from an
 earlier, unforced divergence — moving the head to a brand-new version that was neither side of it, so
@@ -533,7 +533,7 @@ phase's GUI work lands. Phases 3 (dashboard Backups tab), 4 (Linux wrapper gate)
 ---
 
 **Decky conflict-resolution Phase 3 shipped (2026-08-30, same session as Phase 2, this branch, no task
-file — design already settled in `tasks/conflict-resolution-ui/plan.md`).** The dashboard
+file — design already settled in `tasks/_done/conflict-resolution-ui/plan.md`).** The dashboard
 "Backups" tab, client-side only, zero new server endpoints. A version is "in the main tree" if it's an
 ancestor of the current head — walk `parentVersionId` back from it; anything else the game still has
 is a backup, almost always the losing side of a past conflict. `GameDetail.tsx` already fetched the
@@ -563,7 +563,7 @@ remain open — see [[Backlog]].
 ---
 
 **Decky conflict-resolution "Group 2" shipped (2026-08-31, this branch, no task file — the practical
-execution grouping in `tasks/conflict-resolution-ui/implementation-grouping.md`, chosen there as "the
+execution grouping in `tasks/_done/conflict-resolution-ui/implementation-grouping.md`, chosen there as "the
 biggest value-per-session in the whole plan").** Phase 4 (Linux wrapper launch gate) + Phase 6 (shared
 `agent-ui` conflicts page + the `doctor`/log gap), together — the pair `implementation-grouping.md`
 picked because it makes conflict resolution end-to-end usable on a plain Linux box for the first time,
@@ -666,7 +666,7 @@ matched the mockup's actual look: the card had carried a dark reddish tint (`#24
 of the mockup's neutral `#1E252A` card on `#34424b`, panels on `#222d34`/`#3a4750`, an amber
 "CONFLICT" chip, and a plain-language sentence ("This device and the cloud both changed since the
 last sync..."). Red is now reserved for the genuine overdue-escalation line only, same as before.
-`ConflictCard.tsx` was rewritten line-for-line against `tasks/conflict-resolution-ui/`'s published
+`ConflictCard.tsx` was rewritten line-for-line against `tasks/_done/conflict-resolution-ui/`'s published
 "Local vs Cloud" artifact (still live: ask `Artifact` → `list` for the URL) — panel padding/radius,
 the mono "recency" headline with its "newer" tag, the per-side caption wording ("This is the machine
 you're using right now." / `Last updated from "X"`), and the footer's dashed rule + resolve button
@@ -1109,7 +1109,7 @@ a malformed `GameId` crashes `Load` at startup yet is silently skipped by the po
 
 **Playnite plugin work (Groups 1-5, merged PRs #37-#41 on `main`) was never logged in this file —
 noticed and flagged, not backfilled, while adding Group 6 below (2026-09-16).** The full design and
-per-phase status lives entirely in `docs/tasks/playnite-plugin/plan.md` and
+per-phase status lives entirely in `docs/tasks/_done/playnite-plugin/plan.md` and
 `implementation-grouping.md`, which this file's own session-start instructions never point a fresh
 session at unless it happens to be told to work on Playnite specifically. Worth a real backfill pass
 in a session that owns this file's upkeep — not done here since it wasn't what was asked.
@@ -1182,7 +1182,7 @@ Phase 17's own build session already recorded).
 tokens, `ui/` primitives, sidebar rows and a games grid, the notifications menu, sign-in, console Sync
 all, and the exclude-pattern chip editor with a server-side dry run (`POST /commands/bulk`,
 `POST /games/{id}/excludes/preview`). Full handoff text of both sessions, including the gaps they found
-and what was verified live: `logs/2026-09-18_checkpoint-ui-groups-1-2.md`. Design: `tasks/checkpoint-ui/`.
+and what was verified live: `logs/2026-09-18_checkpoint-ui-groups-1-2.md`. Design: `tasks/_done/checkpoint-ui/`.
 <br>**The review (2026-09-20) found the shipped state materially wrong in ways the original verification
 missed, and every finding is fixed.** The load-bearing ones: **(1) light was the default theme**, so
 every visitor whose OS prefers light saw near-black text on the unmigrated views' hardcoded dark cards
@@ -1226,7 +1226,7 @@ a per-game agent route, neither of which exists. One inherited bug fixed on the 
 stale `view`, so the "don't pop the overlay over Conflicts" guard never worked mid-sync. Verified against a
 real seeded conflict on the WSL test agent (real Sync all → busy → toast → pop-up), keyboard focus and both
 themes; write-up, deliberate departures from the prototype and what was *not* verified (the WebView2 tray
-window, a real Deck) are in `tasks/checkpoint-ui/implementation-grouping.md` → Group 3.
+window, a real Deck) are in `tasks/_done/checkpoint-ui/implementation-grouping.md` → Group 3.
 <br>**One finding for the maintainer, not fixed:** the plan's `--color-faint` is 3.31:1 (dark) / 3.55:1
 (light) — below WCAG AA for the small text it is used on, in the console too. Agent content text uses
 `--color-dim` instead; changing `--faint` itself means `web`, `agent-ui` and `Ui/Theme.cs` together.
@@ -1297,9 +1297,9 @@ wildcard content types); `dotnet build` and `tsc` were both clean. **Follow-up, 
 sync on a real two-machine conflict was run live. **Not verified:** the WebView2 window, a Deck, light theme
 (Group 5). Detail and honest gaps (no version list or last-push bytes on the page — no data behind them; now in
 [[Backlog]]) in
-`tasks/checkpoint-ui/implementation-grouping.md` → Group 4.
+`tasks/_done/checkpoint-ui/implementation-grouping.md` → Group 4.
 <br>**Reviewed the same day (PR #46): eight findings, all fixed** — write-up in
-`tasks/checkpoint-ui/implementation-grouping.md` → Group 4 → *Review fixes*. The two that mattered: the
+`tasks/_done/checkpoint-ui/implementation-grouping.md` → Group 4 → *Review fixes*. The two that mattered: the
 art proxy followed a `302` to another origin *carrying the machine key* (it also buffered chunked bodies of
 any size and let `%2e%2e` past its `..` check), and the per-game sync route held the global sync gate that
 `pre-launch-sync` / `post-exit-sync` answer 409 on — so syncing one game dropped an *unrelated* game's exit
@@ -1332,7 +1332,7 @@ in both top bars and the sign-in screen draws the chosen mark; the **Windows tra
 (`Agent/MarkIcon.cs`, GDI+, transparent punch-outs) — no `.ico` files. **The theme default now follows the OS**
 (`data-theme` pins one, no attribute is System), which needed **303 + 166 hardcoded hex colours** in the console's
 `GameDetail`/`ConfigView`/`AuditView`/`AgentUpdatesCard`/help views and the agent's Add games/Settings/Conflicts/plugin
-cards migrated to tokens first — by role, not by shade (details in `tasks/checkpoint-ui/implementation-grouping.md` →
+cards migrated to tokens first — by role, not by shade (details in `tasks/_done/checkpoint-ui/implementation-grouping.md` →
 Group 5). **Phase 4 item 4, the Deck's accent, moved to Group 6:** `Theme.cs`'s `AccentGreen` is both "accent" and
 "healthy" at 68 sites; the plumbing (`EffectiveAppearance`, `AppearancePalette`) is done — the Deck's own refresh
 (`savelocker ui` loads `config.json` once) is written with its caller in Group 6.
@@ -1473,7 +1473,7 @@ exact line (confirming `Theme.FontsLoaded` is `true`, not silently falling back 
 and the Overview screen's body text visibly changed face. The Deck now matches the console and agent-ui
 on every surface Checkpoint specifies a typeface for.
 <br>**PR #49 reviewed, every finding fixed (2026-09-23, branch `group-6-ui-redesign`).** Thirteen findings; full
-write-up in `tasks/checkpoint-ui/implementation-grouping.md` -> Group 6 -> *Review fixes*. The ones that mattered:
+write-up in `tasks/_done/checkpoint-ui/implementation-grouping.md` -> Group 6 -> *Review fixes*. The ones that mattered:
 (1) **Sync all was silent off the Overview** - the header button and Y start it from every screen but the result
 was read only on the Overview, so a failure on Conflicts/Settings showed nothing; it is now collected once per
 frame and shown in the header. (2) **`SvgPath` silently mis-drew what it claimed to reject** (curve commands
@@ -1615,7 +1615,7 @@ proxy path against a real Cloudflare outage, the Deck. The test console did not 
 image was not built (a previous `clean` removes it) — `testenv build -Only console` first.
 
 **Checkpoint UI gap audit (2026-09-27, branch `checkpoint-ui-gap-audit`, docs only — no code changed).** The maintainer
-pointed out that much of `tasks/checkpoint-ui/prototype.html` never shipped; a screen-by-screen comparison with the code
+pointed out that much of `tasks/_done/checkpoint-ui/prototype.html` never shipped; a screen-by-screen comparison with the code
 confirmed it. Groups 1–7 built the *shell*; most *pages* behind it were migrated to the tokens by Group 5 and otherwise kept
 their pre-Checkpoint layout — measured by the inline styles still in each view (`GameDetail.tsx` 116, `ConfigView.tsx` 112,
 `AgentUpdatesCard.tsx` 61, agent `SettingsView.tsx` 37…). **The console has no Backups tab at all:** `BackupService` snapshots
@@ -1639,7 +1639,7 @@ One new route, `POST /api/commands/cancel`, and a new terminal `CommandStatus.Ca
 `run-appearance-consistency-tests` 33 → **35**. Verified live through `testenv` with real conflicts made by editing each
 side's save; that pass found and fixed one real bug (a conflict side pushed while the page was open was invisible to it, so
 "Keep both" named the older save "the newer"). Decisions taken with the maintainer, the departures, and what was not verified:
-`tasks/checkpoint-ui/implementation-grouping.md` → Group 8; the step-by-step checklist is `tasks/checkpoint-ui/group-8-verification.md`.
+`tasks/_done/checkpoint-ui/implementation-grouping.md` → Group 8; the step-by-step checklist is `tasks/_done/checkpoint-ui/group-8-verification.md`.
 Found in passing and fixed in the same PR (the "real UTC write time" entry above): a version's "newest change" read hours off east of UTC (zip entries were
 stamped in local time, read as UTC — `SaveArchive`).
 <br>**Same branch, same day — OS logos and a real machine picker (maintainer's request).** Agents now say what they run:
@@ -1655,7 +1655,7 @@ its platform. `run-console-security-tests` **195** (UI-02). Verified live: WSL r
 conflict resolved through the new panel. Not seen: a real Deck/Bazzite report, and a Windows agent at this build (the rig's
 tray that day was an elevated one this session could not rebuild — `Gotchas` → Testing).
 <br>**PR #52 reviewed the same day, every finding addressed (branch `group-8-review-fixes`, pushed onto
-`group-8-ui-redesign`).** 14 findings; write-up in `tasks/checkpoint-ui/implementation-grouping.md` → Group 8 →
+`group-8-ui-redesign`).** 14 findings; write-up in `tasks/_done/checkpoint-ui/implementation-grouping.md` → Group 8 →
 *Review fixes*. The two that mattered: **the UTC "newest change" fix had nothing left showing it** — `b3caca9` dropped
 it from the conflict tile, and the "verified live … to the tick" line in the UTC entry above was checked against
 `main`'s old panel, not this branch; it is back on the tile. And **Discard in Exclude patterns left the abandoned draft's
@@ -1671,7 +1671,7 @@ reason (Nightly / Manual / Before upgrade) rides in its file name; the server ta
 migrating whenever it starts on a different build. `BackupsView.tsx` + KB `database-backups.md`. `openapi.json` +
 `web/src/api-types.ts` regenerated (additive). `run-console-security-tests` +34 (BK-01, mutation-checked) — run here only
 as that one phase through a pwsh-7 shim; CI runs the whole suite. Details and what was not verified:
-`tasks/checkpoint-ui/implementation-grouping.md` → Group 9.
+`tasks/_done/checkpoint-ui/implementation-grouping.md` → Group 9.
 <br>**Same day — 9b and 9c done too; Group 9 is complete in code.** 9b: Configuration rebuilt on the kit (Server with a
 `DriveInfo` storage meter, Enroll, Defaults & maintenance with the auto-update and nightly-backup switches, Machines,
 Agent updates edited in place, Admin password) and the **default exclude list editable** (`POST /api/settings/default-excludes`,
@@ -1680,7 +1680,7 @@ search + machine chips, Help as the docs grid, What's new with the release-histo
 sign-in with **Remember this browser** (localStorage vs sessionStorage); server extends `AgentHeartbeat.StagedVersion`
 (migration `AddAgentStagedVersion`) and `ServerBuildInfo.LatestRelease`. `run-console-security-tests` +17 (CFG-01,
 mutation-checked). All verified in a browser against a scratch server, **not yet through `testenv`** — the step-by-step
-is `tasks/checkpoint-ui/group-9-verification.md`.
+is `tasks/_done/checkpoint-ui/group-9-verification.md`.
 <br>**Same day, maintainer follow-ups:** backups are now zips of the database + every game's latest save on an
 editable UTC daily/weekly schedule, restorable from the Backups page (safety backup first, undoable); the SteamGridDB key
 is encrypted at rest (key ring `/data/keys`, never in a backup); the lock screen no longer shows the top bar's tabs,
@@ -1726,7 +1726,7 @@ that could not fail, a green "Synced 6 games · All clear" after a run that reac
 headless box passed, a notification click starting the browser inside the unit's cgroup (now through `systemd-run --user`,
 `xdg-open` as the fallback — **unverified on a Deck**), and the Deck's game page showing the previous game's data.
 `ErrorResponse.needsConfirm`, `SyncRunDto.pulled/queued/unreachable` and `?machineId=` on the resolved-conflicts route are
-additive. Detail, counts and what was not verified: `tasks/checkpoint-ui/implementation-grouping.md` → Group 10 → *Review fixes*.
+additive. Detail, counts and what was not verified: `tasks/_done/checkpoint-ui/implementation-grouping.md` → Group 10 → *Review fixes*.
 **Not seen in a browser:** the `testenv` rig was in use (its Windows agent mapped to real save folders) and was left alone.
 <br>**Second pass — the two Steam-art commits.** The premise of the second one was wrong: *Set Custom Artwork* hands Steam the
 image, not its path, so "set them once and they stay current" cannot happen — the installer's text, the CLI reference and the
@@ -2327,7 +2327,7 @@ gamescope on a real Deck — Phase 7's checklist still owns that.
 
 **Enrollment join links — option B implemented (2026-10-14, branch `enrollment-join-link`, worktree
 `.claude/worktrees/enrollment-mockups`; the three option mockups are committed on branch
-`enrollment-mockups` as `9ab48b7`, under `docs/tasks/enrollment-options/`).** Asked for directly: the
+`enrollment-mockups` as `9ab48b7`, under `docs/tasks/_done/enrollment-options/`).** Asked for directly: the
 enrollment file is disliked, replace it. Option B picked from the mockups — the console mints a short
 code (8 Crockford chars, `JoinCodes` in Shared) into `GET /join/{code}`, a self-contained pairing page:
 Windows tab starts the installer download and copies the link, Linux tab is a `curl …/install.sh | sh`

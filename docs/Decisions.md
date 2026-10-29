@@ -419,7 +419,7 @@ session can judge an edge case, not to reopen the choice.
   (`Games.EmulatorKey`, `switch:<title ID>`, D2) and matches the key before the name; a same-named game of another
   title is never joined. On one machine with several Switch emulators, one copy syncs and the others are kept in
   step on request (the agent's Emulator settings), never silently.
-  <br>**Shown as one entry, 2026-10-20/21 (maintainer, tasks/multi-emulator-games):** a game saved with several
+  <br>**Shown as one entry, 2026-10-20/21 (maintainer, tasks/_done/multi-emulator-games):** a game saved with several
   emulators is **one console and agent entry, with one tree (tab) per emulator**; sync still keeps the trees apart. This
   changes how the rule above is displayed, not the rule. A console-side `GameTitle` groups the games (`Game.TitleId`)
   and is never read by sync: existing pairs are grouped by a startup backfill and on every new emulator source, by the
@@ -585,7 +585,7 @@ session can judge an edge case, not to reopen the choice.
   launcher. **Not added to Steam** — Steam shortcuts are Game Mode, which keeps `savelocker ui`; the two
   sit side by side over one daemon. Rejected: a plain browser tab (no header bar), `savelocker ui` in a
   window (gamepad UI, not the shared agent UI), WebKitGTK (above). Detail:
-  `tasks/checkpoint-ui/implementation.md` → Phase 6 item 4.
+  `tasks/_done/checkpoint-ui/implementation.md` → Phase 6 item 4.
 - **Launch trigger: the Steam wrapper (`savelocker run %command%`), not process polling.**
   Gives exact prefix path + precise hooks via `STEAM_COMPAT_DATA_PATH`/`SteamAppId`. Process-name
   polling is the fallback for non-Steam launchers only (Lutris/Heroic/Bottles) — `/proc/pid/comm`
@@ -594,7 +594,7 @@ session can judge an edge case, not to reopen the choice.
   the real machine key; expires ~15 min. Deliberately unsigned — the threat is a forged file
   pointing at a malicious server, which signing can't fix (no trust anchor exists before the
   user's own download). Mitigated by HTTPS + hardened restore path + TOFU pin after enrollment.
-  <br>**Amended 2026-10-14: the file is gone — enrollment is a join link** (`tasks/enrollment-options`,
+  <br>**Amended 2026-10-14: the file is gone — enrollment is a join link** (`tasks/_done/enrollment-options`,
   option B; picked over a typed short code and over device-asks-console-approves). The console mints
   an 8-character Crockford code (40 bits) into `GET /join/{code}` — a server-hosted pairing page
   whose Windows tab starts the installer download and copies the link for the wizard's paste box,
@@ -867,7 +867,7 @@ session can judge an edge case, not to reopen the choice.
   The favicon, the tray icon and the brand mark are all drawn from one geometry table; there are no per-accent icon
   files (the build environment has no SVG rasterizer, and fifteen `.ico` files would be fifteen things to keep in step).
 - **Emerald, the sixth accent, is a deliberate exception to the plan's own colour rule** (2026-09-21, added after
-  Phase 4's other five shipped). `tasks/checkpoint-ui/plan.md`'s "none of the five options sit in the green or amber
+  Phase 4's other five shipped). `tasks/_done/checkpoint-ui/plan.md`'s "none of the five options sit in the green or amber
   hue ranges" was true when written; Emerald sits in the green range on purpose, so choosing it makes the accent
   (a decision is waiting) and `--color-safe` (healthy) the same hue — a primary button and a healthy chip read the
   same. Reviewed (PR #47) and accepted as a maintainer choice rather than fixed by retuning Emerald or dropping it:

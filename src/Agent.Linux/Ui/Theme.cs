@@ -9,7 +9,7 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// The single source of truth for how the Game Mode UI looks. Every colour, size, spacing and
 /// rounding value in <c>Ui/</c> comes from here — no literal colour may appear anywhere else.
 ///
-/// The palette is the Checkpoint dark set (docs/tasks/checkpoint-ui/plan.md "Tokens"), copied
+/// The palette is the Checkpoint dark set (docs/tasks/_done/checkpoint-ui/plan.md "Tokens"), copied
 /// verbatim from <c>web/src/index.css</c>'s <c>@theme</c> block — the Deck is dark-only (plan.md
 /// "Surfaces"), so only that half of the console's two palettes applies here. <see cref="Accent"/>
 /// is the one token that is NOT fixed: it is re-derived from <see cref="AppearancePalette"/>
@@ -148,7 +148,7 @@ static class Theme
 
     // ── Fonts ────────────────────────────────────────────────────────────────────────────────
     // Archivo + JetBrains Mono — the same faces the console and agent-ui self-host (Groups 1/3,
-    // docs/tasks/checkpoint-ui/implementation-grouping.md "Group 1"). Sizing is Checkpoint's ("16px
+    // docs/tasks/_done/checkpoint-ui/implementation-grouping.md "Group 1"). Sizing is Checkpoint's ("16px
     // minimum body text", implementation.md Phase 6 item 1).
 
     public static ImFontPtr Display;

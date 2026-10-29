@@ -5,7 +5,7 @@ namespace SaveLocker.Shared;
 /// never colours. The palette each id resolves to lives in the front ends (<c>web/src/appearance.ts</c>,
 /// <c>agent-ui/src/appearance.ts</c>) and the Deck UI's <c>Theme.cs</c>, because a colour is a
 /// rendering decision and the server should not have to know what an accent looks like on a screen
-/// it will never see. See <c>docs/tasks/checkpoint-ui/plan.md</c>.
+/// it will never see. See <c>docs/tasks/_done/checkpoint-ui/plan.md</c>.
 /// </summary>
 /// <param name="Theme"><c>"system"</c> (follow the OS), <c>"dark"</c> or <c>"light"</c>.</param>
 /// <param name="Accent"><c>"ember"</c>, <c>"coolant"</c>, <c>"arcade"</c>, <c>"cobalt"</c>, <c>"emerald"</c> or <c>"stealth"</c>.</param>

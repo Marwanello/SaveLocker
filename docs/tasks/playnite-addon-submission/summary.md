@@ -1,6 +1,6 @@
 # Playnite add-on database submission
 
-Not started on our side; on hold upstream. Split out of `tasks/playnite-plugin/plan.md` (Phase 16) on 2026-10-01, when
+Not started on our side; on hold upstream. Split out of `tasks/_done/playnite-plugin/plan.md` (Phase 16) on 2026-10-01, when
 the plugin task was closed as done.
 
 ## Where it stands

@@ -3,13 +3,13 @@
 Moved out of `CONTEXT.md` on 2026-09-20 during the review pass: that file's own header says it is a
 short orientation and detail belongs elsewhere, and these two entries were ~125 lines of it. Text is
 verbatim as written by the sessions that shipped the work. The 2026-09-20 corrections to it (dark base,
-sessions, the review findings) are in `tasks/checkpoint-ui/implementation-grouping.md` and
+sessions, the review findings) are in `tasks/_done/checkpoint-ui/implementation-grouping.md` and
 `CONTEXT.md`.
 
 ---
 
 **Checkpoint UI redesign, Group 1 shipped (2026-09-17, branch `claude/ui-redesign-gaps-group-1-96445b`,
-`tasks/checkpoint-ui/` — plan.md/implementation.md/implementation-grouping.md all updated in the same
+`tasks/_done/checkpoint-ui/` — plan.md/implementation.md/implementation-grouping.md all updated in the same
 session, per this file's own `## Status` table convention).** Asked directly to first fold in any
 implementation that had drifted ahead of the plan since it was written 2026-09-02, then build Group 1.
 **The gap found**: an unrelated session (2026-09-08/09, PR #35, "easy wins") had already self-hosted
@@ -63,11 +63,11 @@ of Tailwind's generation order.
 the token-delivery decision made here (a plain `agent-ui/src/tokens.css`, imported from
 `agent-ui/src/main.tsx` the exact way that file already imports its self-hosted fonts) and the
 matching Archivo font swap on that side. Groups 2 (console shell) and 6 (Deck) are next and don't
-depend on each other; full status table in `tasks/checkpoint-ui/implementation-grouping.md`.
+depend on each other; full status table in `tasks/_done/checkpoint-ui/implementation-grouping.md`.
 
 ---
 
-**Checkpoint UI redesign, Group 2 shipped (2026-09-18, same branch, `tasks/checkpoint-ui/` docs
+**Checkpoint UI redesign, Group 2 shipped (2026-09-18, same branch, `tasks/_done/checkpoint-ui/` docs
 updated in the same session again).** Asked directly to start Group 2 (console shell + console
 Sync all) once Group 1 landed. Console-side only, per the grouping doc's own scope.
 <br>**Shipped**: `GamesSidebar.tsx` rows converted to the new `ui/Row` primitive; a new

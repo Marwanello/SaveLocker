@@ -20,7 +20,7 @@ interface Props {
 
 /**
  * Theme, accent and app icon — stored on the server and, when "Push to agents" is on, handed to every
- * enrolled machine on its next heartbeat (docs/tasks/checkpoint-ui/plan.md, Phase 4). A change is applied
+ * enrolled machine on its next heartbeat (docs/tasks/_done/checkpoint-ui/plan.md, Phase 4). A change is applied
  * to this page first and saved after: it is a preference, and the click should feel instant. If the save
  * fails the page goes back to what it was and says why.
  */
