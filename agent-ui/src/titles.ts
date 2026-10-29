@@ -1,7 +1,7 @@
 import type { TrackedGame } from './types'
 
 /**
- * One entry per game, one save tree per emulator (docs/tasks/multi-emulator-games Phase 6) — the agent's side of the
+ * One entry per game, one save tree per emulator (docs/tasks/_done/multi-emulator-games Phase 6) — the agent's side of the
  * console's titles. The server groups the games an emulated title is saved as; this machine lists such a title once,
  * and its page gets a tab per tree. Every tree is still its own game, and syncs as one.
  */

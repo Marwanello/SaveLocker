@@ -2,7 +2,7 @@ import type { GameSummary } from '../../types';
 import { toMs } from '../../format';
 
 /**
- * One console entry per game, one save tree per emulator (docs/tasks/multi-emulator-games). The server groups the games
+ * One console entry per game, one save tree per emulator (docs/tasks/_done/multi-emulator-games). The server groups the games
  * an emulated title is saved as under one `titleId`; the console draws that title once, as a summary of its trees, so
  * the list, the wall, sort and group work on it unchanged. Every tree is still its own server game and syncs as one.
  */

@@ -105,7 +105,7 @@ Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName} now"; \
 //
 // Enrollment works from the CLI (SaveLocker.Agent.exe enroll --url <join link>).
 // This page just collects the join link and shells out to that command; it never
-// reimplements enrollment. See docs/tasks/enrollment-options/ for the design — the
+// reimplements enrollment. See docs/tasks/_done/enrollment-options/ for the design — the
 // load-bearing rules are enforced in ShouldSkipPage / DoEnroll below:
 //
 //   * The agent AUTO-UPDATES by running this installer /SILENT. That path must never

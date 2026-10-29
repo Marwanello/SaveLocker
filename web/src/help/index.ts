@@ -18,6 +18,7 @@ import restoreSafety from './restore-safety.md?raw';
 import steamLibraryArtwork from './steam-library-artwork.md?raw';
 import deckyPlugin from './decky-plugin.md?raw';
 import databaseBackups from './database-backups.md?raw';
+import emulatorSaveLocations from './emulator-save-locations.md?raw';
 
 export interface Article {
   slug: string;
@@ -48,6 +49,7 @@ export const articles: Article[] = [
   { slug: 'cli-reference',   title: 'Agent CLI reference',                    category: 'Reference',      content: cliReference },
   { slug: 'troubleshooting', title: 'Troubleshooting',                        category: 'Troubleshooting',content: troubleshooting },
   { slug: 'restore-safety',  title: 'When a save is refused on restore',      category: 'Troubleshooting',content: restoreSafety },
+  { slug: 'emulator-save-locations', title: 'Where emulator saves are looked for', category: 'Troubleshooting', content: emulatorSaveLocations },
 ];
 
 export const categories = [...new Set(articles.map(a => a.category))];

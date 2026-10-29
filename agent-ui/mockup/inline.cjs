@@ -2,12 +2,12 @@
    - CSS inlined, every font url() rewritten to a data: URI (Archivo + JetBrains Mono);
    - the module script inlined (safe `</script` escaping);
    - modulepreload/favicon/manifest links dropped.
-   Output: docs/tasks/gamepad-agent-ui/mockup.html */
+   Output: docs/tasks/_done/gamepad-agent-ui/mockup.html */
 const { readFileSync, writeFileSync, readdirSync } = require('node:fs')
 const { join, resolve, dirname } = require('node:path')
 
 const dist = resolve(__dirname, '../.mockup-dist')
-const out = resolve(__dirname, '../../docs/tasks/gamepad-agent-ui/mockup.html')
+const out = resolve(__dirname, '../../docs/tasks/_done/gamepad-agent-ui/mockup.html')
 
 const MIME = {
   woff2: 'font/woff2', woff: 'font/woff', ttf: 'font/ttf',

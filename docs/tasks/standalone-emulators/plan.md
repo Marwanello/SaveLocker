@@ -243,7 +243,8 @@ folders). After Phase 4, each one is mostly a single `RomSaveRules` row.
 - Fixture folders in `testenv emu-fixture` (`tests/testenv.ps1`) and `tests/linux/make-fixtures.py`.
 - xUnit tests modelled on `MelonDsTests.cs`: EmuDeck and standalone folders, scopes, states-only games, neighbouring saves
   untouched.
-- A line in the emulator saves help article (`web/src/help/`).
+- Its folders in `web/src/help/emulator-save-locations.md`, the source of truth for where Add games looks, and the emulator
+  in `emulator-backups.md`'s list.
 - A row in Phase 16.
 
 ## Verification (every group)

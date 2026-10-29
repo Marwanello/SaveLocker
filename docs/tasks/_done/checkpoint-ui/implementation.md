@@ -65,7 +65,7 @@ Each of these differs from the prototype on purpose, and was decided when its gr
 - **Real cover art, icons in list rows and the art picker** (2026-09-20) replace the prototype's generated
   gradient tiles; the gradient-with-initials tile survives only as the no-art fallback.
 - **The conflict card keeps the conflict-resolution-ui look** (the approved mockup in
-  `tasks/conflict-resolution-ui/`). Phase 10's inline resolve panel and Phase 13's Conflicts page wrap it;
+  `tasks/_done/conflict-resolution-ui/`). Phase 10's inline resolve panel and Phase 13's Conflicts page wrap it;
   neither redraws it.
 - **Prototype-only, drop:** the typeface-pairing switcher, "six marks" (three exist), the Decky Quick Access
   panel and Steam toasts (out of scope in [[plan]]), the Deck legend's `gamescope 1280×800 · Wayland`
