@@ -18,6 +18,16 @@ and 1 — both resolve to the same rollout: the console and fleet are now curren
 which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
 fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
+**Help KB: where emulator saves are looked for — written (2026-10-29, branch `emulator-kb-troubleshooting`, not merged).** New article
+`web/src/help/emulator-save-locations.md` (Troubleshooting, slug `emulator-save-locations`): how EmuDeck's `Emulation` folder is found, then
+per emulator the EmuDeck folder, the standalone/Flatpak/portable folders in the order the readers try them, the setting that moves each and
+what is *not* read, plus a *My emulator game isn't in Add games* checklist. Linked from `troubleshooting.md` and `emulator-backups.md`; the
+latter's states-only sentence was stale (PSP only) and now names RetroArch, PCSX2, DuckStation, Dolphin, PrimeHack, PPSSPP and Azahar. Paths
+come from the code, not the readers' doc comments — they claim a few places the code never reads (a portable Xenia's `portable.txt`, a
+shadPS4 `user/` beside any exe), and the article follows the code. **Keep it in sync** when [[tasks/standalone-emulators/summary]] adds
+readers. Verified: `npm run build`; rendered in the console mockup's Help view, dark and light. **Not verified:** the testenv console.
+**Next action:** the maintainer's testenv look at the article, then merge.
+
 **Playthroughs Group 2 — one device — built (2026-10-26, branch `playthroughs-group-2`, stacked on `playthroughs-group-1`, PR open, not merged).** Phases 4–6 of
 [[tasks/save-playthroughs/plan]]: an agent now **follows one playthrough per game** and can **switch**. `SyncEngine.SwitchPlaythroughAsync` refuses while the game
 runs, a session is open here or a conflict is open, pushes the outgoing save to **its own** playthrough, restores the target's latest (or empties the folder for
