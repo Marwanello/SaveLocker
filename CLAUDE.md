@@ -38,15 +38,15 @@ write-ups) with a `| Phase | Status |` table — one row per phase, using `✅ S
 🚧 `In progress`, `⏳ Not started`, `➡️ Moved` or `❌ Dropped` as needed, plus a short note for
 anything hardware-verified or otherwise noteworthy. Every `implementation-grouping.md` gets the
 matching `| Group | Contents | Status |` table just above `## Groups`. Update both tables the same
-session a phase/group actually ships — never let them go stale. `conflict-resolution-ui/plan.md`
-and `playnite-plugin/plan.md` (plus their own `implementation-grouping.md`) are the reference
+session a phase/group actually ships — never let them go stale. `tasks/_done/conflict-resolution-ui/plan.md`
+and `tasks/_done/playnite-plugin/plan.md` (plus their own `implementation-grouping.md`) are the reference
 examples.
 
 ## Session handoff (end of session)
 
 Before commiting, update the vault so the next session starts clean:
 1. Update `docs/CONTEXT.md` — current status, any new gotchas, next action.
-2. Move completed `docs/tasks/<name>/` folders to `docs/logs/` with a date prefix.
+2. Move completed `docs/tasks/<name>/` folders to `docs/tasks/_done/<name>/`.
 3. Update `docs/Backlog.md` if priorities shifted.
 4. Commit the vault changes with a `Docs:` prefix commit message.
 

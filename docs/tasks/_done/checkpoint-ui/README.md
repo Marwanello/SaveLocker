@@ -1,7 +1,7 @@
 # Checkpoint UI — working folder
 
 Everything for the console / agent / Deck visual redesign lives here. Like
-`tasks/conflict-resolution-ui/`, this is **not** an ordinary single-file task
+`tasks/_done/conflict-resolution-ui/`, this is **not** an ordinary single-file task
 — it's a living, multi-session design doc set for a still-open, 14-phase effort (8 at first; the 2026-09-27 gap audit added 9–14). The design phase
 completed 2026-09-02; Group 1 (the `web`-side foundation — tokens, reset, motion primitives, the
 `ui/` component library, and a first pass at Phase 8's assets) shipped 2026-09-17, and Group 2 (the

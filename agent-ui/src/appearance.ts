@@ -1,5 +1,5 @@
 // The look of this agent window: theme, accent, app mark. Three short ids — the console's (pushed on the
-// heartbeat) or, when "Follow the console" is off, this machine's own — see docs/tasks/checkpoint-ui/plan.md.
+// heartbeat) or, when "Follow the console" is off, this machine's own — see docs/tasks/_done/checkpoint-ui/plan.md.
 // This module is the one place the ids mean anything visual.
 //
 // HAND-KEPT COPY of web/src/appearance.ts (the source of truth for the ids, accents and mark geometry) and,

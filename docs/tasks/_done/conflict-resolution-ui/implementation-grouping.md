@@ -33,7 +33,7 @@ built.
 | 4 | Phase 8 | ✅ Done 2026-09-03 |
 | 5 | Phase 7 | ✅ Phase 7 done 2026-09-03 — Phase 14 deliberately left out of this pass and later dropped entirely, see `plan.md`'s Status section for why |
 | 6 | Phase 10, 11 (Decky) | ✅ Done — both phases hardware-verified 2026-09-07/08 (a `gameId`/`saveDirectory` wire-field bug, then a packed-`CGameID` decode bug and an unreliable `GetActiveGameActions()` check, all fixed along the way — see `plan.md`) |
-| 7 | Phase 13 (Playnite) | ➡️ Moved to its own task 2026-09-14 — `tasks/playnite-plugin/plan.md` + `implementation-grouping.md`. Split out of the old Group 6 on 2026-09-07 first (it shared nothing with Decky but the toolchain), then grew past a sub-phase of this task entirely once planned in depth |
+| 7 | Phase 13 (Playnite) | ➡️ Moved to its own task 2026-09-14 — `tasks/_done/playnite-plugin/plan.md` + `implementation-grouping.md`. Split out of the old Group 6 on 2026-09-07 first (it shared nothing with Decky but the toolchain), then grew past a sub-phase of this task entirely once planned in depth |
 
 ## Which phases are actually reachable from a cloud/remote session
 
@@ -180,8 +180,8 @@ below, matching how Phase 9 got pulled out of the original Decky/Playnite groupi
 reason (see "Correction found before Group 3" above).
 
 **Group 7 — Playnite — moved out to its own task, 2026-09-14.** `Phase 13` grew into a full
-standalone task once actually planned in depth (`tasks/playnite-plugin/plan.md` +
-`tasks/playnite-plugin/implementation-grouping.md`, with its own 16-phase numbering and its own
+standalone task once actually planned in depth (`tasks/_done/playnite-plugin/plan.md` +
+`tasks/_done/playnite-plugin/implementation-grouping.md`, with its own 16-phase numbering and its own
 grouping). Its dependency on this task's Phase 0/1 local API (shipped) is unchanged; everything else
 about sequencing and scope now lives there, not here.
 

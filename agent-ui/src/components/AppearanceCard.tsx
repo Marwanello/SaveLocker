@@ -17,7 +17,7 @@ interface Props {
 }
 
 /**
- * "Follow the console" — the per-machine override (docs/tasks/checkpoint-ui/plan.md, Phase 4). On, this
+ * "Follow the console" — the per-machine override (docs/tasks/_done/checkpoint-ui/plan.md, Phase 4). On, this
  * machine draws the theme, accent and icon the console pushed on its last heartbeat. Off, it keeps its own
  * and ignores pushes (they are still stored, so turning this back on shows the console's CURRENT look).
  * Turning it off changes nothing on screen: the machine's own look starts as whatever it is drawing now.

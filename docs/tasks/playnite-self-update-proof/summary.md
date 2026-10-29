@@ -1,6 +1,6 @@
 # Playnite plugin: prove the self-update against a real release
 
-Not started. Split out of `tasks/playnite-plugin/plan.md` on 2026-10-01, when the plugin task was closed as done.
+Not started. Split out of `tasks/_done/playnite-plugin/plan.md` on 2026-10-01, when the plugin task was closed as done.
 
 The plugin's update path is code-complete but has never run end to end:
 
