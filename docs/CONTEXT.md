@@ -2758,8 +2758,12 @@ Three linked tasks, built in this order: [[tasks/save-playthroughs/plan|Playthro
 [[tasks/storage-dedup-offsite/plan|Storage: off-site copies and deduplication]]. Every design question was
 settled on mockups of the real agent and console (`agent-ui/mockup-features/`, `web/mockup-features/`), and each
 plan's *Design (decided)* section lists the picks; all of them together: <https://claude.ai/artifact/R3BrsWpzSicoRt4xqqVDtJ>.
-Nothing is built yet. **Next action:** Playthroughs Group 1 per its `implementation-grouping.md`, and version
-history's Group 1 (trash) alongside it.
+**Playthroughs status (2026-10-27):** Groups 1 and 2 (server, one device) and Phases 7–9 are written. Phase 7
+(console) is on `playthroughs-group-3`; Phases 8 and 9 are PRs in the two plugin repos (`SaveLocker-Decky`
+`playthroughs-decky`, `SaveLocker-Playnite` `playthroughs-playnite`). Neither plugin has run on a Deck or in a real
+Playnite yet: the testenv pass in `plan.md` is what's left. The agent must be v0.9.0+ (`Playthroughs.MinAgentVersion`;
+build testenv with `-Version 0.9.0-test`). **Next action:** the testenv pass, then Phase 10 (delete to trash) once
+version history's trash ships.
 
 ---
 
