@@ -26,5 +26,5 @@ user whose emulator save is not listed has nothing to check. `troubleshooting.md
 ## Notes
 
 - `docs/CLI Reference.md`-style rule: the KB article is the source of truth; keep it in sync when
-  [[tasks/standalone-emulators/summary|More standalone emulators]] adds readers.
+  [[tasks/standalone-emulators/plan|More standalone emulators]] adds readers.
 - Verify: the article renders in the console's Help view (both themes), and every path it lists matches the code.

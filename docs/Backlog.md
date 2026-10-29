@@ -33,5 +33,5 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 - [Other stores' cloud flags](tasks/other-stores-cloud-flags/summary.md)
 - [Storage: off-site copies, then deduplication](tasks/storage-dedup-offsite/summary.md)
 - [Playtime and "last played"](tasks/playtime-tracking/summary.md)
-- [More standalone emulators](tasks/standalone-emulators/summary.md)
+- [More standalone emulators](tasks/standalone-emulators/plan.md)
 - [macOS agent](tasks/macos-agent/summary.md)

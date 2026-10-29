@@ -24,7 +24,7 @@ per emulator the EmuDeck folder, the standalone/Flatpak/portable folders in the 
 what is *not* read, plus a *My emulator game isn't in Add games* checklist. Linked from `troubleshooting.md` and `emulator-backups.md`; the
 latter's states-only sentence was stale (PSP only) and now names RetroArch, PCSX2, DuckStation, Dolphin, PrimeHack, PPSSPP and Azahar. Paths
 come from the code, not the readers' doc comments — they claim a few places the code never reads (a portable Xenia's `portable.txt`, a
-shadPS4 `user/` beside any exe), and the article follows the code. **Keep it in sync** when [[tasks/standalone-emulators/summary]] adds
+shadPS4 `user/` beside any exe), and the article follows the code. **Keep it in sync** when [[tasks/standalone-emulators/plan]] adds
 readers. Verified: `npm run build`; rendered in the console mockup's Help view, dark and light. **Not verified:** the testenv console.
 **Next action:** the maintainer's testenv look at the article, then merge.
 
