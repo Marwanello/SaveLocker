@@ -18,6 +18,9 @@ and 1 — both resolve to the same rollout: the console and fleet are now curren
 which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
 fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
+**File-level saves — planned (2026-10-29, branch `claude/file-level-saves-planning-12fb67`, vault only).** [[tasks/file-level-saves/plan]] + its `implementation-grouping.md`: a `<base>/Save.dat` manifest entry becomes folder `<base>` + include scope `Save.dat` (no archive change). Settled with the maintainer: **hybrid reach** (automatic scopes only for install-folder entries; every other file-shaped template stays whole-folder but gets an opt-in *narrow to these files* offer, which also covers enrolled games), hand-picked files in Add games and on the game page, a narrow `SavePathGuard` exception for a scoped game folder in a Steam library under Program Files, scope changes from console **and** agent (audited). Old agents gated by version.
+**Next action:** Group 1 — Phase 0 (detection harness counts scoped `<base>`), then the resolver, install-folder safety, enrolment.
+
 **Playthroughs Group 2 — one device — built (2026-10-26, branch `playthroughs-group-2`, stacked on `playthroughs-group-1`, PR open, not merged).** Phases 4–6 of
 [[tasks/save-playthroughs/plan]]: an agent now **follows one playthrough per game** and can **switch**. `SyncEngine.SwitchPlaythroughAsync` refuses while the game
 runs, a session is open here or a conflict is open, pushes the outgoing save to **its own** playthrough, restores the target's latest (or empties the folder for
