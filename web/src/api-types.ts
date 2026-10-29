@@ -4784,7 +4784,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    playthrough?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -7185,6 +7187,8 @@ export interface components {
             status: components["schemas"]["UploadStatus"];
             version: null | components["schemas"]["SaveVersionDto"];
             conflict: null | components["schemas"]["ConflictDto"];
+            /** Format: int32 */
+            playthroughCount?: null | number;
         };
         /** @enum {unknown} */
         UploadStatus: "Created" | "NoChange" | "Conflict" | "RetryFull";

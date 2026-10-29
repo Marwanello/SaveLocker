@@ -18,6 +18,84 @@ and 1 — both resolve to the same rollout: the console and fleet are now curren
 which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
 fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
+**Playthroughs Group 3, Phase 7 — the console's Saves card — built (2026-10-27, branch `playthroughs-group-3`,
+stacked on `main` with Groups 1 and 2 merged, PR open, not merged).** The console's game page gets a **Saves** card
+in place of Versions ([[tasks/save-playthroughs/plan]] Phase 7, chosen mockup variant E,
+`web/mockup-features/features/playthroughs.tsx`): a tab per playthrough (just Main on every game until a second
+exists), each tab's own head (devices, Switch a device to this…, Rename, Make default, Archive/Unarchive) and its
+own versions table underneath, scoped with the existing `?playthrough=` query the server already answered
+(`SyncService.ListVersionsAsync`) — nothing new on the server (until the review: Prune gained `?playthrough=`). **New playthrough** offers *Current save* (fork
+another playthrough's or a specific version's latest — "New playthrough from this version" sits in the versions
+table's row actions) or *Start fresh* (an empty playthrough; there is no local save folder on the console to offer
+a file-keep list from, so that part of the agent/Playnite flow does not apply here — a deliberate scope decision,
+not an oversight). **Switch a device to this…** only queues `AgentCommandType.SwitchPlaythrough`
+(`api.switchDevicePlaythrough`, matching the existing Push/Pull/Sync "queue and toast" idiom); the device runs the
+switch itself (Group 2) and the result shows up in the game page's existing Remote commands table — no new
+progress UI was built for this, since one already exists. `VersionsCard.tsx` is gone, folded into the new
+`SavesCard.tsx`; `GameDetail.tsx` updated, `web/src/api.ts`/`types.ts` gained the playthrough calls (admin routes
+from Group 1, unchanged). **Verified live** against a throwaway dev server + the dashboard dev server: created a
+game, a second and third playthrough (one from "Current save" — correctly refused by the server with "has no save
+yet to start from" until a real push exists, one "Start fresh"), renamed, archived and unarchived, and confirmed
+"Switch a device to this…" degrades correctly with zero machines enrolled (the button stays disabled, no request
+fires). `tsc -b`, `vite build` and `oxlint` all clean. **Not verified:** an actual switch against a running agent,
+and a multi-emulator game's playthrough tabs under its emulator tabs (Phase 6/7's interaction) — neither this repo
+had a second emulator tree or a live agent handy. **Next action:** Decky (Phase 8) and Playnite (Phase 9) each need
+their own repo/worktree/PR per `implementation-grouping.md`; Phase 10 (delete to trash) still waits on
+version-history Group 1.
+**Reviewed 2026-10-27 (PR #97), fixed:** CI's `build-web` failed on a same-string ternary (the appearance check's flattened-state rule); a fork's History read "No versions yet" under a header naming its latest (its head lives in the playthrough it was forked from — now listed with a *From Main* chip); **Prune** on one tab pruned every playthrough (the one server change: `POST /api/games/{id}/prune?playthrough=`, and the count now skips every playthrough's head); a new playthrough was created but its tab not opened; archiving the open tab left it showing with no tab; *New playthrough from this* after picking *Start fresh* made an empty playthrough; versions pushed while the page was open never appeared (the card now takes GameDetail's live list); Switch, Prune and *New playthrough from this* were offered where the server refuses them (archived playthrough, merged version); the New playthrough panel opened below the whole versions table. `run-playthrough-tests` 99 → 102.
+**Second review 2026-10-28 (PR #97, commits `0a2924c`..`a80cc9a`), fixed:** forking a version of an archived playthrough from the console's popup quietly forked another line's latest (the archived source was not in the picker); Escape on a dropdown inside that popup closed the whole popup; the agent page's new 5 s playthrough poll dropped the tabs (and the one being looked at, or a rename being typed) on any one failed ask; the agent's Versions card now marks a fork's head *From Main* like the console. Not changed: X on a controller now plays another playthrough here in one press (deliberate, and the switch keeps both saves). `run-playthrough-tests` 102 → 103 (the agent's own list includes its fork point).
+**Fix 2026-10-28, a device's playthrough count went stale:** only reading the playthrough list, a switch or the CLI's `playthrough` updated `TrackedGame.PlaythroughCount`, so a device that never did any of those stayed on 1 after a second playthrough was made elsewhere — and the Deck shows its switch only above 1. The count now rides the sync the device already does: `UploadResult.PlaythroughCount` (single-shot, chunked complete, and a begin's NoChange) and an `X-Playthrough-Count` header on the head download; the agent takes it on every push and pull (`SyncEngine.TakePlaythroughCount`). No extra round trip; an older server sends neither and the count is left alone. New `PlaythroughCountSyncTests` (2, against a real server; both fail with the agent's take disabled).
+
+**Follow-up 2026-10-27, mockup-driven (`web/mockup-features/features/playthroughs.tsx`, `?focus=1` to view just this feature):** tabs now always show, even a single-playthrough game's lone "Main" (renameable there too, unlike before); **Default** and **Archived** moved from the head into a chip on the tab itself; switching tabs slides+fades from the side the new tab sits on (`.animate-pane-right`/`-left`, `src/index.css`). **New playthrough** is now a popup (`AddGameDialog`'s modal pattern) instead of an inline panel — the plan's "No modals" rule's one deliberate exception — with Name, then a shared **Playthrough + Version** picker (horizontal, labeled) both *Current save* and *Start fresh* sit under; *Start fresh* still always starts empty (the server can't see a device's files, so the picker there is informational, not functional — a real per-file keep list already exists on the agent, which does have the folder). Each version row's actions are icon-only now (Download, and **Fork** — `git-fork`/`download` added to `ui/Icon.tsx`, geometry from lucide-static 0.511.0, not hand-drawn); Fork opens the same New-playthrough popup pre-filled with that playthrough and version (normalizing to "Latest" when the forked version is already that playthrough's head), and the picker shows each version's real hash, not a placeholder. Agent-ui's equivalent trigger (`VersionsCard.tsx`'s `onFork`) renamed "New playthrough from this version" → **Fork…**, and it now passes the whole version so its label shows the hash too. Verified live on testenv (`console` + `WinTest` + `LinuxTest`): forked Chrono Trigger's Main (`062cf4ec`) into "Hard mode", confirmed the *From Main* tag and the real hash preselect, confirmed Default/Archived read correctly off a live fleet. `tsc -b`, `oxlint`, and `run-appearance-consistency-tests` (50/50) all clean.
+
+**Follow-up 2 2026-10-27, bug reports against the shipped UI:** *Start fresh*'s Playthrough+Version picker is now hidden
+rather than shown-but-inert (`SavesCard.tsx`'s `NewPlaythroughPanel`) — it did nothing there, and showing it with an
+explanatory note was more confusing than just not showing it. Agent-ui's "Versions on the server" (`VersionsCard.tsx`)
+now matches the console's `PlaythroughVersions`: a History/Backups `Seg` split (walked from `headId` by
+`parentVersionId`, same rule as the console), matching columns (Version · When · Machine · Size · State), and an
+icon-only Fork anchored to the row's end (`lucide-react`'s `GitFork`, agent-ui needs no hand-copied `Icon.tsx` since it
+uses the real package). Root cause of "Hard mode has no version in the agent though the console shows one": the
+agent-only route (`GET /api/agent/games/{id}/versions`) filtered strictly by `SaveVersion.PlaythroughId`, so a fresh
+fork's head — which belongs to the *source* playthrough until its own first push — was never in the list; the console
+never had this bug because it fetches every playthrough's versions unfiltered and injects the head client-side. Fixed
+server-side in `Program.cs`'s agent route instead (inserts the playthrough's head via `GetVersionAsync` when missing),
+since it's the one caller that narrows by playthrough. Verified live on testenv: Chrono Trigger's "Hard mode" (empty,
+forked from Main) now shows History 1 in the agent, matching the console; Kingdom Hearts II's Main now reads History 1
+/ Backups 1 in the agent (previously a flat "2 versions", which read as a mismatch against the console's own 1+1).
+`tsc -b` and `oxlint` clean on both `web` and `agent-ui`; server `dotnet build` clean.
+
+**Follow-up 3 2026-10-28, agent-ui page layout and freshness:** the game page's "Versions on the server" is now the
+first card (full width, no longer paired with `GameManagement` in `sl-grid2`) — it was the thing being asked for most
+and used to be buried below Sync buttons, stats and two other cards. `PlaythroughTabs.tsx`'s subtitle no longer says
+"also on <device>" — that device list is one scroll away on the page itself, and the tab was the wrong place for it.
+A new playthrough made on the console used to need a back-then-forward to show up here: there's no push channel from
+the server for this (the agent's own `/api/activity` poll is local-only — a file change or a sync this agent ran, not
+a hint the server's *metadata* moved), so `GameDetailView` now re-asks `/api/playthroughs` every 5s while the page is
+open, plus once immediately on tab-focus regain. Separately, `GamesView` used to flash "No games are on this machine
+or the server yet" / **Add games** for every cold open, including the common case of the first `/api/games` request
+still in flight — `games` starts at `[]` in `App.tsx` with no "have we asked yet" of its own. Added `gamesLoaded`
+(true once that first request settles, success or fail) and a loading state in `GamesView` so the empty state only
+ever shows once there's a real answer. Verified live on testenv: created "Heartbeat test" on the console and watched
+it appear in the open agent tab (`WinTest`) within the 5s poll, no navigation; confirmed the Versions card's new
+position and the tab subtitles. `tsc -b`, `oxlint` clean; `run-appearance-consistency-tests` 50/50.
+
+**Follow-up 4 2026-10-28, page order correction + an other-playthrough view + controller nav:** corrects Follow-up 3's
+ordering — the game page is now **game info → Sync/Push/Pull bar → playthrough tabs → Versions**, not Versions first;
+the bar was getting lost under a table every time. Looking at a playthrough this device isn't on no longer shows a
+full "Sync this game" bar it can't use: `GameDetailView` now computes one `actionBar` (Sync/Push/Pull for your own
+playthrough, or **Play this one here / Rename… / Archive…** for one you're not on) rendered in that same top slot, so
+the layout stays identical across both — only its buttons change. The Card that used to repeat the other playthrough's
+name below Versions (the tab already says that) is now titled **Info** and carries no buttons — they moved to the
+action bar. Controller: LT/RT step between playthrough tabs when there's more than one (`gamepad/nav.ts`'s new
+`stepPtTab`); with only one tab (most games: just "Main") they fall through to Push now/Pull latest exactly as before,
+so nothing changes for the common case. X plays the open "other" playthrough here when that action bar is showing,
+falling back to Sync this game otherwise. Push now/Pull latest drop their LT/RT `PadGlyph` hint whenever a second
+playthrough exists (so they rejoin the normal focus ring instead of becoming unreachable), and the
+Rename/Archive/Unarchive/Keep buttons that were missing `data-pad-label` now carry one. Verified live on testenv:
+confirmed the new top-to-bottom order, and that opening "Hard mode" (not this device's own) swaps the bar to
+Play-here/Rename/Archive and relabels the card to "Info" with its dl/paragraph but no buttons. `tsc -b`, `oxlint`
+clean; `run-appearance-consistency-tests` 50/50.
+
 **File-level saves — planned (2026-10-29, branch `file-level-saves-plan`, vault only).** [[tasks/file-level-saves/plan]] + its `implementation-grouping.md`: a `<base>/Save.dat` manifest entry becomes folder `<base>` + include scope `Save.dat` (no archive change). Settled with the maintainer: **hybrid reach** (automatic scopes only for install-folder entries; every other file-shaped template stays whole-folder but gets an opt-in *narrow to these files* offer, which also covers enrolled games), hand-picked files in Add games and on the game page, a narrow `SavePathGuard` exception for a scoped game folder in a Steam library under Program Files, scope changes from console **and** agent (audited). Old agents gated by version.
 **Next action:** Group 1 — Phase 0 (detection harness counts scoped `<base>`), then the resolver, install-folder safety, enrolment.
 

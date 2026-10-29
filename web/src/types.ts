@@ -63,6 +63,9 @@ export type ArtSource = Schemas['ArtSourceDto'];
 export type SgdbGame = NonNullable<Schemas['SgdbGameDto']>;
 export type AdminSession = NonNullable<Schemas['AdminSessionDto']>;
 export type Lockout = NonNullable<Schemas['LockoutDto']>;
+export type Playthrough = NonNullable<Schemas['PlaythroughDto']>;
+export type PlaythroughDevice = Schemas['PlaythroughDeviceDto'];
+export type CreatePlaythroughRequest = Schemas['CreatePlaythroughRequest'];
 
 /**
  * Where a link into one game should land — a notification's action or the top bar's conflict pill:

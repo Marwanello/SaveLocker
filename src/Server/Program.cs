@@ -570,7 +570,7 @@ agent.MapPost("/games/{id:guid}/upload", async (
     try
     {
         var result = await sync.UploadAsync(id, machine.Id, parent, hash, http.Request.Body, force ?? false, playthrough, ct);
-        return Results.Ok(result);
+        return Results.Ok(result with { PlaythroughCount = await sync.PlaythroughCountAsync(id) });
     }
     catch (EmptySaveRefusedException ex) { return Results.Conflict(ex.Message); }
     catch (ArchiveTooLargeException ex)
@@ -597,6 +597,7 @@ agent.MapPost("/games/{id:guid}/upload/begin", async (
     var machine = http.CurrentMachine();
     var (sessionId, noChange, useDeltaPath, needPaths) = await sync.BeginChunkedUploadAsync(
         id, machine.Id, req.ParentVersionId, req.ContentHash, req.Force, req.Files, req.PlaythroughId, ct);
+    if (noChange is not null) noChange = noChange with { PlaythroughCount = await sync.PlaythroughCountAsync(id) };
     return Results.Ok(new BeginUploadResponse(sessionId, noChange, useDeltaPath, needPaths));
 }).Produces<BeginUploadResponse>();
 
@@ -632,7 +633,8 @@ agent.MapPost("/games/{id:guid}/upload/{sessionId:guid}/complete", async (
     var machine = http.CurrentMachine();
     try
     {
-        return Results.Ok(await sync.CompleteChunkedUploadAsync(id, machine.Id, sessionId, ct));
+        var result = await sync.CompleteChunkedUploadAsync(id, machine.Id, sessionId, ct);
+        return Results.Ok(result with { PlaythroughCount = await sync.PlaythroughCountAsync(id) });
     }
     catch (UnknownUploadSessionException ex) { return Results.NotFound(ex.Message); }
     catch (EmptySaveRefusedException ex) { return Results.Conflict(ex.Message); }
@@ -644,8 +646,14 @@ agent.MapPost("/games/{id:guid}/upload/{sessionId:guid}/complete", async (
     }
 }).Produces<UploadResult>();
 
+// X-Playthrough-Count rides the pull the way UploadResult.PlaythroughCount rides the push: a line made elsewhere reaches
+// this device's game page without it reading the playthrough list.
 agent.MapGet("/games/{id:guid}/download", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync) =>
-    StreamVersion(http, await sync.DownloadHeadAsync(id, http.CurrentMachine().Id, playthrough)));
+{
+    var head = await sync.DownloadHeadAsync(id, http.CurrentMachine().Id, playthrough);
+    if (head is not null) http.Response.Headers["X-Playthrough-Count"] = (await sync.PlaythroughCountAsync(id)).ToString();
+    return StreamVersion(http, head);
+});
 
 agent.MapGet("/versions/{versionId:guid}/download", async (Guid versionId, HttpContext http, SyncService sync) =>
     StreamVersion(http, await sync.DownloadVersionAsync(versionId)));
@@ -861,7 +869,13 @@ agent.MapGet("/agent/conflicts", async (SyncService sync, DateTime? resolvedSinc
 agent.MapGet("/agent/games/{id:guid}/versions", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync) =>
 {
     var on = await sync.ResolvePlaythroughAsync(id, http.CurrentMachine().Id, playthrough);
-    return Results.Ok((await sync.ListVersionsAsync(id, on.Id)).Select(v => v.ToDto()));
+    var list = (await sync.ListVersionsAsync(id, on.Id)).Select(v => v.ToDto()).ToList();
+    // A fork's head starts as the version it was forked from, which belongs to the source playthrough
+    // (SaveVersion.PlaythroughId) and so isn't in `list` until this playthrough gets its own push — the
+    // console includes it the same way (web's SavesCard.tsx, PlaythroughVersions).
+    if (on.HeadVersionId is { } headId && list.All(v => v.Id != headId) && await sync.GetVersionAsync(headId) is { } head)
+        list.Insert(0, head);
+    return Results.Ok(list);
 }).Produces<List<SaveVersionDto>>();
 
 // Copy a save to another emulator's tree of the same title, from an agent's own UI (tasks/multi-emulator-games Phase 6).
@@ -1479,9 +1493,9 @@ admin.MapGet("/games/{id:guid}/versions/changes", async (Guid id, SyncService sy
     await sync.ListVersionChangesAsync(id) is { } changes ? Results.Ok(changes) : Results.NotFound())
     .Produces<VersionChangesDto[]>();
 
-// Apply retention immediately, instead of only as a side effect of the next upload.
-admin.MapPost("/games/{id:guid}/prune", async (Guid id, SyncService sync) =>
-    Results.Ok(new PruneResult(await sync.PruneNowAsync(id))));
+// Apply retention immediately, instead of only as a side effect of the next upload. `playthrough`: just that one.
+admin.MapPost("/games/{id:guid}/prune", async (Guid id, Guid? playthrough, SyncService sync) =>
+    Results.Ok(new PruneResult(await sync.PruneNowAsync(id, playthrough))));
 
 // ---- Admin actions ----
 admin.MapGet("/conflicts", async (SyncService sync) =>

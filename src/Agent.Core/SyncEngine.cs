@@ -440,6 +440,7 @@ public sealed partial class SyncEngine : IAsyncDisposable, IDisposable
             var parentSent = game.LastKnownVersionId;
             var result = await SendPushAsync(game, roots, hash, manifest, force, sent, ct);
             if (result is null) return null;   // refused outright; SendPushAsync already alerted
+            TakePlaythroughCount(game, result.PlaythroughCount);   // saved with the rest of the sync state below
             if (result.Status is UploadStatus.Created or UploadStatus.NoChange)
                 SupersedeRestoredCopy(game, parentSent, result.Version?.Id);
 
@@ -793,7 +794,8 @@ public sealed partial class SyncEngine : IAsyncDisposable, IDisposable
                 return PullOutcome.NothingOnServer;
             }
 
-            var (versionId, headHash) = head.Value;
+            var (versionId, headHash, playthroughCount) = head.Value;
+            if (TakePlaythroughCount(game, playthroughCount)) _config.SaveGameSyncState(game);
             AdoptArchiveKeys(game, archive);
             // A Switch copy kept in step and played since is taken in first, so the check below protects it too.
             SwitchCopies.Reconcile(_config, game, _log);

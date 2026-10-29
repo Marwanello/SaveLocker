@@ -173,11 +173,22 @@ input:focus { border-color: var(--color-accent) !important; }
 }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
 @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.82); } }
+/* A tab's own pane, entering from the side the newly-picked tab sits on (plan.md's Saves card). */
+@keyframes pane-right {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes pane-left {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: none; }
+}
 .animate-rise     { animation: rise 260ms var(--ease) both; }
 .animate-pop       { animation: pop 300ms var(--ease) both; }
 .animate-toast-in { animation: toast-in 340ms var(--ease) both; }
 .animate-drop     { animation: drop 180ms var(--ease) both; }
 .animate-pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+.animate-pane-right { animation: pane-right 180ms var(--ease) both; }
+.animate-pane-left  { animation: pane-left 180ms var(--ease) both; }
 
 /* plan.md Motion: "Canvas sections — rise 260ms, 26ms stagger, first six only". Every console page
    renders into ui/Page.tsx, whose direct children are its sections. Keyed on mount, so a poll that
@@ -228,6 +239,7 @@ input:focus { border-color: var(--color-accent) !important; }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-rise, .animate-pop, .animate-toast-in, .animate-drop, .animate-pulse-dot,
+  .animate-pane-right, .animate-pane-left,
   .page-canvas > *, .tile-wall > *, .sync-rail::after { animation: none; }
   * { transition-duration: 0.001ms !important; }
 }

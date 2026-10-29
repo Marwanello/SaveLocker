@@ -51,6 +51,9 @@ export default function App() {
   // Games held here because their save folder was emptied: answered beside conflicts, counted with them.
   const [emptied, setEmptied] = useState<EmptiedHold[]>([])
   const [games, setGames] = useState<TrackedGame[]>([])
+  // False only until the first games request settles (either way) — Games must not read an unset
+  // list as "nothing is tracked" and offer Add games while the real answer is still in flight.
+  const [gamesLoaded, setGamesLoaded] = useState(false)
   // Non-null only while the sync-time pop-up is up (a Sync all surfaced at least one conflict).
   // Deliberately separate from `conflicts`: the passive 15s poll below must never open this on its
   // own — only an explicit Sync all does, so nothing interrupts the user unprompted.
@@ -98,6 +101,7 @@ export default function App() {
     const [cs, gs, eh] = await Promise.allSettled([api.conflicts(), api.games(), api.emptiedHolds()])
     if (gs.status === 'fulfilled') setGames(gs.value)
     else console.error(gs.reason)
+    setGamesLoaded(true)
     if (eh.status === 'fulfilled') setEmptied(eh.value)
     if (cs.status === 'fulfilled') {
       setConflicts(cs.value)
@@ -264,7 +268,7 @@ export default function App() {
                     onNote={setResolveNote}
                   />
                 )
-                : <GamesView games={games} conflicts={conflicts} onOpen={setOpenGameId} onNavigate={navigate} />
+                : <GamesView games={games} loaded={gamesLoaded} conflicts={conflicts} onOpen={setOpenGameId} onNavigate={navigate} />
             })()}
             {view === 'addGames' && <AddGamesView onEnrolled={refreshState} />}
             {view === 'conflicts' && (

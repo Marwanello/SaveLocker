@@ -1167,7 +1167,7 @@ public sealed partial class SyncService
             .Select(s => s.Detail.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
         return new GameStateDto(game.ToDto(extras), head?.ToDto(), lease.ToDto(gameId), hasConflict, totalStorage,
             CleanMachines(machines), CleanSources(sources), emulator.Length == 0 ? null : string.Join(" + ", emulator),
-            playthroughCount ?? Math.Max(1, await _db.Playthroughs.CountAsync(p => p.GameId == gameId)));
+            playthroughCount ?? await PlaythroughCountAsync(gameId));
     }
 
     /// <summary>Machines that have this game: a stored save folder or a recorded source (one small query each).</summary>
@@ -1971,7 +1971,9 @@ public sealed partial class SyncService
     /// head is a version of the playthrough it was forked from —, open-conflict versions, or versions an admin
     /// protected; and an archived playthrough is not pruned at all.
     /// </summary>
-    private async Task PruneVersionsAsync(Guid gameId, CancellationToken ct)
+    /// <param name="onlyPlaythroughId">Prune just that playthrough (the console's Prune on one playthrough's tab); null prunes
+    /// every one. The heads and conflict sides of all of them stay protected either way.</param>
+    private async Task PruneVersionsAsync(Guid gameId, CancellationToken ct, Guid? onlyPlaythroughId = null)
     {
         var game = await _db.Games.FindAsync(new object?[] { gameId }, ct);
         var limit = game?.RetainVersions ?? _retainPerGame;
@@ -1988,7 +1990,7 @@ public sealed partial class SyncService
         foreach (var c in openConflicts) { protectedIds.Add(c.VersionAId); protectedIds.Add(c.VersionBId); }
 
         var pruned = new List<SaveVersion>();
-        foreach (var playthrough in playthroughs.Where(p => p.ArchivedAt is null))
+        foreach (var playthrough in playthroughs.Where(p => p.ArchivedAt is null && (onlyPlaythroughId is null || p.Id == onlyPlaythroughId)))
         {
             var versions = await _db.SaveVersions
                 .Where(v => v.PlaythroughId == playthrough.Id)
@@ -2451,10 +2453,10 @@ public sealed partial class SyncService
     /// so "Prune now" and automatic pruning can never disagree about what is safe to delete.
     /// </para>
     /// </summary>
-    public async Task<int> PruneNowAsync(Guid gameId)
+    public async Task<int> PruneNowAsync(Guid gameId, Guid? playthroughId = null)
     {
         var before = await _db.SaveVersions.CountAsync(v => v.GameId == gameId);
-        await PruneVersionsAsync(gameId, CancellationToken.None);
+        await PruneVersionsAsync(gameId, CancellationToken.None, playthroughId);
         return before - await _db.SaveVersions.CountAsync(v => v.GameId == gameId);
     }
 

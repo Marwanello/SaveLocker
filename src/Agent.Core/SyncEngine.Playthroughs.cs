@@ -98,6 +98,15 @@ public sealed partial class SyncEngine
         _config.SaveGameSyncState(game);
     }
 
+    /// <summary>Takes the playthrough count a push or pull answered with, so a line made on another device or in the console shows
+    /// here after an ordinary sync, with nothing having read the list first. True when it changed; the caller saves.</summary>
+    private static bool TakePlaythroughCount(TrackedGame game, int? count)
+    {
+        if (count is not { } n || n == game.PlaythroughCount) return false;
+        game.PlaythroughCount = n;
+        return true;
+    }
+
     /// <summary>
     /// Switch this device to another playthrough of <paramref name="game"/>: refuse while it runs or a session is open here or a
     /// conflict is open; push the outgoing save to its own playthrough (or keep it, to be pushed when the server is back); put the

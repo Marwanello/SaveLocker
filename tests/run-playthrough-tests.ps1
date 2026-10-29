@@ -305,6 +305,8 @@ try {
     Check "B is on Hard mode only; A stays on Main" ($mainDevs -contains "PtA" -and $mainDevs -notcontains "PtB")
     $pullHard = Pull $b.apiKey $game
     Check "B, naming nothing, now pulls Hard mode's head" ($pullHard.Content -eq "v2")
+    $forkList = @((Call "GET" "/api/agent/games/$game/versions" $b.apiKey).Json)
+    Check "before its own first push, B's list is the version Hard mode was forked from (Main's)" ($forkList.Count -eq 1 -and $forkList[0].id -eq $v2 -and $forkList[0].playthroughId -eq $main.id -and $forkList[0].machineName)
     $h1r = Push $b.apiKey $game "h1" $v2
     Check "B pushes (naming nothing) and it becomes Hard mode's first version of its own" ($h1r.Json.status -eq "Created" -and $h1r.Json.version.playthroughId -eq $hard.id)
     $h1 = $h1r.Json.version.id
@@ -389,6 +391,16 @@ try {
     Check "Main's versions were not spent on Side's" ((Pt $g2 "Main").versionCount -eq 3)
     $delHead = Call "DELETE" "/api/games/$g2/versions/$($ids[1])"
     Check "deleting a version that is another playthrough's head is refused" ($delHead.Status -ge 400)
+    # The console's Saves card prunes from one playthrough's tab: naming it must leave the other lines alone.
+    Admin-Post "/api/games/$g2/retain?value=10" | Out-Null
+    foreach ($t in 5..6) { $s = (Push $pm.apiKey $g2 "s$t" $sprev $side.id).Json.version; $sprev = $s.id }
+    Admin-Post "/api/games/$g2/retain?value=1" | Out-Null
+    $mainBefore = (Pt $g2 "Main").versionCount
+    $pr = Admin-Post "/api/games/$g2/prune?playthrough=$($side.id)"
+    Check "Prune naming Side cuts Side to its newest version" ($pr.Status -eq 200 -and (Pt $g2 "Side").versionCount -eq 1)
+    Check "... and leaves Main as it was" ((Pt $g2 "Main").versionCount -eq $mainBefore)
+    Admin-Post "/api/games/$g2/prune" | Out-Null
+    Check "Prune naming no playthrough still prunes Main (keeping Keep's head)" ((Pt $g2 "Main").versionCount -eq 2)
 
     Write-Host ""
     Write-Host "==== 8. Archive freezes; the default cannot be archived; a device keeps its playthrough ===="
