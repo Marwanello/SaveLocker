@@ -117,6 +117,10 @@ public sealed partial class SyncService
 
     // ----- Reading -----
 
+    /// <summary>How many playthroughs a game has, archived ones included; 1 for a game from before the migration ran.</summary>
+    public async Task<int> PlaythroughCountAsync(Guid gameId) =>
+        Math.Max(1, await _db.Playthroughs.CountAsync(p => p.GameId == gameId));
+
     /// <summary>A game's playthroughs, the default first, then by age with the archived ones last. Null for an unknown game.</summary>
     public async Task<PlaythroughDto[]?> ListPlaythroughsAsync(Guid gameId)
     {

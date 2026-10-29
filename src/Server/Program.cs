@@ -570,7 +570,7 @@ agent.MapPost("/games/{id:guid}/upload", async (
     try
     {
         var result = await sync.UploadAsync(id, machine.Id, parent, hash, http.Request.Body, force ?? false, playthrough, ct);
-        return Results.Ok(result);
+        return Results.Ok(result with { PlaythroughCount = await sync.PlaythroughCountAsync(id) });
     }
     catch (EmptySaveRefusedException ex) { return Results.Conflict(ex.Message); }
     catch (ArchiveTooLargeException ex)
@@ -597,6 +597,7 @@ agent.MapPost("/games/{id:guid}/upload/begin", async (
     var machine = http.CurrentMachine();
     var (sessionId, noChange, useDeltaPath, needPaths) = await sync.BeginChunkedUploadAsync(
         id, machine.Id, req.ParentVersionId, req.ContentHash, req.Force, req.Files, req.PlaythroughId, ct);
+    if (noChange is not null) noChange = noChange with { PlaythroughCount = await sync.PlaythroughCountAsync(id) };
     return Results.Ok(new BeginUploadResponse(sessionId, noChange, useDeltaPath, needPaths));
 }).Produces<BeginUploadResponse>();
 
@@ -632,7 +633,8 @@ agent.MapPost("/games/{id:guid}/upload/{sessionId:guid}/complete", async (
     var machine = http.CurrentMachine();
     try
     {
-        return Results.Ok(await sync.CompleteChunkedUploadAsync(id, machine.Id, sessionId, ct));
+        var result = await sync.CompleteChunkedUploadAsync(id, machine.Id, sessionId, ct);
+        return Results.Ok(result with { PlaythroughCount = await sync.PlaythroughCountAsync(id) });
     }
     catch (UnknownUploadSessionException ex) { return Results.NotFound(ex.Message); }
     catch (EmptySaveRefusedException ex) { return Results.Conflict(ex.Message); }
@@ -644,8 +646,14 @@ agent.MapPost("/games/{id:guid}/upload/{sessionId:guid}/complete", async (
     }
 }).Produces<UploadResult>();
 
+// X-Playthrough-Count rides the pull the way UploadResult.PlaythroughCount rides the push: a line made elsewhere reaches
+// this device's game page without it reading the playthrough list.
 agent.MapGet("/games/{id:guid}/download", async (Guid id, Guid? playthrough, HttpContext http, SyncService sync) =>
-    StreamVersion(http, await sync.DownloadHeadAsync(id, http.CurrentMachine().Id, playthrough)));
+{
+    var head = await sync.DownloadHeadAsync(id, http.CurrentMachine().Id, playthrough);
+    if (head is not null) http.Response.Headers["X-Playthrough-Count"] = (await sync.PlaythroughCountAsync(id)).ToString();
+    return StreamVersion(http, head);
+});
 
 agent.MapGet("/versions/{versionId:guid}/download", async (Guid versionId, HttpContext http, SyncService sync) =>
     StreamVersion(http, await sync.DownloadVersionAsync(versionId)));

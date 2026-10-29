@@ -1167,7 +1167,7 @@ public sealed partial class SyncService
             .Select(s => s.Detail.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
         return new GameStateDto(game.ToDto(extras), head?.ToDto(), lease.ToDto(gameId), hasConflict, totalStorage,
             CleanMachines(machines), CleanSources(sources), emulator.Length == 0 ? null : string.Join(" + ", emulator),
-            playthroughCount ?? Math.Max(1, await _db.Playthroughs.CountAsync(p => p.GameId == gameId)));
+            playthroughCount ?? await PlaythroughCountAsync(gameId));
     }
 
     /// <summary>Machines that have this game: a stored save folder or a recorded source (one small query each).</summary>

@@ -617,9 +617,10 @@ public sealed class ApiClient
 
     /// <summary>
     /// Download the current head archive to <paramref name="destinationPath"/>.
-    /// Returns the (versionId, contentHash) from response headers, or null if no head exists.
+    /// Returns the (versionId, contentHash) from response headers, or null if no head exists, with the game's playthrough
+    /// count (null from a server that predates it).
     /// </summary>
-    public async Task<(Guid versionId, string contentHash)?> DownloadHeadAsync(
+    public async Task<(Guid versionId, string contentHash, int? playthroughCount)?> DownloadHeadAsync(
         Guid gameId, string destinationPath, CancellationToken ct = default, Guid? playthrough = null)
     {
         var resp = await _http.GetAsync($"/api/games/{gameId}/download{PlaythroughQuery(playthrough)}",
@@ -629,12 +630,14 @@ public sealed class ApiClient
 
         var versionId = Guid.Parse(resp.Headers.GetValues("X-Version-Id").First());
         var hash = resp.Headers.GetValues("X-Content-Hash").First();
+        int? playthroughCount = resp.Headers.TryGetValues("X-Playthrough-Count", out var counts) &&
+                                int.TryParse(counts.First(), out var n) ? n : null;
 
         Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
         await using (var fs = File.Create(destinationPath))
             await resp.Content.CopyToAsync(fs, ct);
 
-        return (versionId, hash);
+        return (versionId, hash, playthroughCount);
     }
 
     // ---- Conflicts ----
