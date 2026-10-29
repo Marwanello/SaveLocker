@@ -1,6 +1,8 @@
 # File-level saves — summary
 
-Seeded 2026-09-08 from `docs/Backlog.md` during the vault reorg (`chore/vault-docs-reorg`). No plan file exists yet — this is the backlog entry verbatim, kept as the starting point for a future `plan.md`.
+**Planned 2026-10-29:** see [[tasks/file-level-saves/plan|plan.md]] and [[tasks/file-level-saves/implementation-grouping|implementation-grouping.md]].
+
+Seeded 2026-09-08 from `docs/Backlog.md` during the vault reorg (`chore/vault-docs-reorg`). The backlog entry verbatim, kept as the background for `plan.md`.
 
 ---
 
