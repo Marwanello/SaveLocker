@@ -6,7 +6,7 @@ import { emulatorsOf } from './titles';
 import type { StandingKey } from './gameState';
 
 /**
- * The Games tab's arrange state (Option A of docs/tasks/console-games-sort-group/mockup.html):
+ * The Games tab's arrange state (Option A of docs/tasks/_done/console-games-sort-group/mockup.html):
  * two compact dropdowns that group and sort the list/wall. Everything here is pure and view-only —
  * grouping changes nothing but what is drawn; Sync all, commands and counts never look at it.
  *

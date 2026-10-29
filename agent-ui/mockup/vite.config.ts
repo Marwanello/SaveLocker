@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path'
 const here = dirname(fileURLToPath(import.meta.url))
 
 /** Builds `mockup/index.html` (the real agent-ui + fetch mock + pad layer) into one self-contained
- *  HTML file via `mockup/inline.cjs`, for `docs/tasks/gamepad-agent-ui/mockup.html`. */
+ *  HTML file via `mockup/inline.cjs`, for `docs/tasks/_done/gamepad-agent-ui/mockup.html`. */
 export default defineConfig({
   root: here,
   base: './',

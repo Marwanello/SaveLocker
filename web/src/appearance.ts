@@ -1,6 +1,6 @@
 // The look of the console: theme, accent, app mark. Three short ids chosen on the Configuration page,
 // stored on the server (`Ui:*` settings) and pushed to every agent on its heartbeat — see
-// docs/tasks/checkpoint-ui/plan.md. This module is the one place the ids mean anything visual.
+// docs/tasks/_done/checkpoint-ui/plan.md. This module is the one place the ids mean anything visual.
 //
 // HAND-KEPT COPY in agent-ui/src/appearance.ts and (accent triples) src/Agent.Core/AppearancePalette.cs —
 // three packages, no shared build. Change all of them together; tests/run-appearance-consistency-tests.ps1

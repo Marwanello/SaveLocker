@@ -8,7 +8,7 @@
    Every derived (soft/line/ink) step is color-mix against the live --color-panel/--color-fg, so
    it re-derives correctly under either theme with no second set of values.
    The accent is the one token the Appearance setting rewrites (web/src/appearance.ts, inline on
-   <html>); Ember, below, is simply its default. See docs/tasks/checkpoint-ui/plan.md. */
+   <html>); Ember, below, is simply its default. See docs/tasks/_done/checkpoint-ui/plan.md. */
 @theme {
   --color-ink:        #0f0f10;
   --color-panel:      #141416;

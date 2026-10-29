@@ -1,5 +1,5 @@
 /* Checkpoint tokens for the agent UI — a HAND-KEPT COPY of the `@theme` block in
-   web/src/index.css, which is the source of truth (docs/tasks/checkpoint-ui/plan.md, "Tokens").
+   web/src/index.css, which is the source of truth (docs/tasks/_done/checkpoint-ui/plan.md, "Tokens").
    agent-ui has no Tailwind and shares no workspace with web/, so the two files cannot be built from
    one source; change a value in web/src/index.css and change it here in the same commit. The names
    are identical on purpose, so the two files can be diffed line for line.

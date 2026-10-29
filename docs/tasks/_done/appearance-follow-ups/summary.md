@@ -1,6 +1,6 @@
 # Appearance follow-ups (left by Group 5)
 
-Source: `tasks/checkpoint-ui/implementation-grouping.md` → Group 5. Moved out of `Backlog.md` on 2026-10-01.
+Source: `tasks/_done/checkpoint-ui/implementation-grouping.md` → Group 5. Moved out of `Backlog.md` on 2026-10-01.
 
 ## Status
 

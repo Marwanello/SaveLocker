@@ -5,6 +5,9 @@ file yet. **Priority: Low.** Separate from [[tasks/_done/emulator-saves/plan|Emu
 is Switch, Groups G–I) because these are mostly cheap: a ROM-named save in a shared folder is one more row of
 `RomSaves` (`RomSaveRules`), the D4 "shape 1" reader.
 
+**Every new reader adds its folders to `web/src/help/emulator-save-locations.md`** (and to the emulator list in
+`emulator-backups.md`): that article is the source of truth for where Add games looks.
+
 ---
 
 ## Candidates
