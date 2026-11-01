@@ -50,8 +50,11 @@ export function usePopover() {
     const below = area.bottom - chip.bottom - GAP * 2
     const above = chip.top - area.top - GAP * 2
     const up = box.height > below && above > below
-    const shift = Math.max(0, box.right - area.right + GAP)
+    // Narrower than the area, so shifting left to fit can never push it off the other side.
+    const width = Math.min(box.width, area.width - GAP * 2)
+    const shift = Math.max(0, box.left + width - area.right + GAP)
     setPopStyle({
+      maxWidth: width,
       maxHeight: Math.max(above, below),
       ...(up ? { top: 'auto', bottom: `calc(100% + ${GAP}px)` } : {}),
       ...(shift > 0 ? { left: -shift } : {}),

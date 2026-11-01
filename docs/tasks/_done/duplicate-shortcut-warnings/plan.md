@@ -146,7 +146,6 @@ pass); both UI fixes proven in headless Chrome against the real CSS/DOM (the car
 label-tick each reproduced with their fix removed, including a real trusted click). **Not verified:**
 a live Deck/WebView2 pass of the chip. The 71-failure cascade the PR body's earlier numbers carried
 was this box's stray `~/SaveLocker` daemon holding :5187; the netns run is the workaround.
-Ready to move to `tasks/_done/` once the PR merges.
 
 ## Live check (2026-11-01)
 

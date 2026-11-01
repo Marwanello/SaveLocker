@@ -117,9 +117,10 @@ interface CandidateLike {
   enrolled: boolean; emulatorName?: string | null; emulatorSystem?: string | null
   emulatorRom?: string | null; untouchedSeed: boolean; notSyncable?: string | null
   emulatorConsole?: string | null; region?: string | null; statesOnly: boolean
+  duplicateShortcuts?: { appId: string | null; name: string; tracked: boolean }[] | null
 }
 
-interface Candidate { id: number; name: string; source: string; hasSteamCloud: boolean; path: string; prefixPath: string | null; processName: string | null; store: string; alsoFound: { key: string; label: string | null; path: string; mapped: boolean; includeGlobs: string[] }[] | null; enrolled: boolean; emulatorName: string | null; emulatorSystem: string | null; emulatorRom: string | null; untouchedSeed: boolean; notSyncable: string | null; emulatorConsole: string | null; region: string | null; statesOnly: boolean }
+interface Candidate { duplicateShortcuts?: CandidateLike['duplicateShortcuts']; id: number; name: string; source: string; hasSteamCloud: boolean; path: string; prefixPath: string | null; processName: string | null; store: string; alsoFound: { key: string; label: string | null; path: string; mapped: boolean; includeGlobs: string[] }[] | null; enrolled: boolean; emulatorName: string | null; emulatorSystem: string | null; emulatorRom: string | null; untouchedSeed: boolean; notSyncable: string | null; emulatorConsole: string | null; region: string | null; statesOnly: boolean }
 
 function c(row: Partial<Candidate> & { id: number; name: string; source: string }): Candidate {
   return {
@@ -139,7 +140,7 @@ db.candidates = [
   c({ id: 4, name: 'Elden Ring', source: 'SteamInstalled', hasSteamCloud: true, store: 'Steam', path: '/home/deck/Games/Elden Ring/saves', processName: 'eldenring' }),
   c({ id: 5, name: 'Stardew Valley', source: 'SteamInstalled', hasSteamCloud: true, store: 'Steam' }),
   c({ id: 6, name: 'Diablo IV (Battle.net)', source: 'SteamShortcut', store: 'Unknown', path: '/home/deck/Games/Battle.net/drive_c/…/Diablo IV' }),
-  c({ id: 7, name: 'Genshin Impact', source: 'SteamShortcut', path: '/home/deck/Games/Genshin/…/Genshin Impact' }),
+  c({ id: 7, name: 'Genshin Impact', source: 'SteamShortcut', path: '/home/deck/Games/Genshin/…/Genshin Impact', duplicateShortcuts: [{ appId: '2222329534', name: 'Genshin Impact', tracked: true }, { appId: '3041720963', name: 'Genshin Impact', tracked: false }, { appId: '3187204511', name: 'Genshin Impact', tracked: false }] }),
   c({ id: 8, name: 'Death Stranding', source: 'Heroic', store: 'Epic', path: '/home/deck/Games/Heroic/Prefixes/death-stranding/…/KojimaProductions' }),
   c({ id: 9, name: 'The Witcher 3', source: 'Heroic', store: 'Gog', path: '/home/deck/Games/Heroic/Prefixes/witcher3/…/The Witcher 3' }),
   c({ id: 10, name: 'Fez', source: 'Heroic', store: 'Amazon', path: '/home/deck/Games/Heroic/Prefixes/fez/…/Fez' }),

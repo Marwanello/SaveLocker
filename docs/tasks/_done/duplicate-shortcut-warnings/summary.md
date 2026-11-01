@@ -1,6 +1,6 @@
 # Surface duplicate-shortcut-name warnings outside doctor — summary
 
-Seeded 2026-09-08 from `docs/Backlog.md` during the vault reorg (`chore/vault-docs-reorg`). No plan file exists yet — this is the backlog entry verbatim (only `logs/` links repointed at `../logs/`), kept as the starting point for a future `plan.md`.
+Done 2026-11-01: see `plan.md`. Seeded 2026-09-08 from `docs/Backlog.md` during the vault reorg (`chore/vault-docs-reorg`) — this is the backlog entry verbatim (only `logs/` links repointed at `../logs/`).
 
 ---
 

@@ -1006,7 +1006,7 @@ public sealed partial class AgentApiServer : IDisposable
         // tasks/playnite-plugin/plan.md, Phase 14: lets the plugin itself (a separate process from
         // this one, running inside Playnite) ask whether a newer version of ITSELF is waiting on the
         // server. Always calls PlaynitePlugin.CheckAsync with apply:false — this route only reports,
-        // it never writes; the agent's own recurring timer (TrayApp.CheckPlaynitePluginUpdateAsync)
+        // it never writes; the agent's own background check (TrayApp.CheckPlaynitePluginUpdateAsync)
         // owns actually installing one. Called from inside a running Playnite process, so
         // CheckAsync's own IsPlayniteRunning guard always takes its "exit Playnite" branch when
         // a newer version exists — which is exactly the restart notice Phase 14 wants to surface, with

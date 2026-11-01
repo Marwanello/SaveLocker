@@ -372,6 +372,10 @@ function scrollable(el: Element | null): HTMLElement | null {
 }
 
 function findScroller(): HTMLElement | null {
+  // A chip's popover scrolls when it is taller than the room it has, and it is not an ancestor of
+  // the focused chip, so the walk from the focus below would scroll the page behind it instead.
+  const fromPopover = scrollable(document.querySelector('.sl-release__pop'))
+  if (fromPopover) return fromPopover
   const fromFocus = scrollable(focused)
   if (fromFocus) return fromFocus
   const scope = overlayScope()

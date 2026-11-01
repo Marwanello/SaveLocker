@@ -38,7 +38,17 @@ Run through testenv (console + Windows tray, `-StateRoot D:\SaveLocker-testenv`)
   `unknown`, not `mismatch`, for one uploaded under another filename). The server is the trust root: not changed.
 - `testenv down -Only windows` also stops the console.
 
+## Reviewed 2026-11-01 (PR #103), fixed
+
+- An exception in the exit check (it listed processes outside any `try`) would have ended the agent: it was a timer
+  callback, the one path here with no catch above it.
+- With AutoUpdate off, the notice still said exiting would install the update. It now says updates are off.
+- The first install's refusal and the *started during the update* failure still said to close Playnite, the same trap.
+- Two installs could share the staging folder; one now stands aside (`InstallGate`).
+- The check listed processes every 30 s on machines with no plugin, and its first sample came 30 s after start, which
+  could miss an exit.
+
 ## Not verified
 
-The `PluginUpdateFailed` event reaching the console. `CheckAsync`'s path with AutoUpdate off. The exit check is new code
-in `TrayApp`, exercised by hand only: no automated test.
+The `PluginUpdateFailed` event reaching the console. `CheckAsync`'s path with AutoUpdate off, past the notice's text. The
+exit check's edge has unit tests (`PlaynitePluginTests`); the timer around it was exercised by hand only, before the review.

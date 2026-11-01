@@ -71,7 +71,7 @@ internal sealed class TrayContext : ApplicationContext
     private UpdateChecker? _updateChecker;
     private readonly System.Threading.Timer _updateTimer;
     private readonly System.Threading.Timer _playniteExitTimer;
-    private bool _playniteWasRunning;
+    private readonly StoppedEdge _playniteStopped = new();
     // Last check result cached for the local API server to read.
     internal UpdateResult? LastUpdateResult;
     // Label of the "Check for Updates" menu item so we can mutate it after a check.
@@ -230,7 +230,7 @@ internal sealed class TrayContext : ApplicationContext
             period: TimeSpan.FromHours(24));
 
         _playniteExitTimer = new System.Threading.Timer(
-            _ => OnPlayniteExitTick(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+            _ => OnPlayniteExitTick(), null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
 
         _ui.Post(MaybeShowFirstRun);
 
@@ -278,9 +278,10 @@ internal sealed class TrayContext : ApplicationContext
     /// <summary>
     /// Windows analogue of Daemon.cs's own <c>CheckPluginUpdateAsync</c> (tasks/playnite-plugin/
     /// plan.md, Phase 7) — checks (and, if <see cref="AgentConfig.AutoUpdate"/> allows it, applies) an
-    /// update to the Playnite plugin, on the same 24 h timer as the agent's own update check. Silent
-    /// on a machine with no Playnite, which is most of them: <see cref="PlaynitePlugin"/> answers
-    /// <see cref="PluginUpdateState.NoPlaynite"/> before it does any work at all.
+    /// update to the Playnite plugin, on the same 24 h timer as the agent's own update check and when
+    /// Playnite exits. Silent on a machine with no Playnite, which is most of them:
+    /// <see cref="PlaynitePlugin"/> answers <see cref="PluginUpdateState.NoPlaynite"/> before it does
+    /// any work at all.
     /// </summary>
     private async Task CheckPlaynitePluginUpdateAsync()
     {
@@ -292,14 +293,18 @@ internal sealed class TrayContext : ApplicationContext
     /// <summary>
     /// A plugin update can only land while Playnite is shut, and the plugin's own notice tells the
     /// player to exit it, so that exit is when to look. Left to the 24 h timer, the update would wait
-    /// for a tick that happens to fall while Playnite is closed.
+    /// for a tick that happens to fall while Playnite is closed. Without the plugin there is nothing
+    /// to update, so most machines never list their processes for this.
     /// </summary>
     private void OnPlayniteExitTick()
     {
-        var running = PlaynitePlugin.IsPlayniteRunning;
-        var exited = _playniteWasRunning && !running;
-        _playniteWasRunning = running;
-        if (exited) FireAndForget(CheckPlaynitePluginUpdateAsync);
+        // A timer callback has nothing above it: an exception left here would end the whole agent.
+        try
+        {
+            if (PlaynitePlugin.Installed && _playniteStopped.Sample(PlaynitePlugin.IsPlayniteRunning))
+                FireAndForget(CheckPlaynitePluginUpdateAsync);
+        }
+        catch (Exception ex) { AgentLogger.LogException("TrayContext.OnPlayniteExitTick", ex); }
     }
 
     private void MaybeShowFirstRun()
