@@ -141,7 +141,7 @@ public static class PlaynitePlugin
     /// trigger a write, and the plugin cannot safely replace its own currently-loaded assembly anyway
     /// — only the agent's own recurring timer (<c>TrayApp.CheckPlaynitePluginUpdateAsync</c>) installs
     /// anything. Called from inside a running Playnite process, so <see cref="CheckAsync"/>'s own
-    /// <see cref="IsPlayniteRunning"/> guard always takes its "close Playnite first" branch when a
+    /// <see cref="IsPlayniteRunning"/> guard always takes its "exit Playnite" branch when a
     /// newer version genuinely exists — <see cref="PluginUpdateOutcome.Message"/> already reads
     /// exactly like the restart notice Phase 14 wants, with nothing extra to compose here.
     /// </summary>
@@ -274,8 +274,9 @@ public static class PlaynitePlugin
 
             if (IsPlayniteRunning)
                 return new(PluginUpdateState.Available,
-                    $"v{info.LatestVersion} available (installed v{installed}) — close Playnite first, " +
-                    "an update cannot be applied while it is running.", installed, info.LatestVersion);
+                    $"v{info.LatestVersion} available (installed v{installed}) — exit Playnite to install it " +
+                    "(Exit from its menu or tray icon: the X only hides it in the tray).",
+                    installed, info.LatestVersion);
 
             if (!apply)
                 return new(PluginUpdateState.Available,
