@@ -13,6 +13,15 @@ vs untouched `main`'s **208/74** on this box — **zero new failures**, the 3 ne
 `main`). Server, Agent.Linux, Windows Agent and `agent-ui` build clean; `api-types.ts` regenerated
 from a scratch daemon (`--port 5190`). Research below was against `main` (`4290a2a`).
 
+## Status
+
+| Phase | Status |
+|-------|--------|
+| 1. Shared detector, `Doctor` refactor, `ScanCandidate` field, Linux scanner, API assertion | ✅ Shipped 2026-10-14 (PR #75) |
+| 2. Windows scanner | ✅ Shipped 2026-10-14; live in WebView2 2026-11-01 |
+| 3. agent-ui chip, Game Mode caption, `api-types.ts` | 🚧 Built; WebView2 passed 2026-11-01 (popover fix on `claude/recursing-spence-500fce`). **Open:** the Deck pass, see *Live check* |
+| 4. Docs | ❌ Dropped: no KB change needed |
+
 ## Goal
 
 Surface the doctor's duplicate-shortcut note where a user actually adds a game — a warning on the
@@ -138,3 +147,39 @@ label-tick each reproduced with their fix removed, including a real trusted clic
 a live Deck/WebView2 pass of the chip. The 71-failure cascade the PR body's earlier numbers carried
 was this box's stray `~/SaveLocker` daemon holding :5187; the netns run is the workaround.
 Ready to move to `tasks/_done/` once the PR merges.
+
+## Live check (2026-11-01)
+
+**Windows agent UI (WebView2): passes after one fix.** Run through `testenv up -Only windows` on
+v0.8.2-test (commit `1a773e2`), driven over WebView2's DevTools port (no desktop keystrokes), 900×600.
+
+- Fixture: a throwaway `userdata\999999999\config\shortcuts.vdf` in the real Steam folder with Steam
+  closed, removed afterwards. There is no Steam-root override, so this is the only way to feed the
+  Windows scanner without touching the account's own `shortcuts.vdf`. It held a second `Minit` beside the
+  account's real one, two `SaveLocker Dup Test`, two with a long name, and one single-shortcut control.
+- `/api/candidates` and the rendered rows agree. `Minit` follows its real shortcut (AppID 2222329534,
+  *Will be tracked*); the second is *Duplicate*. The note names the tracked AppID. The control and
+  `EmulationStationDE` have no chip, so it appears only on duplicated shortcuts.
+- Hover opens the popover, a click pins it, Esc closes it, a click inside it does not tick the row.
+- **Bug found and fixed:** the popover opened behind Add games' sticky foot bar, hiding the second
+  shortcut's marker and the whole note at the default window size; near the bottom of the page the
+  window cut it off as well. The 2026-10-14 review fixed the card's clip, not this. The card now rises
+  above the bar while a popover is open, and `usePopover` opens on the side with room, limits the height
+  to it (scrolling inside) and shifts left if it would leave the page. `ReleaseChip` shares it.
+  Re-measured with the row at the top, middle and bottom of the page for three games: all inside the
+  window, and the note is on top or reachable by scrolling the popover. agent-ui has no unit-test
+  harness, so this has no automated test. `tsc -b`, `vite build` and `oxlint` are clean.
+
+**Deck: not verified.** Unreachable on 2026-11-01 at the start and again at the end: `deck@192.168.1.16`
+is gone, nothing on 192.168.1.0/24 but this PC has port 22 open, and it is not on Tailscale. So the Deck
+agent UI and the Game Mode tile and caption have never been seen live, and the task stays open.
+
+Still to do on the Deck, with it awake and `testenv deck-config` pointing at it:
+
+1. Agent UI: chip, note and popover on the real duplicates (HITMAN 3, Minit, Moving Out, Animal
+   Crossing, Metal Gear, Waydroid), including the popover fix.
+2. `savelocker ui`, Add games: the warning tile and caption.
+3. Addable rows only. From the code, not from the screen: in `DrawCandidateRow` the caption is in the
+   addable branch, and the tile loses to the *tracked* and *not syncable* tiles. So a tracked or
+   not-syncable row gets no duplicate warning in Game Mode, which is what this plan says. agent-ui
+   differs slightly: the note is hidden on enrolled rows, but the chip still shows on them.

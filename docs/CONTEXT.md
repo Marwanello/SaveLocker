@@ -21,6 +21,13 @@ fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 **File-level saves — planned (2026-10-29, branch `file-level-saves-plan`, vault only).** [[tasks/file-level-saves/plan]] + its `implementation-grouping.md`: a `<base>/Save.dat` manifest entry becomes folder `<base>` + include scope `Save.dat` (no archive change). Settled with the maintainer: **hybrid reach** (automatic scopes only for install-folder entries; every other file-shaped template stays whole-folder but gets an opt-in *narrow to these files* offer, which also covers enrolled games), hand-picked files in Add games and on the game page, a narrow `SavePathGuard` exception for a scoped game folder in a Steam library under Program Files, scope changes from console **and** agent (audited). Old agents gated by version.
 **Next action:** Group 1 — Phase 0 (detection harness counts scoped `<base>`), then the resolver, install-folder safety, enrolment.
 
+**Duplicate-shortcut warnings — WebView2 passed, Deck still open (2026-11-01, branch `claude/recursing-spence-500fce`, not pushed).** Live pass of the chip through `testenv` on the
+Windows agent: chip, note, popover and tracked marker all correct. It found one bug, fixed here: the popover opened behind Add games' sticky foot bar, hiding the second shortcut and
+the note; `usePopover` now picks the side with room and the card rises above the bar (`ReleaseChip` shares it). **Not verified:** the Deck was unreachable, so its agent UI and the Game
+Mode tile and caption are unseen. Results in [[tasks/duplicate-shortcut-warnings/plan]] → *Live check*. **Rig trap:** `testenv status` warns the leftover Windows test state maps
+*Heavenly Sword* to the real `D:\Emulation\savespcs3\saves`, so a pull from the test console could restore over it. This pass used a fresh `-StateRoot` with no console.
+**Next action:** with the Deck awake, `testenv deck-config` for its new IP, then the three steps in *Live check*; on a pass, close the task.
+
 **Help KB: where emulator saves are looked for — written (2026-10-29, branch `emulator-kb-troubleshooting`, not merged).** New article
 `web/src/help/emulator-save-locations.md` (Troubleshooting, slug `emulator-save-locations`): how EmuDeck's `Emulation` folder is found, then
 per emulator the EmuDeck folder, the standalone/Flatpak/portable folders in the order the readers try them, the setting that moves each and
