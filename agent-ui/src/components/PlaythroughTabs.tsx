@@ -11,16 +11,12 @@ interface Props {
   onNew: () => void
   /** Another sync holds the agent's gate, or a switch is running. */
   disabled?: boolean
-  /** This device's name, so "also on …" never names it. */
-  machineName: string
 }
 
-/** What a tab says under its name. */
-function sub(p: Playthrough, selected: boolean, deviceName?: string): string {
+/** What a tab says under its name. Which other devices also play it is on the page below, not here. */
+function sub(p: Playthrough, selected: boolean): string {
   if (p.archivedAt) return 'Archived'
-  const others = p.devices.filter(d => d.machineName !== deviceName).map(d => d.machineName)
-  const base = selected ? 'Played here' : p.head ? `Latest ${formatAgo(p.head.createdAt)}` : 'No save yet'
-  return others.length > 0 ? `${base} · also on ${others.join(', ')}` : base
+  return selected ? 'Played here' : p.head ? `Latest ${formatAgo(p.head.createdAt)}` : 'No save yet'
 }
 
 /**
@@ -29,7 +25,7 @@ function sub(p: Playthrough, selected: boolean, deviceName?: string): string {
  * Offline there is no list: the tabs are the playthroughs this device keeps a copy of, and the one it is on.
  * Arrow keys move between tabs; every tab is a button the controller's ring reaches.
  */
-export function PlaythroughTabs({ data, viewing, onView, onNew, disabled, machineName }: Props) {
+export function PlaythroughTabs({ data, viewing, onView, onNew, disabled }: Props) {
   const refs = useRef<(HTMLButtonElement | null)[]>([])
   const current = viewing ?? data.selectedId ?? null
 
@@ -37,7 +33,7 @@ export function PlaythroughTabs({ data, viewing, onView, onNew, disabled, machin
   const tabs: { id: string; name: string; selected: boolean; text: string; archived: boolean; conflict: boolean; copy: boolean }[] =
     data.playthroughs.length > 0
       ? data.playthroughs.map(p => ({
-          id: p.id, name: p.name, selected: p.id === data.selectedId, text: sub(p, p.id === data.selectedId, machineName),
+          id: p.id, name: p.name, selected: p.id === data.selectedId, text: sub(p, p.id === data.selectedId),
           archived: !!p.archivedAt, conflict: p.hasOpenConflict, copy: data.copies.some(c => c.playthroughId === p.id),
         }))
       : [

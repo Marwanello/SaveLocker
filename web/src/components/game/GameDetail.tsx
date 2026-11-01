@@ -3,7 +3,7 @@ import { api, errorText } from '../../api';
 import type {
   AgentHealth, Command, Conflict, GameContent, GameIntent, GameSummary, Machine, MachineGameSource, MachineSavePath, MachineScanCandidate, Version,
 } from '../../types';
-import { toast, toastError } from '../../toast';
+import { toastError } from '../../toast';
 import { missingPacks } from '../../dlc';
 import { problemGameIds, standing } from './gameState';
 import { ArtPicker } from '../ArtPicker';
@@ -12,7 +12,7 @@ import { SourceChip } from './SourceChip';
 import { ReleaseChip } from './ReleaseChip';
 import { ConflictPanel } from './ConflictPanel';
 import { GameStats } from './GameStats';
-import { VersionsCard } from './VersionsCard';
+import { SavesCard } from './SavesCard';
 import { SaveFoldersCard } from './SaveFoldersCard';
 import { EmulatorSettings, type EmulatorTab } from './EmulatorSettings';
 import { Button } from '../ui/Button';
@@ -129,15 +129,6 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   const withGame = machines.filter(m =>
     latestByMachine[m.id] || paths.some(p => p.machineId === m.id) || candidates.some(c => c.machineId === m.id));
 
-  async function setLatest(v: Version) {
-    try {
-      await api.setLatest(game.id, v.id);
-      await reloadVersions();
-      onRefresh();
-      toast(`Set ${v.machineName}'s save as Latest. Every machine that syncs it was told to pull.`, 4000);
-    } catch (e) { toastError('Could not set Latest: ' + errorText(e)); }
-  }
-
   // A "Resolve" link names one conflict — or, from an agent's event, only the game, which means its first
   // open conflict AT THAT MOMENT. Pinned per request: deriving "the first" on every render handed the
   // signal on to the next conflict as soon as the linked one was resolved, and that one sprang open too.
@@ -237,15 +228,15 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
           key: 'versions',
           pin: 0,
           node: (
-            <VersionsCard
+            <SavesCard
               key={game.id}
               game={game}
-              headId={headId}
+              machines={machines}
+              health={health}
               versions={versions}
-              conflicts={gameConflicts}
-              loading={loadingVersions}
+              loadingVersions={loadingVersions}
               reloadVersions={reloadVersions}
-              onSetLatest={setLatest}
+              conflicts={gameConflicts}
               onRefresh={onRefresh}
               onCopy={trees ? setCopying : undefined}
             />

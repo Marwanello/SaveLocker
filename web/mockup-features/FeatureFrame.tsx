@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CHOSEN, COMBINED_SIMS, FEATURES, chooseCombined, chooseFeature, chooseSim, chooseVariant, setState, useMock } from './store'
+import { CHOSEN, COMBINED_SIMS, FEATURES, FOCUS, chooseCombined, chooseFeature, chooseSim, chooseVariant, setState, useMock } from './store'
 
 /** The mockup's own strip above the real console: feature, variant, mock-only switches and notes. */
 export function FeatureFrame({ children }: { children: ReactNode }) {
@@ -11,6 +11,25 @@ export function FeatureFrame({ children }: { children: ReactNode }) {
   const f = FEATURES.find(x => x.id === featureId)!
   const v = f.variants.find(x => x.id === variant)!
   const tasks = [...new Set(FEATURES.map(x => x.task))]
+  if (FOCUS) {
+    return (
+      <div className="mockc">
+        <div className="mockc-bar">
+          <h1>SaveLocker console<small>{f.name} · {v.id} · {v.name}</small></h1>
+          <div className="mockc-spacer" />
+          {f.sims && (
+            <div className="mockc-group">
+              {f.sims.map(([k, label]) => (
+                <button key={k} type="button" className="mockc-btn" aria-pressed={sim === k} onClick={() => setState({ sim: k })}>{label}</button>
+              ))}
+            </div>
+          )}
+          <a className="mockc-btn" href={location.pathname + location.hash}>Full picker →</a>
+        </div>
+        <div className="mockc-app">{children}</div>
+      </div>
+    )
+  }
   return (
     <div className="mockc">
       <div className="mockc-bar">

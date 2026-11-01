@@ -31,6 +31,10 @@ export function formatAgo(t: string): string {
 
 export const formatDateTime = (t: string) => new Date(asUtc(t)).toLocaleString()
 
+/** A version's id has no name, so its first 8 hex chars stand in for it everywhere one is shown
+ *  (counterpart of web/src/format.ts's `shortId`). */
+export const shortId = (id: string) => id.slice(0, 8)
+
 /** A wall-clock time for an activity entry. The agent serialises UTC without a zone suffix on some
  *  paths, so a bare timestamp is treated as UTC rather than local — the same reading `formatTime`
  *  in the old activity card applied. */

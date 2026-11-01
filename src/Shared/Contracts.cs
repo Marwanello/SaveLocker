@@ -738,7 +738,10 @@ public enum UploadStatus
 public record UploadResult(
     UploadStatus Status,
     SaveVersionDto? Version,
-    ConflictDto? Conflict);
+    ConflictDto? Conflict,
+    // How many playthroughs the game has, archived ones included (tasks/save-playthroughs): how a device learns of a line made
+    // elsewhere from its own push, without reading the list. Null from a server that predates it.
+    int? PlaythroughCount = null);
 
 // ----- Upload (chunked) -----
 

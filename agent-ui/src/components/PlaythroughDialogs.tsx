@@ -96,7 +96,7 @@ export function PlaythroughProgress({ game, title, run, onDone }: RunProps) {
 interface NewProps {
   game: TrackedGame
   data: GamePlaythroughs
-  /** Fork this version instead of a playthrough's latest ("New playthrough from this version"). */
+  /** Fork this version instead of a playthrough's latest (VersionsCard's "Fork…"). */
   fromVersion?: { id: string; label: string } | null
   onClose: () => void
   onDone: (result: SwitchPlaythroughResult) => void

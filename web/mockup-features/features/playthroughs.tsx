@@ -16,7 +16,7 @@ import { useVariant } from '../store'
 import { M, MACHINE_NAMES, devicesOn, endFlow, getState, ptById, runFlow, setState, useMock, type Pt } from '../store'
 import { Choice, Dialog, Steps, fieldCls } from './common'
 
-type Ask = { kind: 'move'; device?: string; to?: string } | { kind: 'rename'; id: string } | { kind: 'delete'; id: string } | { kind: 'new' } | null
+type Ask = { kind: 'move'; device?: string; to?: string } | { kind: 'rename'; id: string } | { kind: 'delete'; id: string } | { kind: 'new'; from?: string; version?: string } | null
 
 /** The planned Playthroughs card on the console's game page, in the variant on show. */
 export function PlaythroughsCard() {
@@ -234,26 +234,56 @@ function DeleteDialog({ id, onClose }: { id: string; onClose: () => void }) {
   )
 }
 
-function NewDialog({ onClose }: { onClose: () => void }) {
+function NewDialog({ onClose, presetFrom, presetVersion }: { onClose: () => void; presetFrom?: string; presetVersion?: string }) {
   const [name, setName] = useState('')
-  const [from, setFrom] = useState('main')
+  const [from, setFrom] = useState(presetFrom ?? 'main')
+  const [fromVersion, setFromVersion] = useState(presetVersion ?? 'latest')
   const [how, setHow] = useState<'current' | 'fresh'>('current')
   const [keep, setKeep] = useState<Record<string, boolean>>({ 'GraphicsConfig.xml': true, 'ER0000.sl2': false, 'ER0000.sl2.bak': false })
   const kept = Object.keys(keep).filter(k => keep[k])
+  const labels = useMock(s => s.labels)
+  // Same ids `versionsOf` gives the table, so a version picked there (Fork) lands pre-selected here too.
+  const choices = versionsOf(ptById(from), from)
+  const pickedVersion = fromVersion === 'latest' ? null : choices.find(v => v.id === fromVersion)
   return (
     <Dialog title="New playthrough" sub="A separate line of saves. The others stay as they are; no device switches until you switch it." onClose={onClose}
       actions={<><Button variant="quiet" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!name.trim()} onClick={() => {
         const id = `new-${Date.now()}`
         const fresh = how === 'fresh'
         setState({ pts: [...getState().pts, { id, name: name.trim(), when: new Date().toISOString(), by: fresh ? 'This console' : ptById(from).by, versions: 1, size: fresh ? 4_096 : ptById(from).size }] })
-        onClose(); toast(fresh ? `Created ${name.trim()}: an empty save${kept.length ? ` with ${kept.join(', ')}` : ''}.` : `Created ${name.trim()} from ${ptById(from).name}’s latest.`)
+        onClose()
+        toast(fresh ? `Created ${name.trim()}: an empty save${kept.length ? ` with ${kept.join(', ')} from ${ptById(from).name}` : ''}.`
+          : pickedVersion ? `Created ${name.trim()} from ${ptById(from).name}’s save from ${ago(pickedVersion.createdAt)}.`
+          : `Created ${name.trim()} from ${ptById(from).name}’s latest.`)
       }}>Create</Button></>}>
       <label className="flex flex-col gap-1.5"><span className="text-[10px] tracking-[0.13em] uppercase text-faint">Name</span>
         <input autoFocus className={fieldCls} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Sorcery build" maxLength={60} /></label>
-      <div className="flex flex-col gap-2" role="radiogroup" aria-label="Start from">
-        <Choice checked={how === 'current'} onPick={() => setHow('current')} title="Current save" sub="A copy of a playthrough’s latest save" />
-        {how === 'current' && <div className="pl-7"><Select label="Start from" variant="field" value={from} onChange={setFrom} options={getState().pts.filter(p => !p.archived).map(p => ({ value: p.id, label: p.name, sub: `${ago(p.when)} on ${p.by}` }))} /></div>}
-        <Choice checked={how === 'fresh'} onPick={() => setHow('fresh')} title="Start fresh" sub="An empty save folder, so the game starts a new game. Keep files like settings if you want." />
+
+      <div className="flex gap-3">
+        <label className="flex flex-col gap-1.5 flex-1 min-w-0">
+          <span className="text-[10px] tracking-[0.13em] uppercase text-faint">Playthrough</span>
+          <Select label="Playthrough" variant="field" value={from} onChange={v => { setFrom(v); setFromVersion('latest') }}
+            options={getState().pts.filter(p => !p.archived).map(p => ({ value: p.id, label: p.name, sub: `${ago(p.when)} on ${p.by}` }))} />
+        </label>
+        <label className="flex flex-col gap-1.5 flex-1 min-w-0">
+          <span className="text-[10px] tracking-[0.13em] uppercase text-faint">Version</span>
+          <Select label="Version" variant="field" value={fromVersion} onChange={setFromVersion}
+            options={[
+              { value: 'latest', label: `Latest · ${choices[0]?.id.slice(0, 8) ?? ago(ptById(from).when)}`, sub: `${ago(ptById(from).when)} on ${ptById(from).by}` },
+              ...choices.slice(1).map(v => ({
+                value: v.id,
+                label: labels[v.id] ? `${labels[v.id]} · ${v.id.slice(0, 8)}` : v.id.slice(0, 8),
+                sub: `${ago(v.createdAt)} on ${v.machineName}`,
+              })),
+            ]} />
+        </label>
+      </div>
+
+      <div className="flex flex-col gap-2" role="radiogroup" aria-label="How to start">
+        <Choice checked={how === 'current'} onPick={() => setHow('current')} title="Current save"
+          sub={pickedVersion ? `A copy of ${ptById(from).name}’s picked save, as it was` : `A copy of ${ptById(from).name}’s latest save`} />
+        <Choice checked={how === 'fresh'} onPick={() => setHow('fresh')} title="Start fresh"
+          sub={`An empty save folder, so the game starts a new game. Keep files from ${ptById(from).name}${pickedVersion ? '’s picked save' : ''} if you want.`} />
       </div>
       {how === 'fresh' && (
         <div className="border border-line rounded-xl overflow-hidden">
@@ -267,7 +297,6 @@ function NewDialog({ onClose }: { onClose: () => void }) {
           <p className="px-3.5 py-2 text-[11.5px] text-dim bg-raise">{kept.length ? `Keeps ${kept.join(', ')} from ${ptById(from).name}.` : 'Nothing is kept: the folder starts empty.'}</p>
         </div>
       )}
-      <p className="text-xs">To start from an older save, use “New playthrough from this version” in Versions.</p>
     </Dialog>
   )
 }
@@ -308,9 +337,9 @@ function DeviceChips({ names, empty = 'No device plays it' }: { names: string[];
     : <span className="text-[11.5px] text-faint">{empty}</span>
 }
 
-function PtVersionsTable({ p, game, rows }: { p: Pt; game: Game; rows: Version[] }) {
+function PtVersionsTable({ p, game, rows, onFork }: { p: Pt; game: Game; rows: Version[]; onFork: (v: Version) => void }) {
   const [latest, setLatest] = useState<Record<string, string>>({})
-  const [names, setNames] = useState<Record<string, string>>({})
+  const names = useMock(s => s.labels)
   const [naming, setNaming] = useState<Version | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [text, setText] = useState('')
@@ -336,7 +365,7 @@ function PtVersionsTable({ p, game, rows }: { p: Pt; game: Game; rows: Version[]
             </span>
           ) },
           { head: 'Name', kind: 'wrap', cell: v => names[v.id]
-            ? <button type="button" onClick={() => { setText(names[v.id]); setNaming(v) }} title="Rename" className="cursor-pointer inline-flex items-center gap-1 rounded-full border border-info-line bg-info-soft text-info-ink px-2 py-0.5 text-[11px] font-medium whitespace-nowrap"><Icon name="pencil" size={10} />{names[v.id]}</button>
+            ? <button type="button" onClick={() => { setText(names[v.id] ?? ''); setNaming(v) }} title="Rename" className="cursor-pointer inline-flex items-center gap-1 rounded-full border border-info-line bg-info-soft text-info-ink px-2 py-0.5 text-[11px] font-medium whitespace-nowrap"><Icon name="pencil" size={10} />{names[v.id]}</button>
             : <button type="button" onClick={() => { setText(''); setNaming(v) }} title="Name this save"
                 className="inline-flex items-center gap-1 rounded-full border border-dashed border-line px-2 py-0.5 text-[11px] text-faint hover:text-fg hover:border-faint cursor-pointer whitespace-nowrap"><Icon name="pencil" size={10} />Name</button> },
           { head: 'When', kind: 'n', cell: v => <span title={v.createdAt} className="whitespace-nowrap">{ago(v.createdAt)} · {v.machineName}</span> },
@@ -349,14 +378,17 @@ function PtVersionsTable({ p, game, rows }: { p: Pt; game: Game; rows: Version[]
                   confirmLabel={`Make ${v.id.slice(0, 8)} Latest`}
                   onConfirm={() => { setLatest({ ...latest, [p.id]: v.id }); toast(`${v.id.slice(0, 8)} is ${p.name}’s latest now.`) }} />
               )}
-              <Button size="sm" variant="quiet" onClick={() => toast(`Downloaded ${p.name} · ${v.id.slice(0, 8)}.zip`)}>Download</Button>
+              <Button size="sm" variant="quiet" aria-label="Download" title="Download"
+                onClick={() => toast(`Downloaded ${p.name} · ${v.id.slice(0, 8)}.zip`)}><Icon name="download" size={13} /></Button>
+              <Button size="sm" variant="quiet" aria-label="Fork this save into a new playthrough" title="Fork into a new playthrough"
+                onClick={() => onFork(v)}><Icon name="git-fork" size={13} /></Button>
             </span>
           ) },
         ]} />
       {naming && (
         <Dialog title={names[naming.id] ? 'Rename this save' : 'Name this save'} sub={`${p.name} · ${naming.machineName} · ${ago(naming.createdAt)}`} onClose={() => setNaming(null)}
           actions={<><Button variant="quiet" onClick={() => setNaming(null)}>Cancel</Button>
-            <Button variant="primary" disabled={!text.trim()} onClick={() => { setNames({ ...names, [naming.id]: text.trim() }); setNaming(null); toast('Named. Pruning never removes this version.') }}>Save</Button></>}>
+            <Button variant="primary" disabled={!text.trim()} onClick={() => { setState({ labels: { ...getState().labels, [naming.id]: text.trim() } }); setNaming(null); toast('Named. Pruning never removes this version.') }}>Save</Button></>}>
           <input autoFocus className={fieldCls} value={text} maxLength={80} placeholder="e.g. Before Malenia" onChange={e => setText(e.target.value)} aria-label="Name" />
           <p className="rounded-lg border border-safe-line bg-safe-soft text-safe-ink px-3 py-2 text-[12px]">A named save is never removed when old versions are pruned.</p>
         </Dialog>
@@ -365,16 +397,12 @@ function PtVersionsTable({ p, game, rows }: { p: Pt; game: Game; rows: Version[]
   )
 }
 
-/** The picked playthrough's head: name, devices, its actions. Shared by D and E. */
+/** The picked playthrough's head: devices and its actions — its name and Default/Archived badges are the open tab. */
 function PtHead({ p, onAsk }: { p: Pt; onAsk: (a: Ask) => void }) {
   const def = useMock(s => s.def)
   return (
     <div className="flex items-start justify-between gap-3 flex-wrap px-4 py-3 border-b border-line">
-      <div className="min-w-0 flex flex-col gap-1.5">
-        <div className="text-[15px] font-semibold text-fg flex items-center gap-1.5 flex-wrap">{p.name}{p.id === def && <Chip>Default for new devices</Chip>}{p.archived && <Chip>Archived</Chip>}</div>
-        <div className="text-xs text-dim">{p.versions} versions · {fmtSize(p.size)} · latest {ago(p.when)} on {p.by}</div>
-        <span className="flex items-center gap-1.5 flex-wrap text-[11.5px] text-dim">Played on <DeviceChips names={devicesOn(p.id)} /></span>
-      </div>
+      <span className="flex items-center gap-1.5 flex-wrap text-[11.5px] text-dim">Played on <DeviceChips names={devicesOn(p.id)} /></span>
       <span className="flex gap-1.5 flex-wrap items-center">
         <Button size="sm" variant="primary" onClick={() => onAsk({ kind: 'move', to: p.id })}>Switch a device to this…</Button>
         <RowMenu p={p} isDefault={p.id === def} onAsk={onAsk} />
@@ -393,15 +421,27 @@ export function PlaythroughVersionsCard({ game, versions, machines }: { game: Ga
   const [keeping, setKeeping] = useState(false)
   const pts = useMock(s => s.pts)
   useMock(s => s.plays)
+  const def = useMock(s => s.def)
   const [ask, setAsk] = useState<Ask>(null)
   const [pick, setPick] = useState('main')
+  const [dir, setDir] = useState<'left' | 'right'>('right')
   const [showArchived, setShowArchived] = useState(false)
+  const [soloNames, setSoloNames] = useState<Record<string, string>>({})
+  const [renamingMain, setRenamingMain] = useState(false)
   const many = game.id === G.elden
-  const one: Pt = { id: 'main', name: 'Main', when: versions[0]?.createdAt ?? new Date().toISOString(), by: versions[0]?.machineName ?? '—', versions: versions.length, size: versions[0]?.size ?? 0 }
+  const one: Pt = { id: 'main', name: soloNames[game.id] ?? 'Main', when: versions[0]?.createdAt ?? new Date().toISOString(), by: versions[0]?.machineName ?? '—', versions: versions.length, size: versions[0]?.size ?? 0 }
   const list = many ? pts : [one]
   const shown = list.filter(q => showArchived || !q.archived)
   const p = list.find(q => q.id === pick) ?? list[0]
   const rows = many ? versionsOf(p, game.id) : versions
+  // Direction follows the tab bar's left-to-right order, not click history: picking a tab to the right
+  // of the open one slides the new pane in from the right, and the other way for one to its left.
+  const switchTo = (id: string) => {
+    const from = shown.findIndex(q => q.id === p.id)
+    const to = shown.findIndex(q => q.id === id)
+    setDir(to >= from ? 'right' : 'left')
+    setPick(id)
+  }
   const header = (
     <span className="flex items-center gap-1.5 flex-wrap">
       {many && <label className="flex items-center gap-1.5 text-[11.5px] text-dim cursor-pointer">
@@ -413,41 +453,50 @@ export function PlaythroughVersionsCard({ game, versions, machines }: { game: Ga
   )
   const head = many ? <PtHead p={p} onAsk={setAsk} /> : (
     <div className="flex items-start justify-between gap-3 flex-wrap px-4 py-3 border-b border-line">
-      <div className="min-w-0 flex flex-col gap-1.5">
-        <div className="text-[15px] font-semibold text-fg flex items-center gap-1.5">Main<Chip>Default for new devices</Chip></div>
-        <div className="text-xs text-dim">{versions.length} versions · every game starts with this one playthrough</div>
-        <span className="flex items-center gap-1.5 flex-wrap text-[11.5px] text-dim">Played on <DeviceChips names={machines} /></span>
-      </div>
-      <Button size="sm" variant="quiet" onClick={() => setAsk({ kind: 'rename', id: 'main' })} disabled>Rename</Button>
+      <span className="flex items-center gap-1.5 flex-wrap text-[11.5px] text-dim">Played on <DeviceChips names={machines} /></span>
+      {renamingMain ? (
+        <span className="flex items-center gap-2">
+          <input autoFocus className={fieldCls} style={{ width: 180 }} defaultValue={one.name} maxLength={60}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { setSoloNames(s => ({ ...s, [game.id]: (e.target as HTMLInputElement).value.trim() || 'Main' })); setRenamingMain(false) }
+              if (e.key === 'Escape') setRenamingMain(false)
+            }} />
+          <Button size="sm" variant="quiet" onClick={() => setRenamingMain(false)}>Cancel</Button>
+        </span>
+      ) : (
+        <Button size="sm" variant="quiet" onClick={() => setRenamingMain(true)}>Rename</Button>
+      )}
     </div>
   )
+  const paneClass = dir === 'right' ? 'animate-pane-right' : 'animate-pane-left'
   const body = variant === 'D' ? (
     <div className="grid md:grid-cols-[200px_minmax(0,1fr)]">
       <div className="border-r border-line" role="tablist" aria-label="Playthroughs">
         {shown.map(q => (
-          <button key={q.id} type="button" role="tab" aria-selected={q.id === p.id} onClick={() => setPick(q.id)}
+          <button key={q.id} type="button" role="tab" aria-selected={q.id === p.id} onClick={() => switchTo(q.id)}
             className={`w-full text-left px-4 py-3 border-b border-row cursor-pointer hover:bg-hover flex flex-col gap-1.5 ${q.id === p.id ? 'bg-raise shadow-[inset_2px_0_0_var(--color-accent)]' : ''}`}>
-            <span className="text-[13px] font-semibold text-fg flex items-center gap-1.5">{q.name}{q.archived && <Chip>Archived</Chip>}</span>
+            <span className="text-[13px] font-semibold text-fg flex items-center gap-1.5">{q.name}{q.id === def && <Chip>Default</Chip>}{q.archived && <Chip>Archived</Chip>}</span>
             <span className="text-[11.5px] text-dim">{q.versions} versions · latest {ago(q.when)}</span>
             <DeviceChips names={many ? devicesOn(q.id) : machines} empty="No device" />
           </button>
         ))}
       </div>
-      <div className="min-w-0">{head}<PtVersionsTable key={p.id} p={p} game={game} rows={rows} /></div>
+      <div key={p.id} className={`min-w-0 ${paneClass}`}>{head}<PtVersionsTable p={p} game={game} rows={rows} onFork={v => setAsk({ kind: 'new', from: p.id, version: v.id })} /></div>
     </div>
   ) : (
     <div>
       <div className="flex gap-1 px-3 pt-2 border-b border-line overflow-x-auto" role="tablist" aria-label="Playthroughs">
         {shown.map(q => (
-          <button key={q.id} type="button" role="tab" aria-selected={q.id === p.id} onClick={() => setPick(q.id)}
-            className={`flex flex-col items-start gap-0.5 px-3.5 pt-2 pb-2.5 -mb-px border-b-2 rounded-t-lg cursor-pointer whitespace-nowrap ${q.id === p.id ? 'border-accent text-fg' : 'border-transparent text-dim hover:text-fg hover:bg-hover'}`}>
-            <span className="text-[13px] font-semibold">{q.name}</span>
-            <span className="text-[11px] text-faint">{(many ? devicesOn(q.id) : machines).join(' · ') || 'No device'}</span>
+          <button key={q.id} type="button" role="tab" aria-selected={q.id === p.id} onClick={() => switchTo(q.id)}
+            className={`flex items-center gap-1 px-3.5 pt-2 pb-2.5 -mb-px border-b-2 rounded-t-lg cursor-pointer whitespace-nowrap text-[13px] font-semibold ${q.id === p.id ? 'border-accent text-fg' : 'border-transparent text-dim hover:text-fg hover:bg-hover'}`}>
+            {q.name}{q.id === def && <Chip>Default</Chip>}{q.archived && <Chip>Archived</Chip>}
           </button>
         ))}
       </div>
-      {head}
-      <PtVersionsTable key={p.id} p={p} game={game} rows={rows} />
+      <div key={p.id} className={paneClass}>
+        {head}
+        <PtVersionsTable p={p} game={game} rows={rows} onFork={v => setAsk({ kind: 'new', from: p.id, version: v.id })} />
+      </div>
     </div>
   )
   return (
@@ -456,7 +505,7 @@ export function PlaythroughVersionsCard({ game, versions, machines }: { game: Ga
       {ask?.kind === 'move' && <MoveDialog device={ask.device} to={ask.to} onClose={() => setAsk(null)} />}
       {ask?.kind === 'rename' && <RenameDialog id={ask.id} onClose={() => setAsk(null)} />}
       {ask?.kind === 'delete' && <DeleteDialog id={ask.id} onClose={() => setAsk(null)} />}
-      {ask?.kind === 'new' && <NewDialog onClose={() => setAsk(null)} />}
+      {ask?.kind === 'new' && <NewDialog presetFrom={ask.from} presetVersion={ask.version} onClose={() => setAsk(null)} />}
       {keeping && <KeepHistory scope="game" onClose={() => setKeeping(false)} />}
     </>
   )
