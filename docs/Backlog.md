@@ -16,7 +16,6 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 
 ## Medium priority
 
-- [Duplicate-shortcut warnings outside doctor](tasks/duplicate-shortcut-warnings/summary.md)
 - [Linux agent: separate app files from mutable state](tasks/linux-agent-secrets/plan-split.md)
 - [One state owner (deferred)](tasks/linux-single-state-owner/summary.md)
 - [Epic, GOG, Microsoft Store, Lutris and Bottles installs](tasks/launcher-install-dirs/summary.md)
