@@ -18,6 +18,9 @@ and 1 — both resolve to the same rollout: the console and fleet are now curren
 which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
 fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
+**Playnite self-update proven (2026-11-01, branch `playnite-self-update-proof`, not merged).** v0.1.1 → v0.1.2 → v0.1.3 through testenv against real releases, notice seen in Playnite, bad hash refused: [[tasks/_done/playnite-self-update-proof/summary]]. Two fixes: the agent now checks when Playnite exits (it waited for the 24 h timer), and the notice says to really exit (the X only hides it in the tray).
+**Next action:** merge.
+
 **File-level saves — planned (2026-10-29, branch `file-level-saves-plan`, vault only).** [[tasks/file-level-saves/plan]] + its `implementation-grouping.md`: a `<base>/Save.dat` manifest entry becomes folder `<base>` + include scope `Save.dat` (no archive change). Settled with the maintainer: **hybrid reach** (automatic scopes only for install-folder entries; every other file-shaped template stays whole-folder but gets an opt-in *narrow to these files* offer, which also covers enrolled games), hand-picked files in Add games and on the game page, a narrow `SavePathGuard` exception for a scoped game folder in a Steam library under Program Files, scope changes from console **and** agent (audited). Old agents gated by version.
 **Next action:** Group 1 — Phase 0 (detection harness counts scoped `<base>`), then the resolver, install-folder safety, enrolment.
 

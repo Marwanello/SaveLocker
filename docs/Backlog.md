@@ -16,7 +16,6 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 
 ## Medium priority
 
-- [Playnite plugin: prove the self-update against a real release](tasks/playnite-self-update-proof/summary.md)
 - [Duplicate-shortcut warnings outside doctor](tasks/duplicate-shortcut-warnings/summary.md)
 - [Linux agent: separate app files from mutable state](tasks/linux-agent-secrets/plan-split.md)
 - [One state owner (deferred)](tasks/linux-single-state-owner/summary.md)
