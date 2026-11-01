@@ -13,6 +13,15 @@ vs untouched `main`'s **208/74** on this box — **zero new failures**, the 3 ne
 `main`). Server, Agent.Linux, Windows Agent and `agent-ui` build clean; `api-types.ts` regenerated
 from a scratch daemon (`--port 5190`). Research below was against `main` (`4290a2a`).
 
+## Status
+
+| Phase | Status |
+|-------|--------|
+| 1. Shared detector, `Doctor` refactor, `ScanCandidate` field, Linux scanner, API assertion | ✅ Shipped 2026-10-14 (PR #75); hardware-verified 2026-11-01 |
+| 2. Windows scanner | ✅ Shipped 2026-10-14; live in WebView2 2026-11-01 |
+| 3. agent-ui chip, Game Mode caption, `api-types.ts` | ✅ Shipped 2026-10-14; WebView2 and a real Deck passed 2026-11-01, with two fixes, see *Live check* |
+| 4. Docs | ❌ Dropped: no KB change needed |
+
 ## Goal
 
 Surface the doctor's duplicate-shortcut note where a user actually adds a game — a warning on the
@@ -138,3 +147,49 @@ label-tick each reproduced with their fix removed, including a real trusted clic
 a live Deck/WebView2 pass of the chip. The 71-failure cascade the PR body's earlier numbers carried
 was this box's stray `~/SaveLocker` daemon holding :5187; the netns run is the workaround.
 Ready to move to `tasks/_done/` once the PR merges.
+
+## Live check (2026-11-01)
+
+**Windows agent UI (WebView2): passes after one fix.** Run through `testenv up -Only windows` on
+v0.8.2-test (commit `1a773e2`), driven over WebView2's DevTools port (no desktop keystrokes), 900×600.
+
+- Fixture: a throwaway `userdata\999999999\config\shortcuts.vdf` in the real Steam folder with Steam
+  closed, removed afterwards. There is no Steam-root override, so this is the only way to feed the
+  Windows scanner without touching the account's own `shortcuts.vdf`. It held a second `Minit` beside the
+  account's real one, two `SaveLocker Dup Test`, two with a long name, and one single-shortcut control.
+- `/api/candidates` and the rendered rows agree. `Minit` follows its real shortcut (AppID 2222329534,
+  *Will be tracked*); the second is *Duplicate*. The note names the tracked AppID. The control and
+  `EmulationStationDE` have no chip, so it appears only on duplicated shortcuts.
+- Hover opens the popover, a click pins it, Esc closes it, a click inside it does not tick the row.
+- **Bug found and fixed:** the popover opened behind Add games' sticky foot bar, hiding the second
+  shortcut's marker and the whole note at the default window size; near the bottom of the page the
+  window cut it off as well. The 2026-10-14 review fixed the card's clip, not this. The card now rises
+  above the bar while a popover is open, and `usePopover` opens on the side with room, limits the height
+  to it (scrolling inside) and shifts left if it would leave the page. `ReleaseChip` shares it.
+  Re-measured with the row at the top, middle and bottom of the page for three games: all inside the
+  window, and the note is on top or reachable by scrolling the popover. agent-ui has no unit-test
+  harness, so this has no automated test. `tsc -b`, `vite build` and `oxlint` are clean.
+
+**Steam Deck: passes after one fix (same day, a second pass).** v0.8.2-test through `testenv up -Only deck`.
+The Deck's test state maps the real RPCS3 saves on the SD card, so this ran with a separate
+`-DeckPrefix`/`-DeckPort` and a throwaway empty console; nothing could pull onto the Deck.
+
+- **Bug found and fixed:** `doctor` listed nine duplicated names, `/api/candidates` warned on three.
+  Moving Out's Heroic row beat its two shortcuts in the Linux dedupe and the warning was lost with them.
+  Windows already backfilled this; the rule is now `ScanCandidate.MergedDuplicates`, used by both
+  (3 new `DuplicateShortcutTests`). Moving Out now has the warning with nothing tracked.
+- **Not a bug:** Metal Gear, Metroid Dread, Metroid Prime Remastered, Pokemon Legends: Arceus and Forza
+  Horizon stay in `doctor` only. They are Steam ROM Manager shortcuts folded into emulator rows, where a
+  save does not depend on which AppID launches. Animal Crossing is no longer duplicated on the Deck.
+- Agent UI, real data, 1280×800: chip, note and popover on HITMAN 3, Minit, Moving Out and Waydroid; the
+  markers are right, including none tracked on Moving Out; the popover clears the foot bar. Viewed through
+  an SSH tunnel in Chromium, not in a window on the Deck's screen.
+- Game Mode `savelocker ui`, captured on the Deck: the warning tile and the caption naming the followed
+  AppID on HITMAN 3 and Minit, none on an unduplicated control.
+- **Addable rows only: confirmed.** With Waydroid added, its row shows *Already added on this Deck* with
+  no warning. Not-syncable rows take the same branch (read from the code; no such row was captured).
+  agent-ui differs slightly by design: the note is hidden on enrolled rows, the chip stays.
+- The Game Mode captures used a fixture home with the real names and AppIDs: a capture stops at about 100
+  presses, too few to reach those rows in the real 170-game list.
+- **Not seen on screen:** Game Mode's *none of them is followed* caption, on the same limit. Its data is
+  confirmed on the Deck by `/api/candidates`, and it is the other arm of the caption that was seen.

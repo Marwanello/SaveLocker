@@ -47,7 +47,7 @@ export function ReleaseChip({ game }: { game: TrackedGame }) {
         <span className="sl-release__dot" aria-hidden="true" />
       </button>
       {pop.open && (
-        <span className="sl-release__pop" role="dialog" aria-label="Game details">
+        <span ref={pop.popRef} className="sl-release__pop" style={pop.popStyle} role="dialog" aria-label="Game details">
           <span className="sl-release__title">{game.name}</span>
           <dl>
             {rows.map(([k, v, mono]) => (

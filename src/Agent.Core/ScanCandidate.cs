@@ -192,6 +192,19 @@ public sealed record ScanCandidate(
         c.Source == ScanSource.Emulator
             ? $"\0{c.EmulatorName}\0{c.EmulatorRom ?? c.Name}".ToLowerInvariant()
             : ManifestLoader.NormalizeName(c.Name);
+
+    /// <summary>
+    /// The duplicate-shortcut warning for the row a dedupe kept. Another source can win the merge (a
+    /// Heroic game added to Steam twice, a common save root), and the shortcut is the only source that
+    /// knows the ids, so the warning is taken from a loser. No entry is tracked then: the winner is
+    /// never itself one of the duplicates (any shortcut candidate in the group carries its own list),
+    /// so the scan follows the winner's save folder, and a marker on a loser would name an AppID the
+    /// tracked game does not carry.
+    /// </summary>
+    public static IReadOnlyList<DuplicateShortcut>? MergedDuplicates(ScanCandidate winner, IEnumerable<ScanCandidate> group) =>
+        winner.DuplicateShortcuts
+        ?? group.Select(c => c.DuplicateShortcuts).FirstOrDefault(d => d is not null)
+            ?.Select(d => d with { Tracked = false }).ToList();
 }
 
 /// <summary>

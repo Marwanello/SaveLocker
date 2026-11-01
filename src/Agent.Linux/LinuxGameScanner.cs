@@ -40,7 +40,11 @@ public sealed class LinuxGameScanner : IGameScanner
         // compatdata prefix for a game it does not launch.
         return results
             .GroupBy(r => ScanCandidate.DedupeKey(r.Candidate), StringComparer.Ordinal)
-            .Select(g => PickWinner(g).Candidate)
+            .Select(g =>
+            {
+                var winner = PickWinner(g).Candidate;
+                return winner with { DuplicateShortcuts = ScanCandidate.MergedDuplicates(winner, g.Select(r => r.Candidate)) };
+            })
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }

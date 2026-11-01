@@ -102,4 +102,41 @@ public sealed class DuplicateShortcutTests
 
         Assert.DoesNotContain(entries, e => e.Tracked);
     }
+
+    private static ScanCandidate Candidate(string name, ScanSource source, params DuplicateShortcut[] duplicates) =>
+        new(name, SuggestedSaveDir: null, source, HasSteamCloud: false, DuplicateShortcuts: duplicates.Length > 0 ? duplicates : null);
+
+    [Fact]
+    public void AnotherSourceWinningTheMerge_KeepsTheWarning_WithNothingTracked()
+    {
+        // Moving Out on a real Deck: a Heroic game added to Steam twice, and the Heroic row wins the dedupe.
+        var heroic = Candidate("Moving Out", ScanSource.Heroic);
+        var shortcut = Candidate("Moving Out", ScanSource.SteamShortcut,
+            new DuplicateShortcut("1", "Moving Out", Tracked: true),
+            new DuplicateShortcut("2", "Moving Out", Tracked: false));
+
+        var merged = ScanCandidate.MergedDuplicates(heroic, new[] { heroic, shortcut });
+
+        Assert.NotNull(merged);
+        Assert.Equal(new[] { "1", "2" }, merged.Select(d => d.AppId));
+        Assert.DoesNotContain(merged, d => d.Tracked);
+    }
+
+    [Fact]
+    public void AShortcutWinningTheMerge_KeepsItsOwnTrackedMarker()
+    {
+        var entries = new[] { new DuplicateShortcut("1", "Game", Tracked: true), new DuplicateShortcut("2", "Game", Tracked: false) };
+        var winner = Candidate("Game", ScanSource.SteamShortcut, entries);
+        var other = Candidate("Game", ScanSource.SteamShortcut, entries[1] with { Tracked = true }, entries[0] with { Tracked = false });
+
+        Assert.Equal(entries, ScanCandidate.MergedDuplicates(winner, new[] { winner, other }));
+    }
+
+    [Fact]
+    public void NoShortcutsInTheGroup_NoWarning()
+    {
+        var heroic = Candidate("Game", ScanSource.Heroic);
+
+        Assert.Null(ScanCandidate.MergedDuplicates(heroic, new[] { heroic }));
+    }
 }
