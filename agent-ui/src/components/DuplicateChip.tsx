@@ -32,7 +32,9 @@ export function DuplicateChip({ shortcuts }: { shortcuts: Shortcut[] }) {
         // preventDefault: an Add games row is a <label>, and a click on the popover (not interactive
         // content) would otherwise activate its checkbox — selecting the game while the user read it.
         <span
+          ref={pop.popRef}
           className="sl-release__pop"
+          style={pop.popStyle}
           role="dialog"
           aria-label="Duplicate AppIDs for this game"
           onClick={e => e.preventDefault()}
