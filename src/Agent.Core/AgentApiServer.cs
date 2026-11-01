@@ -1008,7 +1008,7 @@ public sealed partial class AgentApiServer : IDisposable
         // server. Always calls PlaynitePlugin.CheckAsync with apply:false — this route only reports,
         // it never writes; the agent's own recurring timer (TrayApp.CheckPlaynitePluginUpdateAsync)
         // owns actually installing one. Called from inside a running Playnite process, so
-        // CheckAsync's own IsPlayniteRunning guard always takes its "close Playnite first" branch when
+        // CheckAsync's own IsPlayniteRunning guard always takes its "exit Playnite" branch when
         // a newer version exists — which is exactly the restart notice Phase 14 wants to surface, with
         // no separate branching needed here.
         app.MapGet("/api/playnite-plugin", async () => await _playnitePluginStatus())

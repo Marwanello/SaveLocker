@@ -29,7 +29,7 @@ against. Phase 1 below (scaffold + load) is genuinely attemptable here, not just
 **Closed as done 2026-10-01.** The plugin is released (v0.1.2), installs from the agent UI card and the Releases
 page, and was submitted to the add-on database ([JosefNemec/PlayniteAddonDatabase#661](https://github.com/JosefNemec/PlayniteAddonDatabase/pull/661)),
 where new plugin submissions are on hold until Playnite 11's new add-on database. What is left has its own task:
-`tasks/playnite-addon-submission/` and `tasks/playnite-self-update-proof/`. The held-lease launch was confirmed on hardware 2026-10-04.
+`tasks/playnite-addon-submission/` and `tasks/_done/playnite-self-update-proof/`. The held-lease launch was confirmed on hardware 2026-10-04.
 
 Same status-table convention `conflict-resolution-ui/plan.md` established — kept current as phases
 ship, not written once and left stale. See `implementation-grouping.md` for which phases share a
@@ -43,14 +43,14 @@ session and why.
 | 4 — `PushAfterExitEnabled` | ✅ Shipped 2026-09-14 |
 | 5 — Three small new local-API routes | ✅ Shipped 2026-09-14 |
 | 6 — `AgentPlatform.PlaynitePlugin` slot | ✅ Shipped 2026-09-14 |
-| 7 — Windows plugin self-updater | ✅ Shipped 2026-09-14 — code-complete; no real plugin package exists yet to test an actual install against |
+| 7 — Windows plugin self-updater | ✅ Shipped 2026-09-14 — proven against real releases 2026-11-01 (v0.1.1 → v0.1.2 → v0.1.3, bad hash refused); see `tasks/_done/playnite-self-update-proof/summary.md` |
 | 8 — Scaffold + "hello world" load | ✅ Shipped 2026-09-15 — hardware-verified, loads clean in the real portable Playnite |
 | 9 — Local API client + settings page | ✅ Shipped 2026-09-15 — hardware-verified against a real test agent |
 | 10 — Core pre-launch/post-exit gate | ✅ Shipped 2026-09-15 — hardware-verified: block/resolve on a genuine conflict, post-exit push, fail-open when the agent is down. Resolve window is theme-driven for both Desktop and Fullscreen mode, but the Fullscreen window and the WSL-driven "lease held elsewhere" case were fixed late this session and not yet re-confirmed on hardware |
 | 11 — Automatic matching chain | ✅ Shipped 2026-09-15 — hardware-verified (a real Steam-installed game matched via AppID) |
 | 12 — "Link to SaveLocker" popup | ✅ Built 2026-09-15 — code-complete, builds clean against the real Playnite SDK; not yet hardware-verified (see `SaveLocker-Playnite`'s own `docs/CONTEXT.md`) |
 | 13 — Status chip + action buttons | ➡️ Moved to menu items — the `GetGameViewControl` status chip was built, then confirmed dead code and removed: Playnite only calls `GetGameViewControl` for a plugin registered via `AddCustomElementSupport` (SaveLocker never has) whose active theme's XAML names a matching slot (no stock theme, Default included, defines one for SaveLocker). `GetGameMenuItems`'s "Sync now"/"Resolve conflict…"/"Link to SaveLocker" and the `SaveLocker: Linked` Tag are the surviving, genuinely theme-independent surfaces. One deliberate deviation still applies to "Sync now": one item instead of separate Push/Pull, since the local API has no per-game push-only/pull-only route |
-| 14 — Plugin-side self-update consumption | ✅ Built 2026-09-16 — new agent-side `GET /api/playnite-plugin` route verified live against a real scratch server + registered Windows agent; the plugin's own consumption (`OnApplicationStarted`) is code-complete but not yet hardware-verified inside a running Playnite |
+| 14 — Plugin-side self-update consumption | ✅ Built 2026-09-16 — notice seen inside a running Playnite 2026-11-01; see `tasks/_done/playnite-self-update-proof/summary.md` |
 | 15 — Test infrastructure | ✅ Built 2026-09-16 — the portable-Playnite `testenv` target and Windows `seed-test-conflict` equivalent this phase called for already shipped in Group 3's test-rig integration (commit `9397e9d`); this session added the remaining gap, automated coverage (`tests/SaveLocker.Playnite.Tests`, xUnit — GameMatcher + LocalApiClient against an HttpListener stub), 25/25 passing |
 | 16 — Official add-on database submission | ➡️ Moved 2026-10-01 to `tasks/playnite-addon-submission/` — submitted 2026-09-17 as JosefNemec/PlayniteAddonDatabase#661; the maintainer put new plugin submissions on hold until Playnite 11's new add-on database (2026-09-30). `installer.yaml` still lists v0.1.1, whose package reports 0.1.0; fix before resubmitting |
 | 17 — Release CI workflow (`SaveLocker-Playnite`) | ✅ Built 2026-09-16 — `.github/workflows/release.yml`; the Playnite.SDK.dll-fetch step and a build against the freshly-fetched SDK were both actually run and verified, but pushing a real tag to exercise a genuine release end to end was not attempted (needs the user's go-ahead). Re-confirmed 2026-09-16 while prepping Phase 16 that it already publishes the `.pext` asset the "Installation" section and Phase 19 both need — no addendum was actually required, unlike this file briefly assumed below |
