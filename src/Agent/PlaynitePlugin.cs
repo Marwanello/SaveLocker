@@ -54,7 +54,7 @@ public sealed record PluginUpdateOutcome(
 /// running would leave it running old code next to new files (or fail outright — a loaded .NET
 /// Framework assembly's file is typically locked by its own host process). <see cref="IsPlayniteRunning"/>
 /// is the guard for that: an update while Playnite is open is reported as merely <see
-/// cref="PluginUpdateState.Available"/>, not applied, with a message asking the player to close it.
+/// cref="PluginUpdateState.Available"/>, not applied, with a message asking the player to exit it.
 /// </para>
 /// </summary>
 public static class PlaynitePlugin
@@ -71,6 +71,15 @@ public static class PlaynitePlugin
 
     /// <summary>…and more expanded bytes than this. The plugin is a few hundred KB.</summary>
     private const long MaxBytes = 64L * 1024 * 1024;
+
+    /// <summary>Told wherever Playnite must be shut: with <c>CloseToTray</c> on, the X leaves it running.</summary>
+    private const string HowToExit = "Exit from its menu or tray icon: the X only hides it in the tray.";
+
+    /// <summary>
+    /// One install at a time: every install unpacks into the same staging folder, and the Playnite
+    /// exit check, the 24 h timer and the agent UI's button can each start one.
+    /// </summary>
+    private static readonly SemaphoreSlim InstallGate = new(1, 1);
 
     /// <summary>
     /// Playnite's own per-user data root — <c>%AppData%\Playnite</c> for a normal (non-portable)
@@ -108,8 +117,14 @@ public static class PlaynitePlugin
     /// watchdog — nothing here would recover from that by itself.
     /// </summary>
     public static bool IsPlayniteRunning =>
-        Process.GetProcessesByName("Playnite.DesktopApp").Length > 0 ||
-        Process.GetProcessesByName("Playnite.FullscreenApp").Length > 0;
+        AnyRunning("Playnite.DesktopApp") || AnyRunning("Playnite.FullscreenApp");
+
+    private static bool AnyRunning(string processName)
+    {
+        var processes = Process.GetProcessesByName(processName);
+        foreach (var process in processes) process.Dispose();
+        return processes.Length > 0;
+    }
 
     /// <summary>
     /// The installed plugin's version, read from the same <c>extension.yaml</c> Playnite itself reads
@@ -139,8 +154,9 @@ public static class PlaynitePlugin
     /// plugin process itself calling in to ask "is a newer version of me waiting?" Always a
     /// check-only <see cref="CheckAsync"/> (apply: false): a route must never let an external caller
     /// trigger a write, and the plugin cannot safely replace its own currently-loaded assembly anyway
-    /// — only the agent's own recurring timer (<c>TrayApp.CheckPlaynitePluginUpdateAsync</c>) installs
-    /// anything. Called from inside a running Playnite process, so <see cref="CheckAsync"/>'s own
+    /// — only the agent's own background check (<c>TrayApp.CheckPlaynitePluginUpdateAsync</c>, on its
+    /// timer and when Playnite exits) installs anything. Called from inside a running Playnite
+    /// process, so <see cref="CheckAsync"/>'s own
     /// <see cref="IsPlayniteRunning"/> guard always takes its "exit Playnite" branch when a
     /// newer version genuinely exists — <see cref="PluginUpdateOutcome.Message"/> already reads
     /// exactly like the restart notice Phase 14 wants, with nothing extra to compose here.
@@ -224,7 +240,7 @@ public static class PlaynitePlugin
 
             if (IsPlayniteRunning)
                 return new(PluginUpdateState.Refused,
-                    "Close Playnite first — a first install cannot be applied while it is running.");
+                    $"Exit Playnite first — a first install cannot be applied while it is running. {HowToExit}");
 
             return await InstallAsync(config, checker, info, installed: null, log);
         }
@@ -274,8 +290,7 @@ public static class PlaynitePlugin
 
             if (IsPlayniteRunning)
                 return new(PluginUpdateState.Available,
-                    $"v{info.LatestVersion} available (installed v{installed}) — exit Playnite to install it " +
-                    "(Exit from its menu or tray icon: the X only hides it in the tray).",
+                    AvailableWhileRunning(info.LatestVersion, installed, config.AutoUpdate),
                     installed, info.LatestVersion);
 
             if (!apply)
@@ -291,6 +306,15 @@ public static class PlaynitePlugin
     }
 
     /// <summary>
+    /// The notice a running Playnite shows. Exiting only installs anything while
+    /// <see cref="AgentConfig.AutoUpdate"/> is on, so it promises that only then.
+    /// </summary>
+    internal static string AvailableWhileRunning(string latest, string installed, bool autoUpdate) =>
+        $"v{latest} available (installed v{installed}) — " + (autoUpdate
+            ? $"exit Playnite to install it. {HowToExit}"
+            : "automatic updates are turned off for this machine, so it will not be installed.");
+
+    /// <summary>
     /// Download, verify, unpack to a staging directory, and only then write. Unlike Decky's plan-
     /// before-write pass, nothing under <see cref="PluginDir"/> is root-owned or otherwise off-limits
     /// — the whole directory is replaced to match the package exactly, including files the old version
@@ -298,6 +322,16 @@ public static class PlaynitePlugin
     /// (<see cref="InstallFirstTimeCoreAsync"/>) — there is no prior version to name in that case.
     /// </summary>
     private static async Task<PluginUpdateOutcome> InstallAsync(
+        AgentConfig config, UpdateChecker checker, AgentVersionInfo info, string? installed, Action<string> log)
+    {
+        if (!await InstallGate.WaitAsync(0))
+            return new(PluginUpdateState.Available,
+                $"v{info.LatestVersion} is already being installed.", installed, info.LatestVersion);
+        try { return await InstallCoreAsync(config, checker, info, installed, log); }
+        finally { InstallGate.Release(); }
+    }
+
+    private static async Task<PluginUpdateOutcome> InstallCoreAsync(
         AgentConfig config, UpdateChecker checker, AgentVersionInfo info, string? installed, Action<string> log)
     {
         var staging = Path.Combine(config.StateDir, "playnite-plugin-update");
@@ -334,8 +368,8 @@ public static class PlaynitePlugin
             // above must not still let a write proceed into a now-loaded assembly.
             if (IsPlayniteRunning)
                 return Fail(config, info.LatestVersion, installed,
-                    "Playnite was started during the update — close it and check again. Nothing was " +
-                    "changed.");
+                    "Playnite was started during the update. Nothing was changed: " +
+                    (installed is null ? "exit it and install again." : "the agent tries again when it next exits."));
 
             foreach (var (rel, src) in newFiles)
             {
@@ -478,5 +512,18 @@ public static class PlaynitePlugin
     private static void DeleteDirectory(string path)
     {
         try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); } catch { }
+    }
+}
+
+/// <summary>Turns repeated "is it running?" samples into the one moment it stopped.</summary>
+internal sealed class StoppedEdge
+{
+    private bool _wasRunning;
+
+    public bool Sample(bool running)
+    {
+        var stopped = _wasRunning && !running;
+        _wasRunning = running;
+        return stopped;
     }
 }
