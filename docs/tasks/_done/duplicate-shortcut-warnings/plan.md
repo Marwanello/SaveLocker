@@ -17,9 +17,9 @@ from a scratch daemon (`--port 5190`). Research below was against `main` (`4290a
 
 | Phase | Status |
 |-------|--------|
-| 1. Shared detector, `Doctor` refactor, `ScanCandidate` field, Linux scanner, API assertion | ✅ Shipped 2026-10-14 (PR #75) |
+| 1. Shared detector, `Doctor` refactor, `ScanCandidate` field, Linux scanner, API assertion | ✅ Shipped 2026-10-14 (PR #75); hardware-verified 2026-11-01 |
 | 2. Windows scanner | ✅ Shipped 2026-10-14; live in WebView2 2026-11-01 |
-| 3. agent-ui chip, Game Mode caption, `api-types.ts` | 🚧 Built; WebView2 passed 2026-11-01 (popover fix on `claude/recursing-spence-500fce`). **Open:** the Deck pass, see *Live check* |
+| 3. agent-ui chip, Game Mode caption, `api-types.ts` | ✅ Shipped 2026-10-14; WebView2 and a real Deck passed 2026-11-01, with two fixes, see *Live check* |
 | 4. Docs | ❌ Dropped: no KB change needed |
 
 ## Goal
@@ -170,16 +170,26 @@ v0.8.2-test (commit `1a773e2`), driven over WebView2's DevTools port (no desktop
   window, and the note is on top or reachable by scrolling the popover. agent-ui has no unit-test
   harness, so this has no automated test. `tsc -b`, `vite build` and `oxlint` are clean.
 
-**Deck: not verified.** Unreachable on 2026-11-01 at the start and again at the end: `deck@192.168.1.16`
-is gone, nothing on 192.168.1.0/24 but this PC has port 22 open, and it is not on Tailscale. So the Deck
-agent UI and the Game Mode tile and caption have never been seen live, and the task stays open.
+**Steam Deck: passes after one fix (same day, a second pass).** v0.8.2-test through `testenv up -Only deck`.
+The Deck's test state maps the real RPCS3 saves on the SD card, so this ran with a separate
+`-DeckPrefix`/`-DeckPort` and a throwaway empty console; nothing could pull onto the Deck.
 
-Still to do on the Deck, with it awake and `testenv deck-config` pointing at it:
-
-1. Agent UI: chip, note and popover on the real duplicates (HITMAN 3, Minit, Moving Out, Animal
-   Crossing, Metal Gear, Waydroid), including the popover fix.
-2. `savelocker ui`, Add games: the warning tile and caption.
-3. Addable rows only. From the code, not from the screen: in `DrawCandidateRow` the caption is in the
-   addable branch, and the tile loses to the *tracked* and *not syncable* tiles. So a tracked or
-   not-syncable row gets no duplicate warning in Game Mode, which is what this plan says. agent-ui
-   differs slightly: the note is hidden on enrolled rows, but the chip still shows on them.
+- **Bug found and fixed:** `doctor` listed nine duplicated names, `/api/candidates` warned on three.
+  Moving Out's Heroic row beat its two shortcuts in the Linux dedupe and the warning was lost with them.
+  Windows already backfilled this; the rule is now `ScanCandidate.MergedDuplicates`, used by both
+  (3 new `DuplicateShortcutTests`). Moving Out now has the warning with nothing tracked.
+- **Not a bug:** Metal Gear, Metroid Dread, Metroid Prime Remastered, Pokemon Legends: Arceus and Forza
+  Horizon stay in `doctor` only. They are Steam ROM Manager shortcuts folded into emulator rows, where a
+  save does not depend on which AppID launches. Animal Crossing is no longer duplicated on the Deck.
+- Agent UI, real data, 1280×800: chip, note and popover on HITMAN 3, Minit, Moving Out and Waydroid; the
+  markers are right, including none tracked on Moving Out; the popover clears the foot bar. Viewed through
+  an SSH tunnel in Chromium, not in a window on the Deck's screen.
+- Game Mode `savelocker ui`, captured on the Deck: the warning tile and the caption naming the followed
+  AppID on HITMAN 3 and Minit, none on an unduplicated control.
+- **Addable rows only: confirmed.** With Waydroid added, its row shows *Already added on this Deck* with
+  no warning. Not-syncable rows take the same branch (read from the code; no such row was captured).
+  agent-ui differs slightly by design: the note is hidden on enrolled rows, the chip stays.
+- The Game Mode captures used a fixture home with the real names and AppIDs: a capture stops at about 100
+  presses, too few to reach those rows in the real 170-game list.
+- **Not seen on screen:** Game Mode's *none of them is followed* caption, on the same limit. Its data is
+  confirmed on the Deck by `/api/candidates`, and it is the other arm of the caption that was seen.
